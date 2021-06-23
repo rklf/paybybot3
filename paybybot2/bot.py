@@ -206,7 +206,7 @@ class Bot:
             durationTimeUnit=durationTimeUnit,
             startTime=startTime,
         )
-        return post.json()
+        return post.text()
 
     def _request(self, method, url, **kwargs):
         return requests.request(
