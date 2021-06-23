@@ -206,7 +206,7 @@ class Bot:
             durationTimeUnit=durationTimeUnit,
             startTime=startTime,
         )
-        return post["quoteId"]
+        return post.json()
 
     def _request(self, method, url, **kwargs):
         return requests.request(
