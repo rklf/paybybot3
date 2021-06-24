@@ -20,7 +20,6 @@ def catch_exceptions(config):
                 logging.exception(fun.__name__)
                 import traceback
 
-                logging.exception("Exception in check")
                 if config["notify_on_error"]:
                     notify(
                         email=config["email"]["login"],
