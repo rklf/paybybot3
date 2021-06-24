@@ -1,5 +1,6 @@
 import functools
 from pprint import pprint
+import sys
 
 import click
 
@@ -70,7 +71,29 @@ def check(config_name, location):
             "retrieved parking sessions with filter licensePlate=%s, locationId=%s: %s"
             % (config["plate"], location, sessions)
         )
+        pprint(sessions)
+
+    catch_exceptions(config)(_check)(config, location)
+
+
+@cli.command()
+@click.argument("config_name")
+@click.option("--location", default=None)
+def alert(config_name, location):
+    config = get_config(config_name)
+
+    def _alert(config, location):
+        bot = connect(config)
+        sessions = bot.get_parking_sessions(
+            licensePlate=config["plate"], locationId=location
+        )
+        logging.info(
+            "retrieved parking sessions with filter licensePlate=%s, locationId=%s: %s"
+            % (config["plate"], location, sessions)
+        )
+        pprint(sessions)
         if not sessions:
+            print("No session, sending email to", config["notify"], file=sys.stderr)
             notify(
                 email=config["email"]["login"],
                 pwd=config["email"]["password"],
@@ -82,7 +105,7 @@ def check(config_name, location):
                 to=config["notify"],
             )
 
-    catch_exceptions(config)(_check)(config, location)
+    catch_exceptions(config)(_alert)(config, location)
 
 
 @cli.command()
@@ -96,16 +119,21 @@ def pay(config_name, location, rate, duration):
     def _pay(config, location, duration):
         bot = connect(config)
         logging.info("launching payment")
-        if not bot.get_parking_sessions(
+        sessions = bot.get_parking_sessions(
             licensePlate=config["plate"], locationId=location
-        ):
-            bot.pay(
-                durationQuantity=duration,
-                durationTimeUnit="Days",
-                licensePlate=config["plate"],
-                locationId=location,
-                rateOptionId=rate,
-                paymentAccountId=config["paymentAccountId"],
+        )
+        if sessions:
+            pprint(sessions)
+        else:
+            print(
+                bot.pay(
+                    durationQuantity=duration,
+                    durationTimeUnit="Days",
+                    licensePlate=config["plate"],
+                    locationId=location,
+                    rateOptionId=rate,
+                    paymentAccountId=config["paymentAccountId"],
+                )
             )
 
     catch_exceptions(config)(_pay)(config, location, duration)
