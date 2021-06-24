@@ -22,5 +22,5 @@ setup(
     install_requires=["pyyaml", "requests", "click"],
     python_requires=">=3.6",
     entry_points={"console_scripts": ["paybybot2 = paybybot2.__main__:cli"]},
-    classifiers=["Topic :: Utilities", "Topic :: Security :: Cryptography"],
+    classifiers=["Topic :: Utilities"],
 )
