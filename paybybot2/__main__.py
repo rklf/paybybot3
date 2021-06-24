@@ -71,7 +71,11 @@ def check(config_name, location):
             "retrieved parking sessions with filter licensePlate=%s, locationId=%s: %s"
             % (config["plate"], location, sessions)
         )
-        pprint(sessions)
+        if sessions:
+            print("Found sessions", file=sys.stderr)
+            pprint(sessions)
+        else:
+            print("No session", file=sys.stderr)
 
     catch_exceptions(config)(_check)(config, location)
 
@@ -91,8 +95,10 @@ def alert(config_name, location):
             "retrieved parking sessions with filter licensePlate=%s, locationId=%s: %s"
             % (config["plate"], location, sessions)
         )
-        pprint(sessions)
-        if not sessions:
+        if sessions:
+            print("Found sessions", file=sys.stderr)
+            pprint(sessions)
+        else:
             print("No session, sending email to", config["notify"], file=sys.stderr)
             notify(
                 email=config["email"]["login"],
@@ -123,18 +129,25 @@ def pay(config_name, location, rate, duration):
             licensePlate=config["plate"], locationId=location
         )
         if sessions:
+            print("Already registered", file=sys.stderr)
+            pprint(sessions)
+            return
+        bot.pay(
+            durationQuantity=duration,
+            durationTimeUnit="Days",
+            licensePlate=config["plate"],
+            locationId=location,
+            rateOptionId=rate,
+            paymentAccountId=config["paymentAccountId"],
+        )
+        sessions = bot.get_parking_sessions(
+            licensePlate=config["plate"], locationId=location
+        )
+        if sessions:
+            print("Payment done", file=sys.stderr)
             pprint(sessions)
         else:
-            print(
-                bot.pay(
-                    durationQuantity=duration,
-                    durationTimeUnit="Days",
-                    licensePlate=config["plate"],
-                    locationId=location,
-                    rateOptionId=rate,
-                    paymentAccountId=config["paymentAccountId"],
-                )
-            )
+            print("Payment failed", file=sys.stderr)
 
     catch_exceptions(config)(_pay)(config, location, duration)
 
