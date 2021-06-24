@@ -148,6 +148,16 @@ def pay(config_name, location, rate, duration):
             pprint(sessions)
         else:
             print("Payment failed", file=sys.stderr)
+            notify(
+                email=config["email"]["login"],
+                pwd=config["email"]["password"],
+                subject="ALERTE STATIONNEMENT",
+                message=(
+                    "Aucun stationnement en cours !!!\n"
+                    "Pour le renouveller : https://m2.paybyphone.fr/parking"
+                ),
+                to=config["notify"],
+            )
 
     catch_exceptions(config)(_pay)(config, location, duration)
 
