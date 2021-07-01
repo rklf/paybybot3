@@ -1,6 +1,7 @@
 import functools
 from pprint import pprint
 import sys
+from time import sleep
 
 import click
 
@@ -139,6 +140,7 @@ def pay(config_name, location, rate, duration):
             rateOptionId=rate,
             paymentAccountId=config["paymentAccountId"],
         )
+        sleep(20)  # wait for the payment to be executed
         sessions = bot.get_parking_sessions(
             licensePlate=config["plate"], locationId=location
         )
