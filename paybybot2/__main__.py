@@ -51,6 +51,9 @@ def cli():
 @cli.command()
 @click.argument("config_name")
 def payment_accounts(config_name):
+    """
+    Show the payment accounts
+    """
     config = get_config(config_name)
     bot = connect(config)
     pprint(bot.get_payment_accounts())
@@ -60,6 +63,9 @@ def payment_accounts(config_name):
 @click.argument("config_name")
 @click.option("--location", default=None)
 def check(config_name, location):
+    """
+    Check if there is an ongoing subscription
+    """
     config = get_config(config_name)
 
     def _check(config, location):
@@ -84,6 +90,12 @@ def check(config_name, location):
 @click.argument("config_name")
 @click.option("--location", default=None)
 def alert(config_name, location):
+    """
+    1. Check if there is an ongoing subscription
+
+    2. Else send a notification
+    """
+
     config = get_config(config_name)
 
     def _alert(config, location):
@@ -120,6 +132,15 @@ def alert(config_name, location):
 @click.option("--rate", required=True, type=int)
 @click.option("--duration", required=True, type=str)
 def pay(config_name, location, rate, duration):
+    """
+    1. Check if there is an ongoing subscription
+
+    2. Else pay
+
+    3. Check that the payment succeeded
+
+    4. Notify on failure
+    """
     config = get_config(config_name)
 
     def _pay(config, location, duration):
