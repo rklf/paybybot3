@@ -1,13 +1,12 @@
 from datetime import datetime
+import re
 
 import requests
 
 
 class Bot:
     base_headers = {
-        "Host": "api.paybyphone.com",
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.14; rv:66.0)"
-        "Gecko/20100101 Firefox/66.0",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36",
         "Accept-Language": "en-US,en;q=0.5",
         "Accept-Encoding": "gzip, deflate, br",
         "Referer": "https://m2.paybyphone.fr/",
@@ -17,12 +16,22 @@ class Bot:
     }
 
     def __init__(self, username, password):
+        url = "https://m2.paybyphone.fr/static/js/main.0aec44c0.chunk.js"
+        try:
+            resp = requests.get(url)
+            resp.raise_for_status()
+            pattern = r'paymentService:{[^}]*apiKey:\"(.*?)\"'
+            result = re.search(pattern, resp.text, flags=re.MULTILINE)
+            self.apiKey = result.group(1) if result else None
+        except (requests.exceptions.HTTPError, KeyError):
+            self.apiKey = None
+
         r = requests.post(
-            "https://api.paybyphone.com/identity/token",
+            "https://auth.paybyphoneapis.com/token",
             headers={
                 **self.base_headers,
                 "Accept": "application/json, text/plain, */*",
-                "Authorization": "null",
+                "X-Pbp-ClientType": "WebApp",
             },
             data={
                 "grant_type": "password",
@@ -34,13 +43,13 @@ class Bot:
         j = r.json()
         self.authorization = j["token_type"] + " " + j["access_token"]
 
-        r = self._get("https://api.paybyphone.com/parking/accounts")
+        r = self._get("https://consumer.paybyphoneapis.com/parking/accounts")
         j = r.json()
         self.parkingAccountId = j[0]["id"]
 
     def _get_parking_sessions(self):
         ans = self._get(
-            "https://api.paybyphone.com/parking/accounts/%s/sessions"
+            "https://consumer.paybyphoneapis.com/parking/accounts/%s/sessions"
             % self.parkingAccountId,
             params={"periodType": "Current"},
         ).json()
@@ -71,11 +80,11 @@ class Bot:
         )
 
     def get_payment_accounts(self):
-        return self._get("https://api.paybyphone.com/payment/accounts").json()
+        return self._get("https://payments.paybyphoneapis.com/v1/accounts").json()
 
     def _get_rate_options(self, location, licensePlate):
         return self._get(
-            "https://api.paybyphone.com/parking/locations/%s/rateOptions" % location,
+            "https://consumer.paybyphoneapis.com/parking/locations/%s/rateOptions" % location,
             params={
                 "parkingAccountId": self.parkingAccountId,
                 "licensePlate": licensePlate,
@@ -84,7 +93,7 @@ class Bot:
 
     def _get_rate_options_renew(self, location, parkingSessionId):
         return self._get(
-            "https://api.paybyphone.com/parking/locations/%s/rateOptions" % location,
+            "https://consumer.paybyphoneapis.com/parking/locations/%s/rateOptions" % location,
             params={
                 "parkingAccountId": self.parkingAccountId,
                 "parkingSessionId": parkingSessionId,
@@ -95,7 +104,7 @@ class Bot:
         self, durationQuantity, durationTimeUnit, licensePlate, locationId, rateOptionId
     ):
         return self._get(
-            "https://api.paybyphone.com/parking/accounts/%s/quote"
+            "https://consumer.paybyphoneapis.com/parking/accounts/%s/quote"
             % self.parkingAccountId,
             params={
                 "durationQuantity": durationQuantity,
@@ -108,7 +117,7 @@ class Bot:
 
     def _get_renew_quote(self, durationQuantity, durationTimeUnit, parkingSessionId):
         return self._get(
-            "https://api.paybyphone.com/parking/accounts/%s/quote"
+            "https://consumer.paybyphoneapis.com/parking/accounts/%s/quote"
             % self.parkingAccountId,
             params={
                 "durationQuantity": durationQuantity,
@@ -129,7 +138,7 @@ class Bot:
         startTime,
     ):
         return self._post(
-            "https://api.paybyphone.com/parking/accounts/%s/sessions/"
+            "https://consumer.paybyphoneapis.com/parking/accounts/%s/sessions/"
             % self.parkingAccountId,
             json={
                 "licensePlate": licensePlate,
@@ -158,7 +167,7 @@ class Bot:
         durationTimeUnit,
     ):
         r = self._put(
-            "https://api.paybyphone.com/parking/accounts/%s/sessions/%s"
+            "https://consumer.paybyphoneapis.com/parking/accounts/%s/sessions/%s"
             % (self.parkingAccountId, parkingSessionId),
             data={
                 "duration": {
@@ -175,7 +184,7 @@ class Bot:
         assert r.status_code == requests.codes["accepted"]
 
     def _get_workflow(self, quoteId):
-        return self._get("https://api.paybyphone.com/events/workflow/%s" % quoteId)
+        return self._get("https://consumer.paybyphoneapis.com/events/workflow/%s" % quoteId)
 
     def pay(
         self,
@@ -216,6 +225,7 @@ class Bot:
                 **self.base_headers,
                 "Accept": "application/json, text/plain, */*",
                 "x-pbp-version": "2",
+                "x-api-key": self.apiKey,
                 "Authorization": self.authorization,
             },
             **kwargs
