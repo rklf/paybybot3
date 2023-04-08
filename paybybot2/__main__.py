@@ -50,11 +50,12 @@ def cli():
 
 @cli.command()
 @click.argument("config_name")
-def payment_accounts(config_name):
+@click.option("--config", required=False, type=str)
+def payment_accounts(config_name, config):
     """
     Show the payment accounts
     """
-    config = get_config(config_name)
+    config = get_config(config_name, config)
     bot = connect(config)
     pprint(bot.get_payment_accounts())
 
@@ -62,11 +63,12 @@ def payment_accounts(config_name):
 @cli.command()
 @click.argument("config_name")
 @click.option("--location", default=None)
-def check(config_name, location):
+@click.option("--config", required=False, type=str)
+def check(config_name, location, config):
     """
     Check if there is an ongoing subscription
     """
-    config = get_config(config_name)
+    config = get_config(config_name, config)
 
     def _check(config, location):
         bot = connect(config)
@@ -89,14 +91,15 @@ def check(config_name, location):
 @cli.command()
 @click.argument("config_name")
 @click.option("--location", default=None)
-def alert(config_name, location):
+@click.option("--config", required=False, type=str)
+def alert(config_name, location, config):
     """
     1. Check if there is an ongoing subscription
 
     2. Else send a notification
     """
 
-    config = get_config(config_name)
+    config = get_config(config_name, config)
 
     def _alert(config, location):
         bot = connect(config)
@@ -131,7 +134,8 @@ def alert(config_name, location):
 @click.option("--location", required=True, type=str)
 @click.option("--rate", required=True, type=int)
 @click.option("--duration", required=True, type=str)
-def pay(config_name, location, rate, duration):
+@click.option("--config", required=False, type=str)
+def pay(config_name, location, rate, duration, config):
     """
     1. Check if there is an ongoing subscription
 
@@ -141,7 +145,7 @@ def pay(config_name, location, rate, duration):
 
     4. Notify on failure
     """
-    config = get_config(config_name)
+    config = get_config(config_name, config)
 
     def _pay(config, location, duration):
         bot = connect(config)
