@@ -1,10 +1,10 @@
-# PayByBot 2
+# PayByBot 3
 
-This packages implements a CLI interface to [paybyphone](https://www.paybyphone.fr/), allowing you (for example) to automate parking.
+Originally forked from [paybybot2](https://github.com/louisabraham/paybybot2/), this packages implements a CLI interface to [paybyphone](https://www.paybyphone.fr/), allowing you (for example) to automate parking.
 
 ## Installation
 
-    pip install paybybot2
+    pip install paybybot3
 
 ## Usage
 
@@ -17,7 +17,7 @@ Similarly, you can find `--rate` as `rateOptionId` in the output of `check`.
 ### alert
 
 ```
-Usage: paybybot2 alert [OPTIONS] CONFIG_NAME
+Usage: paybybot3 alert [OPTIONS] CONFIG_NAME
 
   1. Check if there is an ongoing subscription
 
@@ -31,7 +31,7 @@ Options:
 ### check
 
 ```
-Usage: paybybot2 check [OPTIONS] CONFIG_NAME
+Usage: paybybot3 check [OPTIONS] CONFIG_NAME
 
   Check if there is an ongoing subscription
 
@@ -43,7 +43,7 @@ Options:
 ### pay
 
 ```
-Usage: paybybot2 pay [OPTIONS] CONFIG_NAME
+Usage: paybybot3 pay [OPTIONS] CONFIG_NAME
 
   1. Check if there is an ongoing subscription
 
@@ -63,7 +63,7 @@ Options:
 ### payment-accounts
 
 ```
-Usage: paybybot2 payment-accounts [OPTIONS] CONFIG_NAME
+Usage: paybybot3 payment-accounts [OPTIONS] CONFIG_NAME
 
 Options:
   --help  Show this message and exit.
@@ -71,7 +71,7 @@ Options:
 
 ## Configuration
 
-paybybot2 allows you to store your configuration in a YAML file `~/.config/paybybot2.yml`.
+paybybot3 allows you to store your configuration in a YAML file `~/.config/paybybot3.yml`.
 
 Here is an example:
 

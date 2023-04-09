@@ -9,18 +9,18 @@ def read(fname):
 
 
 setup(
-    name="paybybot2",
-    version="0.0.2",
-    author="Louis Abraham",
+    name="paybybot3",
+    version="0.0.32",
+    author="Louis Abraham (louisabraham) and updated by rklf",
     license="MIT",
     author_email="louis.abraham@yahoo.fr",
     description="CLI interface to https://www.paybyphone.fr/",
     long_description=read("README.md"),
     long_description_content_type="text/markdown",
-    url="https://github.com/louisabraham/paybybot2",
-    packages=["paybybot2"],
+    url="https://github.com/rklf/paybybot3",
+    packages=["paybybot3"],
     install_requires=["pyyaml", "requests", "click"],
     python_requires=">=3.6",
-    entry_points={"console_scripts": ["paybybot2 = paybybot2.__main__:cli"]},
+    entry_points={"console_scripts": ["paybybot3 = paybybot3.__main__:cli"]},
     classifiers=["Topic :: Utilities"],
 )
