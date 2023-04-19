@@ -25,6 +25,7 @@ Usage: paybybot3 alert [OPTIONS] CONFIG_NAME
 
 Options:
   --location TEXT
+  --config TEXT
   --help           Show this message and exit.
 ```
 
@@ -37,6 +38,7 @@ Usage: paybybot3 check [OPTIONS] CONFIG_NAME
 
 Options:
   --location TEXT
+  --config TEXT
   --help           Show this message and exit.
 ```
 
@@ -57,6 +59,7 @@ Options:
   --location TEXT  [required]
   --rate INTEGER   [required]
   --duration TEXT  [required]
+  --config TEXT
   --help           Show this message and exit.
 ```
 
@@ -65,8 +68,11 @@ Options:
 ```
 Usage: paybybot3 payment-accounts [OPTIONS] CONFIG_NAME
 
+  Show the payment accounts
+
 Options:
-  --help  Show this message and exit.
+  --config TEXT
+  --help         Show this message and exit.
 ```
 
 ## Configuration
