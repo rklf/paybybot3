@@ -10,8 +10,8 @@ def read(fname):
 
 setup(
     name="paybybot3",
-    version="0.0.32",
-    author="Louis Abraham (louisabraham) and updated by rklf",
+    version="0.0.33",
+    author="rklf but originally created by Louis Abraham (louisabraham)",
     license="MIT",
     author_email="louis.abraham@yahoo.fr",
     description="CLI interface to https://www.paybyphone.fr/",
