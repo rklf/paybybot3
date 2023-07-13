@@ -188,5 +188,21 @@ def pay(config_name, location, rate, duration, config):
     catch_exceptions(config)(_pay)(config, location, duration)
 
 
+@cli.command()
+@click.argument("config_name")
+@click.option("--config", required=False, type=str)
+def vehicles(config_name, config):
+    """
+    Show the vehicles
+    """
+    config = get_config(config_name, config)
+
+    def _vehicles(config):
+        bot = connect(config)
+        pprint(bot.get_vehicles())
+
+    catch_exceptions(config)(_vehicles)(config)
+
+
 if __name__ == "__main__":
     cli()

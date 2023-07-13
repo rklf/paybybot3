@@ -63,6 +63,18 @@ Options:
   --help           Show this message and exit.
 ```
 
+### vehicles
+
+```
+Usage: paybybot3 vehicles [OPTIONS] CONFIG_NAME
+
+  1. Show the vehicles
+
+Options:
+  --config TEXT
+  --help           Show this message and exit.
+```
+
 ### payment-accounts
 
 ```
