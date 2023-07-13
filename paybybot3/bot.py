@@ -217,6 +217,9 @@ class Bot:
         )
         return post.text
 
+    def get_vehicles(self):
+        return self._get("https://consumer.paybyphoneapis.com/identity/profileservice/v1/members/vehicles/paybyphone").json()
+
     def _request(self, method, url, **kwargs):
         return requests.request(
             method,
