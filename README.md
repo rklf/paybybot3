@@ -99,16 +99,15 @@ example_account:
   paybyphone:
     login: "+330612345678"
     password: password
-  email:
-    login: your-email@gmail.com
-    password: password
+  apprise: #optional
+    host: "http://localhost:8000/notify/KEY"
+    tags: 
+      - "my_tag"
+    notify: true
+    notify_on_error: true
   paymentAccountId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-  notify:
-    - your-email@gmail.com
-  notify_on_error:
-    - your-email@gmail.com
 ```
 
-For the moment we only support Gmail to send you notifications. You will need an [App Password](https://support.google.com/mail/answer/185833).
+Notifications are delivered through the [Apprise API](https://github.com/caronc/apprise-api) 
 
 The `paymentAccountId` can be found in the output of the `payment-accounts` command.
