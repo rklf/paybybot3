@@ -2,6 +2,7 @@ import functools
 from pprint import pprint
 import sys
 from time import sleep
+from datetime import datetime
 
 import click
 
@@ -131,7 +132,8 @@ def alert(config_name, location, config):
 @click.option("--rate", required=True, type=int)
 @click.option("--duration", required=True, type=str)
 @click.option("--config", required=False, type=str)
-def pay(config_name, location, rate, duration, config):
+@click.option("--buffer", is_flag=True)
+def pay(config_name, location, rate, duration, buffer, config):
     """
     1. Check if there is an ongoing subscription
 
@@ -152,7 +154,12 @@ def pay(config_name, location, rate, duration, config):
         if sessions:
             print("Already registered", file=sys.stderr)
             pprint(sessions)
-            return
+            if buffer:
+                expireTime = min([session["expireTime"] for session in sessions])
+                remainingTime = expireTime - datetime.utcnow()
+                sleep(remainingTime.total_seconds() + 15)
+            else:
+                return
         bot.pay(
             durationQuantity=duration,
             durationTimeUnit="Days",
