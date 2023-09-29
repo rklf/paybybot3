@@ -16,10 +16,12 @@ LOGGER_CONFIG = {
             'stream': 'ext://sys.stdout'
         },
         'file': {
-            'class': 'logging.FileHandler',
+            'class': 'logging.handlers.RotatingFileHandler',
             'formatter': 'standard',
             'filename': expanduser('~/paybybot3.log'),
-            'mode': 'a'
+            'mode': 'a',
+            'maxBytes': 100_000,
+            'backupCount': 2
         }
     },
     'root': {
