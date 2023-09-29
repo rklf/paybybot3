@@ -159,8 +159,8 @@ def pay(config_name, location, rate, duration, buffer, config):
                 remainingTime = expireTime - datetime.utcnow()
                 logging.info(f"Waiting for the current session to expire in: {remainingTime}")
                 sleep(max(0, remainingTime.total_seconds() + 15))
-            else:
-                return
+                _pay(config, location, duration)
+            return
         bot.pay(
             durationQuantity=duration,
             durationTimeUnit="Days",
