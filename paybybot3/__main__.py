@@ -80,10 +80,10 @@ def check(config_name, location, config):
             % (config["plate"], location, sessions)
         )
         if sessions:
-            print("Found sessions", file=sys.stderr)
+            logging.info("Found sessions")
             pprint(sessions)
         else:
-            print("No session", file=sys.stderr)
+            logging.info("No session")
 
     catch_exceptions(config)(_check)(config, location)
 
@@ -111,10 +111,10 @@ def alert(config_name, location, config):
             % (config["plate"], location, sessions)
         )
         if sessions:
-            print("Found sessions", file=sys.stderr)
+            logging.info("Found sessions")
             pprint(sessions)
         else:
-            print("No session, sending an apprise notification", file=sys.stderr)
+            logging("No session, sending an apprise notification")
             if config.get("apprise") and config.get("apprise").get("notify"):
                 notify_apprise(
                     host=config["apprise"]["host"],
@@ -152,7 +152,7 @@ def pay(config_name, location, rate, duration, buffer, config):
             licensePlate=config["plate"], locationId=location
         )
         if sessions:
-            print("Already registered", file=sys.stderr)
+            logging.info("Already registered")
             pprint(sessions)
             if buffer:
                 expireTime = min([session["expireTime"] for session in sessions])
@@ -173,18 +173,20 @@ def pay(config_name, location, rate, duration, buffer, config):
         sessions = bot.get_parking_sessions(
             licensePlate=config["plate"], locationId=location
         )
-        if sessions:
-            print("Payment done", file=sys.stderr)
-            pprint(sessions)
+        if not sessions:
+            result = "Payment failed"
+            logging.error(result)
         else:
-            print("Payment failed", file=sys.stderr)
-            if config.get("apprise") and config.get("apprise").get("notify"):
-                notify_apprise(
-                    host=config["apprise"]["host"],
-                    title="PayByPhone Parking Alert",
-                    body = "Currently no parking is active: https://m2.paybyphone.fr/parking",
-                    tags=config["apprise"]["tags"]
-                )
+            result = "Payment done"
+            logging.info(result)
+            pprint(sessions)
+        if config.get("apprise") and config.get("apprise").get("notify"):
+            notify_apprise(
+                host=config["apprise"]["host"],
+                title="PayByPhone Parking Alert",
+                body = f"{result}: https://m2.paybyphone.fr/parking",
+                tags=config["apprise"]["tags"]
+            )
 
     catch_exceptions(config)(_pay)(config, location, duration)
 
