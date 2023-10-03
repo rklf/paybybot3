@@ -10,7 +10,7 @@ def read(fname):
 
 setup(
     name="paybybot3",
-    version="0.0.33",
+    version="0.1.0",
     author="rklf but originally created by Louis Abraham (louisabraham)",
     license="MIT",
     author_email="louis.abraham@yahoo.fr",
