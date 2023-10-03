@@ -21,13 +21,12 @@ def catch_exceptions(config):
                 logging.exception(fun.__name__)
                 import traceback
 
-                if config["notify_on_error"]:
+                if config.get("apprise"):
                     notify(
-                        email=config["email"]["login"],
-                        pwd=config["email"]["password"],
-                        subject="ERREUR STATIONNEMENT",
-                        message=traceback.format_exc(),
-                        to=config["notify_on_error"],
+                        services=config.get('apprise').get('services'),
+                        title="PayByPhone's bot ran into an error",
+                        body=traceback.format_exc(),
+                        tag="broadcast-failure",
                     )
 
         return wrapper
@@ -80,10 +79,10 @@ def check(config_name, location, config):
             % (config["plate"], location, sessions)
         )
         if sessions:
-            print("Found sessions", file=sys.stderr)
+            logging.info("Found sessions")
             pprint(sessions)
         else:
-            print("No session", file=sys.stderr)
+            logging.info("No session")
 
     catch_exceptions(config)(_check)(config, location)
 
@@ -111,20 +110,17 @@ def alert(config_name, location, config):
             % (config["plate"], location, sessions)
         )
         if sessions:
-            print("Found sessions", file=sys.stderr)
+            logging.info("Found sessions")
             pprint(sessions)
         else:
-            print("No session, sending email to", config["notify"], file=sys.stderr)
-            notify(
-                email=config["email"]["login"],
-                pwd=config["email"]["password"],
-                subject="ALERTE STATIONNEMENT",
-                message=(
-                    "Aucun stationnement en cours !!!\n"
-                    "Pour le renouveller : https://m2.paybyphone.fr/parking"
-                ),
-                to=config["notify"],
-            )
+            logging.info("No session — sending an apprise notification to info broadcast")
+            if config.get("apprise"):
+                notify(
+                    services=config.get('apprise').get('services'),
+                    title="PayByPhone Parking Alert",
+                    body="Currently no parking is active: https://m2.paybyphone.fr/parking",
+                    tag="broadcast-info",
+                )
 
     catch_exceptions(config)(_alert)(config, location)
 
@@ -154,7 +150,7 @@ def pay(config_name, location, rate, duration, config):
             licensePlate=config["plate"], locationId=location
         )
         if sessions:
-            print("Already registered", file=sys.stderr)
+            logging.info("Already registered")
             pprint(sessions)
             return
         bot.pay(
@@ -169,21 +165,25 @@ def pay(config_name, location, rate, duration, config):
         sessions = bot.get_parking_sessions(
             licensePlate=config["plate"], locationId=location
         )
-        if sessions:
-            print("Payment done", file=sys.stderr)
-            pprint(sessions)
+        if not sessions:
+            logging.error("Payment failed")
+            if config.get("apprise"):
+                notify(
+                    services=config.get('apprise').get('services'),
+                    title="PayByPhone Parking Payment",
+                    body="Payment failed",
+                    tag="broadcast-warning",
+                )
         else:
-            print("Payment failed", file=sys.stderr)
-            notify(
-                email=config["email"]["login"],
-                pwd=config["email"]["password"],
-                subject="ALERTE STATIONNEMENT",
-                message=(
-                    "Aucun stationnement en cours !!!\n"
-                    "Pour le renouveller : https://m2.paybyphone.fr/parking"
-                ),
-                to=config["notify"],
-            )
+            logging.info("Payment succeeded")
+            pprint(sessions)
+            if config.get("apprise"):
+                notify(
+                    services=config.get('apprise').get('services'),
+                    title="PayByPhone Parking Payment",
+                    body="Payment succeeded",
+                    tag="broadcast-success",
+                )
 
     catch_exceptions(config)(_pay)(config, location, duration)
 

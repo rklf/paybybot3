@@ -19,7 +19,7 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/rklf/paybybot3",
     packages=["paybybot3"],
-    install_requires=["pyyaml", "requests", "click"],
+    install_requires=["pyyaml", "requests", "click", "apprise"],
     python_requires=">=3.6",
     entry_points={"console_scripts": ["paybybot3 = paybybot3.__main__:cli"]},
     classifiers=["Topic :: Utilities"],

@@ -99,16 +99,25 @@ example_account:
   paybyphone:
     login: "+330612345678"
     password: password
-  email:
-    login: your-email@gmail.com
-    password: password
+  apprise: #optional
+    services:
+      - mail:
+          service_url: "mailtos://{user}:{password}@{domain}?name=PayByBot3"
+          tag:
+            - "broadcast-warning"
+            - "broadcast-failure"
+      - discord:
+          service_url: "discord://{WebhookID}/{WebhookToken}"
+          tag:
+            - "broadcast-info"
+            - "broadcast-success"
+            - "broadcast-warning"
+            - "broadcast-failure"
+      - ...
   paymentAccountId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-  notify:
-    - your-email@gmail.com
-  notify_on_error:
-    - your-email@gmail.com
 ```
 
-For the moment we only support Gmail to send you notifications. You will need an [App Password](https://support.google.com/mail/answer/185833).
+Notifications are delivered through the [Apprise](https://github.com/caronc/apprise) library.    
+If `apprise` is configured, at least one service must be configured. Service URLs can be found in the Apprise [notification services documentation](https://github.com/caronc/apprise/wiki#notification-services) - refer to their documentation for required and additional parameters. Tags are mandatory and must at least be one of `broadcast-info`, `broadcast-success`, `broadcast-warning` or `broadcast-failure`, they are used to filter the notifications you want to receive.
 
 The `paymentAccountId` can be found in the output of the `payment-accounts` command.
