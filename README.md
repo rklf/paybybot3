@@ -59,6 +59,7 @@ Options:
   --location TEXT  [required]
   --rate INTEGER   [required]
   --duration TEXT  [required]
+  --buffer BOOLEAN
   --config TEXT
   --help           Show this message and exit.
 ```
