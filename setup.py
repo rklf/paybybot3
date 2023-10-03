@@ -10,7 +10,7 @@ def read(fname):
 
 setup(
     name="paybybot3",
-    version="0.0.33",
+    version="0.1.0",
     author="rklf but originally created by Louis Abraham (louisabraham)",
     license="MIT",
     author_email="louis.abraham@yahoo.fr",
@@ -19,7 +19,7 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/rklf/paybybot3",
     packages=["paybybot3"],
-    install_requires=["pyyaml", "requests", "click"],
+    install_requires=["pyyaml", "requests", "click", "apprise"],
     python_requires=">=3.6",
     entry_points={"console_scripts": ["paybybot3 = paybybot3.__main__:cli"]},
     classifiers=["Topic :: Utilities"],
