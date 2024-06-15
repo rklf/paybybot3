@@ -1,8 +1,7 @@
 import functools
 from pprint import pprint
-import sys
 from time import sleep
-from datetime import datetime
+from datetime import datetime, timezone
 
 import click
 
@@ -131,9 +130,10 @@ def alert(config_name, location, config):
 @click.option("--location", required=True, type=str)
 @click.option("--rate", required=True, type=int)
 @click.option("--duration", required=True, type=str)
+@click.option("--unit", default="Days", type=click.Choice(["Days", "Minutes"]), help="Default: Days")
 @click.option("--buffer", is_flag=True)
 @click.option("--config", required=False, type=str)
-def pay(config_name, location, rate, duration, buffer, config):
+def pay(config_name, location, rate, duration, unit, buffer, config):
     """
     1. Check if there is an ongoing subscription
 
@@ -145,7 +145,7 @@ def pay(config_name, location, rate, duration, buffer, config):
     """
     config = get_config(config_name, config)
 
-    def _pay(config, location, duration):
+    def _pay(config, location, duration, unit):
         bot = connect(config)
         logging.info("launching payment")
         sessions = bot.get_parking_sessions(
@@ -156,14 +156,15 @@ def pay(config_name, location, rate, duration, buffer, config):
             pprint(sessions)
             if buffer:
                 expireTime = min([session["expireTime"] for session in sessions])
-                remainingTime = expireTime - datetime.utcnow()
+                expireTime = expireTime.replace(tzinfo=timezone.utc)
+                remainingTime = expireTime - datetime.now(timezone.utc)
                 logging.info(f"Waiting for the current session to expire in: {remainingTime}")
                 sleep(max(0, remainingTime.total_seconds() + 1))
-                _pay(config, location, duration)
+                _pay(config, location, duration, unit)
             return
         bot.pay(
             durationQuantity=duration,
-            durationTimeUnit="Days",
+            durationTimeUnit=unit,
             licensePlate=config["plate"],
             locationId=location,
             rateOptionId=rate,
@@ -193,7 +194,7 @@ def pay(config_name, location, rate, duration, buffer, config):
                     tag="broadcast-success",
                 )
 
-    catch_exceptions(config)(_pay)(config, location, duration)
+    catch_exceptions(config)(_pay)(config, location, duration, unit)
 
 
 @cli.command()
