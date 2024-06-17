@@ -56,13 +56,13 @@ Usage: paybybot3 pay [OPTIONS] CONFIG_NAME
   4. Notify on failure
 
 Options:
---location TEXT        [required]
---rate INTEGER         [required]
---duration TEXT        [required]
---unit [Days|Minutes]  Default: Days
---buffer
---config TEXT
---help                 Show this message and exit.
+  --location TEXT              [required]
+  --rate INTEGER               [required]
+  --duration TEXT              [required]
+  --unit [Days|Hours|Minutes]  Default: Days
+  --buffer
+  --config TEXT
+  --help                       Show this message and exit.
 ```
 
 ### vehicles

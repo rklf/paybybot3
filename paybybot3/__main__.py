@@ -130,7 +130,7 @@ def alert(config_name, location, config):
 @click.option("--location", required=True, type=str)
 @click.option("--rate", required=True, type=int)
 @click.option("--duration", required=True, type=str)
-@click.option("--unit", default="Days", type=click.Choice(["Days", "Minutes"]), help="Default: Days")
+@click.option("--unit", default="Days", type=click.Choice(["Days", "Hours", "Minutes"]), help="Default: Days")
 @click.option("--buffer", is_flag=True)
 @click.option("--config", required=False, type=str)
 def pay(config_name, location, rate, duration, unit, buffer, config):
