@@ -79,10 +79,10 @@ def check(config_name, location, config):
             % (config["plate"], location, sessions)
         )
         if sessions:
-            logging.info("Found sessions")
+            logging.info(f"Found sessions in {location}")
             pprint(sessions)
         else:
-            logging.info("No session")
+            logging.info(f"No session in {location}")
 
     catch_exceptions(config)(_check)(config, location)
 
@@ -110,15 +110,15 @@ def alert(config_name, location, config):
             % (config["plate"], location, sessions)
         )
         if sessions:
-            logging.info("Found sessions")
+            logging.info(f"Found sessions in {location}")
             pprint(sessions)
         else:
-            logging.info("No session — sending an apprise notification to info broadcast")
+            logging.info(f"No session in {location} — sending an apprise notification to info broadcast")
             if config.get("apprise"):
                 notify(
                     services=config.get('apprise').get('services'),
                     title="PayByPhone Parking Alert",
-                    body="Currently no parking is active: https://m2.paybyphone.fr/parking",
+                    body=f"Currently no parking is active in {location} — please check : https://m2.paybyphone.fr/parking",
                     tag="broadcast-info",
                 )
 
@@ -152,7 +152,7 @@ def pay(config_name, location, rate, duration, unit, buffer, config):
             licensePlate=config["plate"], locationId=location
         )
         if sessions:
-            logging.info("Already registered")
+            logging.info(f"Already registered in {location} for {duration} {unit} at rate {rate}")
             pprint(sessions)
             if buffer:
                 expireTime = min([session["expireTime"] for session in sessions])
@@ -175,22 +175,22 @@ def pay(config_name, location, rate, duration, unit, buffer, config):
             licensePlate=config["plate"], locationId=location
         )
         if not sessions:
-            logging.error("Payment failed")
+            logging.error(f"Payment failed in {location} for {duration} {unit} at rate {rate}")
             if config.get("apprise"):
                 notify(
                     services=config.get('apprise').get('services'),
                     title="PayByPhone Parking Payment",
-                    body="Payment failed",
+                    body=f"Payment failed in {location} for {duration} {unit} at rate {rate}",
                     tag="broadcast-warning",
                 )
         else:
-            logging.info("Payment succeeded")
+            logging.info(f"Payment succeeded in {location} for {duration} {unit} at rate {rate}")
             pprint(sessions)
             if config.get("apprise"):
                 notify(
                     services=config.get('apprise').get('services'),
                     title="PayByPhone Parking Payment",
-                    body="Payment succeeded",
+                    body=f"Payment succeeded in {location} for {duration} {unit} at rate {rate}",
                     tag="broadcast-success",
                 )
 
