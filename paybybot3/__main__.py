@@ -102,12 +102,12 @@ def alert(config_name, location, config):
 
     def _alert(config, location):
         bot = connect(config)
+        licensePlate=config["plate"]
         sessions = bot.get_parking_sessions(
-            licensePlate=config["plate"], locationId=location
+            licensePlate=licensePlate, locationId=location
         )
         logging.info(
-            "retrieved parking sessions with filter licensePlate=%s, locationId=%s: %s"
-            % (config["plate"], location, sessions)
+            f"retrieved parking sessions with filter licensePlate={licensePlate}, locationId={location}: {sessions}"
         )
         if sessions:
             logging.info(f"Found sessions in {location}")
@@ -118,7 +118,7 @@ def alert(config_name, location, config):
                 notify(
                     services=config.get('apprise').get('services'),
                     title="PayByPhone Parking Alert",
-                    body=f"Currently no parking is active in {location} — please check : https://m2.paybyphone.fr/parking",
+                    body=f"[{licensePlate}] Currently no parking is active in {location} — please check : https://m2.paybyphone.fr/parking",
                     tag="broadcast-info",
                 )
 
@@ -148,8 +148,9 @@ def pay(config_name, location, rate, duration, unit, buffer, config):
     def _pay(config, location, duration, unit):
         bot = connect(config)
         logging.info("launching payment")
+        licensePlate = config["plate"]
         sessions = bot.get_parking_sessions(
-            licensePlate=config["plate"], locationId=location
+            licensePlate=licensePlate, locationId=location
         )
         if sessions:
             logging.info(f"Already registered in {location} for {duration} {unit} at rate {rate}")
@@ -165,32 +166,32 @@ def pay(config_name, location, rate, duration, unit, buffer, config):
         bot.pay(
             durationQuantity=duration,
             durationTimeUnit=unit,
-            licensePlate=config["plate"],
+            licensePlate=licensePlate,
             locationId=location,
             rateOptionId=rate,
             paymentAccountId=config["paymentAccountId"],
         )
         sleep(20)  # wait for the payment to be executed
         sessions = bot.get_parking_sessions(
-            licensePlate=config["plate"], locationId=location
+            licensePlate=licensePlate, locationId=location
         )
         if not sessions:
-            logging.error(f"Payment failed in {location} for {duration} {unit} at rate {rate}")
+            logging.error(f"[{licensePlate}] Payment failed in {location} for {duration} {unit} at rate {rate}")
             if config.get("apprise"):
                 notify(
                     services=config.get('apprise').get('services'),
                     title="PayByPhone Parking Payment",
-                    body=f"Payment failed in {location} for {duration} {unit} at rate {rate}",
+                    body=f"[{licensePlate}] Payment failed in {location} for {duration} {unit} at rate {rate}",
                     tag="broadcast-warning",
                 )
         else:
-            logging.info(f"Payment succeeded in {location} for {duration} {unit} at rate {rate}")
+            logging.info(f"[{licensePlate}] Payment succeeded in {location} for {duration} {unit} at rate {rate}")
             pprint(sessions)
             if config.get("apprise"):
                 notify(
                     services=config.get('apprise').get('services'),
                     title="PayByPhone Parking Payment",
-                    body=f"Payment succeeded in {location} for {duration} {unit} at rate {rate}",
+                    body=f"[{licensePlate}] Payment succeeded in {location} for {duration} {unit} at rate {rate}",
                     tag="broadcast-success",
                 )
 
