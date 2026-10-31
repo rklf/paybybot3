@@ -82,12 +82,11 @@ class EarlyRenewal(unittest.TestCase):
         self.assertEqual(next_check, ticket["expireTime"] + timedelta(seconds=30))
         mail.assert_not_called()
 
-    def test_bank_refusal_leaves_a_day_and_tries_again_in_an_hour(self):
+    def test_bank_asking_leaves_until_the_end_of_the_week(self):
         challenged = {"challenged": True, "jobStages": [{"status": "authenticationChallengePending"}]}
-        before = datetime.now(timezone.utc)
         outcome, p, mail, session, ticket, next_check = self.run_renewal(hours_left=3, extend=challenged)
-        self.assertEqual(outcome, "unconfirmed")
-        self.assertTrue(timedelta(minutes=59) < next_check - before < timedelta(minutes=61))
+        self.assertEqual(outcome, "bank_wait")
+        self.assertEqual(p["last_error"], web.BANK_WAIT)
         self.assertEqual(mail.call_args.args[1], "problem")
 
     def test_activating_in_the_last_day_extends_at_once(self):

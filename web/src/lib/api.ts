@@ -42,6 +42,8 @@ export type Autopilot = Parking & {
   /** When the server looks at this renewal next (online only): the next payment, or a retry. */
   nextCheck?: string | null
   lastError: string | null
+  /** The bank waits for a validation: the signed token of « Valider mon paiement ». */
+  validate?: string | null
   email?: string
   pausedFrom?: string | null
   pausedUntil?: string | null
@@ -160,6 +162,10 @@ export const api = {
   inviteCheck: (code: string) => request<{ valid: boolean }>(`/api/invite/${encodeURIComponent(code)}`),
   linkOpen: (source: string, device: string, visit: number, visitor: string) =>
     post<{ id: number | null; sig: string | null }>('/api/link-open', { source, device, visit, visitor }),
+  validatePayment: (t: string) =>
+    post<{ status: 'challenge' | 'paid' | 'done'; url?: string; html?: string; sig?: string }>('/api/validate', { t }),
+  pushKey: () => request<{ key: string }>('/api/push/key'),
+  pushSubscribe: (subscription: PushSubscriptionJSON) => post<{ ok: boolean }>('/api/push/subscribe', subscription),
   myInvite: () => request<{ code: string; url: string }>('/api/invite'),
   requestAccess: (email: string, turnstile = '') => post<{ ok: boolean }>('/api/access', { email, turnstile }),
   me: () => request<Me>('/api/me'),

@@ -120,27 +120,6 @@ class RunningTicket(unittest.TestCase):
         self.assertEqual((q["cost"], q.get("priceSource"), q["afterCurrent"]),
                          ({"amount": 5.0, "currency": "EUR"}, "history", True))
 
-    def test_bank_asking_to_confirm_is_tried_again_in_an_hour(self):
-        before = datetime.now(timezone.utc)
-        outcome, patch_, mail, _ = self.run_renewal([], pay_error=web.BankCheck(web.BANK_CHECK))
-        self.assertEqual(outcome, "unconfirmed")
-        self.assertNotIn("enabled", patch_)
-        self.assertIn("3-D Secure", patch_["last_error"])
-        retry = datetime.fromisoformat(patch_["next_check"]) - before
-        self.assertTrue(timedelta(minutes=59) < retry < timedelta(minutes=61))
-        mail.assert_called_once()
-        self.assertFalse(mail.call_args.kwargs["suspended"])
-
-    def test_bank_refusing_again_suspends_with_its_reason(self):
-        outcome, patch_, mail, _ = self.run_renewal([], pay_error=web.BankCheck(web.BANK_CHECK),
-                                                    last_error=web.BANK_CHECK)
-        self.assertEqual(outcome, "unconfirmed")
-        self.assertFalse(patch_["enabled"])
-        self.assertIn("3-D Secure", patch_["last_error"])
-        self.assertIn("suspendu", patch_["last_error"])
-        mail.assert_called_once()  # this time to say it is suspended
-        self.assertTrue(mail.call_args.kwargs["suspended"])
-
     def test_resident_rate_refused_is_said_before_paying(self):
         refused = [{"ratePolicyId": "101", "name": "Résident", "parkingNotAllowedReason": "PermitExpired"}]
         outcome, patch_, _, pay = self.run_renewal([], rates=refused)

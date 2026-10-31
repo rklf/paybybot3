@@ -33,9 +33,9 @@ from pathlib import Path
 
 import requests
 from fastapi import Cookie, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Annotated
 
 from . import schedule
@@ -550,6 +550,10 @@ BANK_CHECK = ("Votre banque n'a pas accepté ce paiement automatique : soit elle
               "(3-D Secure), soit la carte n'est plus utilisable (bloquée, opposée, plafond atteint…). Vérifiez votre "
               "carte, ou ajoutez-en une autre dans l'application PayByPhone, puis relancez le renouvellement. Si vous "
               "avez validé ce paiement dans l'application de votre banque, le ticket apparaîtra dans PayByPhone.")
+# The renewal waits for the card holder: never paid again on its own, nor suspended before the time is up.
+BANK_WAIT = "Votre banque demande de valider ce paiement (Face ID ou code). Touchez « Valider mon paiement »."
+BANK_WAIT_DAY = timedelta(hours=24)  # no ticket running: how long the validation is awaited
+BANK_REMIND = timedelta(hours=3)  # no ticket running: reminded this soon; a running week: this long before its end
 NO_CARD = ("Aucune carte bancaire dans votre compte PayByPhone : ajoutez-en une dans l'application PayByPhone, "
            "puis relancez le renouvellement.")
 CARD_EXPIRED = ("La carte bancaire de votre compte PayByPhone a expiré (%s) : ajoutez votre nouvelle carte dans "
@@ -560,6 +564,10 @@ RESIDENT_REFUSED = ("PayByPhone n'accepte plus le tarif résident pour ce véhic
 
 class BankCheck(Unconfirmed):
     """The bank asked the card holder to confirm the payment (3-D Secure): nothing can be done unattended."""
+
+    def __init__(self, message, job_id=None):
+        super().__init__(message)
+        self.job_id = job_id
 
 
 # The e-mails' button: fix the card or the payment there. PayByPhone's own app link (AppsFlyer OneLink, declared
@@ -644,7 +652,7 @@ def pay_and_confirm(session, location, rate, duration, unit, plate, paymentAccou
     log_diagnosis(session)
     if result.get("challenged") or any("authenticationChallenge" in str(st.get("status"))
                                        for st in result.get("jobStages") or []):
-        raise BankCheck(BANK_CHECK)
+        raise BankCheck(BANK_CHECK, result.get("jobId"))
     raise Unconfirmed(UNCONFIRMED)
 
 
@@ -1127,6 +1135,9 @@ def notify(details, event, **info):
     """One message per renewal event; the address lives only in the encrypted details."""
     if event == "problem":
         alert_owner(details, info)
+        if info.get("message") == BANK_WAIT:
+            notify_bank(details)
+            return
     to = (details or {}).get("email")
     if not to:
         return
@@ -1180,6 +1191,18 @@ def notify(details, event, **info):
                    "Le renouvellement a besoin de vous",
                    ["Le renouvellement automatique pour %s n'a pas pu payer :" % car, message, next_step,
                     SMS_HINT], ("Ouvrir PayByPhone", PAYBYPHONE_URL))
+
+
+def notify_bank(details):
+    """The bank wants the payment confirmed: on the client's phone if they accepted alerts, and by e-mail."""
+    link = validate_link(details.get("owner"), details.get("id"))
+    plate = plate_text(details.get("plate"))
+    send_push(details.get("owner"), "Votre banque demande une validation",
+              "Touchez ici pour valider le ticket de %s." % plate, link)
+    send_email(details.get("email"), "Votre banque demande une validation · %s" % plate, "Validez votre paiement",
+               ["Votre banque demande de confirmer le paiement du ticket de %s, zone %s (Face ID ou code)."
+                % (plate, details.get("location")),
+                "Sans cette validation, le ticket ne sera pas renouvelé."], ("Valider mon paiement", link))
 
 
 DAY_NAMES = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
@@ -1340,7 +1363,7 @@ def extend_and_confirm(session, ticket, row, card, attempts=10, delay=3):
     log_diagnosis(session)
     if result.get("challenged") or any("authenticationChallenge" in str(st.get("status"))
                                        for st in result.get("jobStages") or []):
-        raise BankCheck(BANK_CHECK)
+        raise BankCheck(BANK_CHECK, result.get("jobId"))
     raise Unconfirmed(UNCONFIRMED)
 
 
@@ -1575,7 +1598,8 @@ def bot_from_refresh(refresh, owner=None):
 
 
 RENEWAL_FIELDS = ("label", "plate", "location", "rate", "duration", "unit", "payment_account_id", "email", "days",
-                  "start", "tz", "cmis_attested_at", "date_from", "date_to")
+                  "start", "tz", "cmis_attested_at", "date_from", "date_to",
+                  "bank_job", "bank_ends", "bank_deadline", "bank_remind", "bank_reminded")
 
 
 def encrypt_details(details):
@@ -1718,6 +1742,7 @@ def stored_to_autopilot(row):
         "email": row.get("email") or "", "pausedFrom": row.get("paused_from"), "pausedUntil": row.get("paused_until"),
         "days": row.get("days") or None, "start": row.get("start") or None,
         "dateFrom": row.get("date_from") or None, "dateTo": row.get("date_to") or None,
+        "validate": validate_token(row["owner"], row["id"]) if row.get("last_error") == BANK_WAIT else None,
     }
 
 
@@ -1772,8 +1797,9 @@ def keep_early_stops(session, row):
         log.warning("early stops not checked: %s", str(e)[:200])
 
 
-def process_renewal(row, refresh_token=None, activating=False, refused=False):
-    """Check one stored renewal and pay for it if no session is active. Never raises."""
+def process_renewal(row, refresh_token=None, activating=False, refused=False, validating=False):
+    """Check one stored renewal and pay for it if no session is active. Never raises.
+    validating: the card holder just asked to validate a payment their bank wants confirmed, so it is paid now."""
     now = datetime.now(timezone.utc)
     patch = {}
     try:
@@ -1838,8 +1864,28 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False):
         until = parse_dt(row.get("paused_until"))
         pause = parse_dt(row.get("paused_from")) if until is None or until > now else None
         # At 20:00 the day before the end; when activating, at once if PayByPhone already offers to extend.
-        due = bool(ticket) and (now >= extension_time(ends) or (activating and ends - now <= EARLY_RENEWAL))
-        if ticket and due and not (pause and pause <= ends):
+        due = bool(ticket) and (now >= extension_time(ends) or ((activating or validating) and ends - now <= EARLY_RENEWAL))
+        if previous_error == BANK_WAIT and not validating:
+            # Waiting on the card holder: paid only if the ticket moved, never tried again from here.
+            if bank_validated(row, active):
+                expire = covered_until(active)
+                next_check = schedule.next_slot(rule, now) if rule else extension_time(expire)
+                patch.update(last_payment=utc_iso(now), last_error=None,
+                             next_check=utc_iso(next_check or now + timedelta(days=30)))
+                outcome = "paid"
+            elif now >= parse_dt(row.get("bank_deadline")):
+                patch.update(enabled=False, last_error=BANK_CHECK + " Renouvellement suspendu.")
+                outcome = "unconfirmed"
+            else:
+                outcome = "bank_wait"
+                remind, deadline = parse_dt(row.get("bank_remind")), parse_dt(row.get("bank_deadline"))
+                reminded = bool(row.get("bank_reminded"))
+                if not reminded and now >= remind:
+                    notify_bank(row)
+                    patch["data"] = encrypt_details({**row, "bank_reminded": "1"})
+                    reminded = True
+                patch["next_check"] = utc_iso(deadline if reminded else remind)
+        elif ticket and due and not (pause and pause <= ends):
             card = check_payable(session, row["location"], row["rate"], row["plate"], row["payment_account_id"])
             try:
                 result, found = extend_and_confirm(session, ticket, row, card)
@@ -1883,15 +1929,17 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False):
                 patch["data"] = encrypt_details({**row, "payment_account_id": card})
                 log.info("renewal %s: now paid with another card of the account", row["id"])
             outcome = "paid"
-    except Unconfirmed as e:
+    except BankCheck as e:
+        # The card holder is told at once, and the payment is theirs to validate until the car is no longer covered.
+        patch.update(bank_wait_patch(session, row, e.job_id, active, now, validating))
+        outcome = "bank_wait"
+    except Unconfirmed:
         # One more try an hour later, time to fix the card in PayByPhone: the active ticket is looked for first, so
-        # a payment that went through after all is never paid twice. Still refused then: suspended, since a bank
-        # that asks to confirm every payment would ask again at every try.
-        message = str(e) if isinstance(e, BankCheck) else UNCONFIRMED
-        if previous_error == message:
-            patch.update(enabled=False, last_error=message + " Renouvellement suspendu.")
+        # a payment that went through after all is never paid twice. Still refused then: suspended.
+        if previous_error == UNCONFIRMED:
+            patch.update(enabled=False, last_error=UNCONFIRMED + " Renouvellement suspendu.")
         else:
-            patch.update(last_error=message, next_check=utc_iso(now + RETRY_AFTER))
+            patch.update(last_error=UNCONFIRMED, next_check=utc_iso(now + RETRY_AFTER))
         outcome = "unconfirmed"
     except NotPayable as e:  # nothing was paid: tell the user, look again in an hour
         patch.update(last_error=str(e), next_check=utc_iso(now + RETRY_AFTER))
@@ -1914,6 +1962,34 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False):
     elif patch.get("last_error") and patch["last_error"] != previous_error:
         notify(row, "problem", message=patch["last_error"], suspended=patch.get("enabled") is False)
     return outcome
+
+
+def bank_validated(row, active):
+    """The validation went through: a ticket appeared, or the running one now ends later than when it was asked."""
+    if not active:
+        return False
+    before = parse_dt(row.get("bank_ends"))
+    return before is None or aware(covered_until(active)) > before
+
+
+def bank_wait_patch(session, row, job_id, active, now, validating):
+    """The renewal's state while the bank waits for its card holder; asked again by them, the first deadline stays."""
+    ends = aware(covered_until(active)) if active else None
+    deadline = ends or now + BANK_WAIT_DAY
+    remind = max(now + timedelta(minutes=30), deadline - BANK_REMIND) if ends else now + BANK_REMIND
+    details = {"bank_job": job_id or "", "bank_ends": utc_iso(ends) if ends else "", "bank_deadline": utc_iso(deadline),
+               "bank_remind": utc_iso(remind), "bank_reminded": ""}
+    if validating:
+        details.update(bank_deadline=row.get("bank_deadline") or details["bank_deadline"],
+                       bank_remind=row.get("bank_remind") or details["bank_remind"],
+                       bank_reminded=row.get("bank_reminded") or "")
+    try:  # what PayByPhone gives (never its content): the page may be a link or a whole page
+        page = session.call("get_job_challenge", job_id) if job_id else None
+        log.info("bank challenge: url=%s html=%s", bool((page or {}).get("url")), len((page or {}).get("html") or ""))
+    except Exception as e:
+        log.info("bank challenge unreadable: %s", type(e).__name__)
+    return {"last_error": BANK_WAIT, "next_check": utc_iso(now + timedelta(minutes=15) if validating else remind),
+            "data": encrypt_details({**row, **details})}
 
 
 CLAIM_PER_RUN = 4  # renewals handled side by side at each scheduler run (every 5 minutes)
@@ -4322,6 +4398,7 @@ def delete_my_data(response: Response, pbb_session: str = Cookie(None)):
             except HTTPException as e:
                 log.warning("subscription not cancelled with the account: %s", e.detail)
         guarded(lambda: store("renewal_delete_owner", p_owner=owner_id(s.username)))
+        guarded(lambda: store("push_delete_owner", p_owner=owner_id(s.username)))
         guarded(lambda: store("account_delete", p_owner=owner_id(s.username)))
     if email and not s.demo:
         send_email(email, "Compte PayByBot supprimé", "Votre compte est supprimé",
@@ -4403,6 +4480,181 @@ def delete_autopilot(ap_id: str, pbb_session: str = Cookie(None)):
 # At most once every 30 seconds, so a later deployment in the same tab is caught too, without a reload loop.
 RELOAD_ONCE_JS = ("try{var t=+sessionStorage.getItem('pbb-reloaded')||0;if(Date.now()-t>30000){"
                   "sessionStorage.setItem('pbb-reloaded',String(Date.now()));location.reload()}}catch(e){}")
+
+
+# --------------------------------------------------------------------------
+# « Valider mon paiement »: the bank's confirmation, opened by the card holder
+# --------------------------------------------------------------------------
+
+VALIDATE_TTL = 3 * 86400
+VALIDATE_PER_DAY = 6  # a link that pays: not without limit
+
+
+def validate_token(owner, renewal_id):
+    return _fernet("validate").encrypt(json.dumps({"o": owner, "i": renewal_id}).encode()).decode()
+
+
+def validate_link(owner, renewal_id):
+    return APP_URL.rstrip("/") + "/#/valider?t=" + validate_token(owner, renewal_id)
+
+
+def challenge_sig(html):
+    return hmac.new(_subkey(_secrets()[0], "challenge"), html.encode(), hashlib.sha256).hexdigest()
+
+
+class ValidateBody(BaseModel):
+    t: str = Field(max_length=2000)
+
+
+def challenge_answer(page):
+    if page.get("url"):
+        return {"status": "challenge", "url": page["url"]}
+    if page.get("html"):
+        return {"status": "challenge", "html": page["html"], "sig": challenge_sig(page["html"])}
+    return None
+
+
+@app.post("/api/validate")
+def validate_payment(body: ValidateBody):
+    """The button of the signed link (never a GET: mail scanners open links). The bank's page of the payment still
+    waiting if there is one, else a new payment now that the card holder is there. Nothing is ever paid twice: the
+    running ticket is looked at first."""
+    try:
+        token = json.loads(_fernet("validate").decrypt(body.t.encode(), ttl=VALIDATE_TTL))
+    except Exception:
+        raise HTTPException(400, "Ce lien n'est plus valable. Ouvrez PayByBot pour voir votre renouvellement.")
+    owner = token["o"]
+    raw = next((r for r in store("renewal_list", p_owner=owner) or [] if r.get("id") == token["i"]), None)
+    row = with_details(raw) if raw else None
+    if not row or row.get("last_error") != BANK_WAIT:
+        return {"status": "done"}
+    key = "validate:%s:%s" % (row["id"], paris_day())
+    if (store("usage_add", p_keys=[key]) or {}).get(key, 0) > VALIDATE_PER_DAY:
+        raise HTTPException(429, "Trop d'essais aujourd'hui. Vérifiez votre carte dans l'application PayByPhone.")
+    if guarded_state(owner) in BLOCKED_STATES:
+        raise HTTPException(402, BLOCKED)
+    refresh = decrypt_credential(store("renewal_get_credential", p_owner=owner))
+    bot = bot_from_refresh(refresh, owner)
+    session = UserSession.for_bot(bot)
+    now = datetime.now(timezone.utc)
+    if bank_validated(row, running_for(session, row["plate"])):
+        process_renewal(raw, refresh_token=bot.refresh_token or refresh)  # records it as paid and tells the client
+        return {"status": "paid"}
+    page = session.call("get_job_challenge", row["bank_job"]) if row.get("bank_job") else {}
+    if page.get("pending") and challenge_answer(page):
+        store("renewal_update", p_id=row["id"], p_patch={"next_check": utc_iso(now + timedelta(minutes=15))})
+        return challenge_answer(page)
+    outcome = process_renewal(raw, refresh_token=bot.refresh_token or refresh, refused=True, validating=True)
+    if outcome == "paid":
+        return {"status": "paid"}
+    if outcome == "bank_wait":
+        fresh = next((r for r in store("renewal_list", p_owner=owner) or [] if r.get("id") == row["id"]), raw)
+        job = with_details(fresh).get("bank_job")
+        answer = challenge_answer(session.call("get_job_challenge", job) if job else {})
+        if answer:
+            return answer
+    raise HTTPException(502, "Le paiement n'a pas pu être relancé. Vérifiez votre carte dans l'application PayByPhone.")
+
+
+def challenge_page_response(html, sig):
+    """The bank's page as PayByPhone gives it: only what this server signed, isolated from the site (no access to its
+    cookies or its API), free to reach the bank."""
+    if not hmac.compare_digest(sig, challenge_sig(html)):
+        raise HTTPException(400, "Page refusée.")
+    return HTMLResponse(base64.b64decode(html), headers={
+        "Content-Security-Policy": "sandbox allow-forms allow-scripts allow-top-navigation allow-popups"})
+
+
+@app.post("/api/validate/page")
+async def validate_page(request: Request):
+    from urllib.parse import parse_qs
+
+    form = parse_qs((await request.body()).decode())
+    return challenge_page_response((form.get("html") or [""])[0], (form.get("sig") or [""])[0])
+
+
+# --------------------------------------------------------------------------
+# Alerts on the phone (Web Push): free, the browser's own service
+# --------------------------------------------------------------------------
+
+PUSH_HOSTS = ("fcm.googleapis.com", "web.push.apple.com", ".push.services.mozilla.com", ".notify.windows.com")
+
+
+def vapid_private():
+    """Derived from the app's secret: nothing more to store, and the same key on every server."""
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    order = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
+    seed = hashlib.sha256(_subkey(_secrets()[0], "vapid")).digest()
+    return ec.derive_private_key(int.from_bytes(seed, "big") % (order - 1) + 1, ec.SECP256R1())
+
+
+def vapid_public_key():
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    raw = vapid_private().public_key().public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def webpush_send(subscription, payload):
+    from py_vapid import Vapid02
+    from pywebpush import webpush
+
+    webpush(subscription, json.dumps(payload), vapid_private_key=Vapid02(private_key=vapid_private()),
+            vapid_claims={"sub": "mailto:contact@paybybot.fr"}, timeout=10, ttl=86400)
+
+
+def send_push(owner, title, body, url):
+    """To each phone of this account that accepted alerts. Never raises: the e-mail goes out anyway."""
+    try:
+        rows = store("push_list", p_owner=owner) or []
+    except Exception as e:
+        log.warning("push not read: %s", type(e).__name__)
+        return
+    for data in rows:
+        try:
+            subscription = json.loads(_fernet("push").decrypt(data.encode()))
+            webpush_send(subscription, {"title": title, "body": body, "url": url})
+        except Exception as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            log.warning("push not sent: %s %s", type(e).__name__, status)
+            if status in (404, 410):  # this phone took the alerts back
+                try:
+                    store("push_delete", p_key=hashlib.sha256(subscription["endpoint"].encode()).hexdigest())
+                except Exception:
+                    pass
+
+
+class PushSub(BaseModel):
+    endpoint: str = Field(max_length=1000)
+    keys: dict[str, Annotated[str, Field(max_length=300)]]
+
+    @field_validator("endpoint")
+    @classmethod
+    def only_push_services(cls, value):
+        """The server calls this address: only the browsers' real services, never anything else."""
+        from urllib.parse import urlparse
+
+        url = urlparse(value)
+        host = url.hostname or ""
+        if url.scheme != "https" or not any(host == h or (h.startswith(".") and host.endswith(h)) for h in PUSH_HOSTS):
+            raise ValueError("Adresse refusée.")
+        return value
+
+
+@app.get("/api/push/key")
+def push_key():
+    return {"key": vapid_public_key()}
+
+
+@app.post("/api/push/subscribe")
+def push_subscribe(body: PushSub, pbb_session: str = Cookie(None)):
+    s = current(pbb_session)
+    if HOSTED and not s.demo:
+        data = _fernet("push").encrypt(json.dumps(body.model_dump()).encode()).decode()
+        guarded(lambda: store("push_save", p_owner=owner_id(s.username),
+                              p_key=hashlib.sha256(body.endpoint.encode()).hexdigest(), p_data=data))
+    return {"ok": True}
 
 
 class Assets(StaticFiles):

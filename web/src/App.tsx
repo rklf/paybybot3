@@ -14,6 +14,7 @@ import { NotFoundPage } from '@/components/NotFound'
 import { CheckoutDone } from '@/components/CheckoutDone'
 import { InviteCurtain, InviteGate } from '@/components/InviteGate'
 import { resumeLinkTrack, startLinkTrack, trackLinkStep } from '@/lib/linkTrack'
+import { ValidatePayment } from '@/components/ValidatePayment'
 import { captureInvite, consumeLinkCurtain, deviceKind, forgetInvite, isMember, linkSource, markMember, openedFromLink } from '@/lib/invite'
 import { PayByPhone } from '@/components/signs'
 import { ServiceBanner } from '@/components/ServiceBanner'
@@ -26,12 +27,12 @@ const AdminPage = lazy(() => import('@/components/Admin').then((m) => ({ default
 const Welcome = lazy(() => import('@/components/Welcome').then((m) => ({ default: m.Welcome })))
 const SubscriptionDialog = lazy(() => import('@/components/Subscription').then((m) => ({ default: m.SubscriptionDialog })))
 
-type Route = 'faq' | 'comment-ca-marche' | 'qui-sommes-nous' | 'tarifs' | 'connexion' | 'inscription' | 'demo' | 'admin' | 'bienvenue' | null
+type Route = 'faq' | 'comment-ca-marche' | 'qui-sommes-nous' | 'tarifs' | 'connexion' | 'inscription' | 'demo' | 'admin' | 'bienvenue' | 'valider' | null
 
 function routeFromHash(hash: string): Route {
   const id = hash.replace(/^#\/?/, '').split('?')[0]
   return id === 'faq' || id === 'comment-ca-marche' || id === 'qui-sommes-nous' || id === 'tarifs' || id === 'connexion' || id === 'inscription' || id === 'demo' || id === 'admin' ||
-    id === 'bienvenue'
+    id === 'bienvenue' || id === 'valider'
     ? id
     : null
 }
@@ -338,6 +339,8 @@ export default function App() {
         <NotFoundPage hosted={hosted} />
       ) : legal ? (
         legal === 'securite' ? <SecurityPage hosted={hosted} signedIn={!!me} /> : <LegalView page={legal} hosted={hosted} signedIn={!!me} />
+      ) : route === 'valider' ? (
+        <ValidatePayment />
       ) : me === undefined || (inviteOnly && !me && invited === null) ? (
         <Loading />
       ) : inviteOnly && !me && invited !== 'yes' && route !== 'admin' && route !== 'connexion' && (!isMember() || route === 'inscription') ? (

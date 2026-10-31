@@ -161,6 +161,15 @@ export function PlannedPause({ ap, className }: { ap: Autopilot; className?: str
 
 export function RenewalNote({ ap, onChanged }: { ap: Autopilot; onChanged?: () => void; next?: string }) {
   const { end, paused } = pauseState(ap)
+  if (ap.validate)
+    return (
+      <>
+        <span className="text-destructive">{ap.lastError}</span>
+        <a href={`#/valider?t=${ap.validate}`} className="mt-2 flex w-fit items-center rounded-[10px] border-[1.5px] border-eu px-3 py-1.5 text-sm font-semibold text-eu transition hover:bg-eu/[0.06]">
+          Valider mon paiement
+        </a>
+      </>
+    )
   if (ap.lastError)
     return (
       <>

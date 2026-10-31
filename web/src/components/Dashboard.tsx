@@ -1,4 +1,5 @@
 import { Loading } from '@/components/Loading'
+import { PushOptIn } from '@/components/PushOptIn'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { ChevronRight, LogOut, Plus } from 'lucide-react'
@@ -492,6 +493,7 @@ export function Dashboard({
       </TopBar>
 
       <main className="mx-auto w-full max-w-[34rem] flex-1 px-6 pt-4 pb-6">
+        {data && !me.demo && data.autopilots.some((ap) => ap.enabled) && <PushOptIn />}
         {/* No greeting: the page opens on what matters, whether a ticket is running. */}
         <h1 className="mt-2 text-[1.05rem] text-ink/60">
           {!data

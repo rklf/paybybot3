@@ -80,6 +80,27 @@ test('pages légales : les conditions d’utilisation s’ouvrent', async ({ pag
   await expect(page.getByRole('heading', { name: /Conditions/ }).first()).toBeVisible()
 })
 
+test('lien de validation : rien ne part à l’ouverture, seulement au bouton', async ({ page }) => {
+  const asked: string[] = []
+  await page.route('**/api/validate', (r) => {
+    asked.push(r.request().postData() ?? '')
+    return r.fulfill({ json: { status: 'done' } })
+  })
+  await page.goto('/#/valider?t=jeton')
+  const button = page.getByRole('button', { name: 'Valider mon paiement' })
+  await expect(button).toBeVisible()
+  expect(asked).toEqual([])
+  await button.click()
+  await expect(page.getByRole('heading', { name: 'Rien à valider' })).toBeVisible()
+  expect(asked).toEqual([JSON.stringify({ t: 'jeton' })])
+})
+
+test('alerte du téléphone : la validation part directement', async ({ page }) => {
+  await page.route('**/api/validate', (r) => r.fulfill({ json: { status: 'paid' } }))
+  await page.goto('/#/valider?t=jeton&go=1')
+  await expect(page.getByRole('heading', { name: 'Paiement validé' })).toBeVisible()
+})
+
 test('mobile : le menu ☰ propose de se connecter', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'menu ☰ : téléphone seulement')
   await page.goto(LINK)

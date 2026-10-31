@@ -104,6 +104,7 @@ export function SecurityDetails() {
             ['Renouvellement ou ticket programmé : plaque, zone, tarif, durée, jours et heure, moyen de paiement choisi', 'Base de données à Paris', 'Chiffrés', 'Jusqu’à ce que vous l’arrêtiez'],
             ['Compte PayByBot : e-mail (seule donnée saisie), prénom et arrondissement de résidence repris de PayByPhone', 'Base de données à Paris', 'Chiffrés', 'Jusqu’à la suppression du compte'],
             ['Renouvellement ou ticket programmé : e-mail pour les confirmations', 'Base de données à Paris', 'Chiffré', 'Jusqu’à ce que vous le retiriez ou arrêtiez'],
+            ['Alertes sur le téléphone, si vous les activez : adresse technique fournie par votre navigateur', 'Base de données à Paris', 'Chiffrée', 'Jusqu’à la suppression du compte ou le retrait de l’autorisation'],
             ['Renouvellement ou ticket programmé : dates de pause, de vérification et de paiement', 'Base de données à Paris', 'Dates seules, sans lien lisible avec vous', 'Jusqu’à ce que vous l’arrêtiez'],
             ['Identifiant de votre compte', 'Base de données à Paris', 'Seulement une empreinte : le numéro n’y figure pas', 'Jusqu’à ce que vous l’arrêtiez'],
             ['Tentatives de connexion (anti-piratage)', 'Base de données à Paris', 'Empreintes de l’appareil et du compte, jamais l’adresse IP ni l’identifiant en clair', '24 h au plus'],
@@ -473,8 +474,9 @@ function Terms() {
         <p>
           Un paiement automatique peut ne pas aboutir, par exemple si votre connexion <PayByPhone /> a expiré, si votre carte est refusée, si votre
           droit au tarif choisi (résident, carte mobilité CMI-S) a pris fin ou si <PayByPhone /> modifie son service. Dans ces cas, <PayByBot /> l’indique sur votre
-          tableau de bord, vous prévient par e-mail et réessaie automatiquement. Si votre banque refuse à nouveau, ou si un
-          paiement n’est pas confirmé par <PayByPhone />, le renouvellement ou le ticket programmé est suspendu pour éviter un double paiement.
+          tableau de bord, vous prévient par e-mail et réessaie automatiquement. Si votre banque demande une validation, <PayByBot /> vous
+          alerte et attend que vous la fassiez : sans validation avant la fin de votre ticket (ou sous 24 heures sans ticket en cours), le
+          renouvellement ou le ticket programmé est suspendu. Il l’est aussi si un paiement n’est pas confirmé par <PayByPhone />, pour éviter un double paiement.
         </p>
         <p>
           En cas d’échec d’un paiement, <PayByBot /> vous en informera par e-mail. Le paiement de votre stationnement restera

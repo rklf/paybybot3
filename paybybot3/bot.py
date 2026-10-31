@@ -517,6 +517,24 @@ class Bot:
 }"""
         return self._graphql(query, {"jobId": jobId})["getJobV1"]
 
+    def get_job_challenge(self, jobId):
+        """A payment waiting on the bank: is it still waiting, and the bank's page to show (a link or a base64 page)."""
+        query = """query GetJobV1($jobId: UUID!) {
+  getJobV1(jobId: $jobId) {
+    captureGroups {
+      status
+      authentication {
+        challengeUrl
+        challengeHtml
+      }
+    }
+  }
+}"""
+        groups = self._graphql(query, {"jobId": jobId})["getJobV1"].get("captureGroups") or []
+        waiting = [g for g in groups if "authenticationChallenge" in str(g.get("status"))]
+        page = (waiting[0].get("authentication") or {}) if waiting else {}
+        return {"pending": bool(waiting), "url": page.get("challengeUrl"), "html": page.get("challengeHtml")}
+
     _TERMINAL_CAPTURE_STATUSES = {
         "captureNotRequired",
         "captured",
