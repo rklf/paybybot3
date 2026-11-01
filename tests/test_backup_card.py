@@ -400,5 +400,44 @@ class AdvanceOnceTheBankGivesUp(unittest.TestCase):
         adv.assert_not_called()
 
 
+
+
+class DashboardShowsTheAdvance(unittest.TestCase):
+    """The ticket advanced from the backup account is not in the client's PayByPhone account: the dashboard lists it
+    with the running tickets, marked as advanced, so the client sees the car is covered."""
+
+    def setUp(self):
+        self.env = patch.dict(os.environ, ENV)
+        self.env.start()
+        self.addCleanup(self.env.stop)
+
+    def overview(self, sessions=()):
+        until = later(days=5)
+        details = {**ROW, "payment_account_id": "c", "advanced_until": web.utc_iso(until), "email": "a@b.fr"}
+        row = {"id": "r1", "owner": "o", "enabled": True, "data": web.encrypt_details(details), "last_error": None,
+               "next_check": None}
+        s = MagicMock(demo=False, username="u", history=[])
+        s.call.side_effect = lambda name, *a, **k: {"get_vehicles": [{"licensePlate": "FT630FH"}],
+                                                     "get_payment_accounts": {},
+                                                     "get_parking_sessions": list(sessions)}.get(name)
+        with patch.object(web, "HOSTED", True), patch.object(web, "current", return_value=s), \
+                patch.object(web, "load_account", return_value={}), \
+                patch.object(web, "store", side_effect=lambda fn, **k: [row] if fn == "renewal_list" else None):
+            return web.overview(pbb_session="c"), until
+
+    def test_an_advanced_ticket_is_listed_with_the_running_tickets(self):
+        data, until = self.overview()
+        advanced = [x for x in data["sessions"] if x.get("advanced")]
+        self.assertEqual(len(advanced), 1)
+        self.assertEqual(advanced[0]["plate"], "FT630FH")
+        self.assertEqual(web.parse_dt(advanced[0]["expire"]), web.parse_dt(web.utc_iso(until)))
+
+    def test_a_ticket_in_the_clients_own_account_is_not_doubled(self):
+        own = {"parkingSessionId": "p1", "locationId": "75005", "vehicle": {"licensePlate": "FT630FH"},
+               "startTime": later(hours=-1), "expireTime": later(days=6), "ratePolicy": {}}
+        data, _ = self.overview([own])
+        self.assertEqual([x.get("advanced", False) for x in data["sessions"]], [False])
+
+
 if __name__ == "__main__":
     unittest.main()

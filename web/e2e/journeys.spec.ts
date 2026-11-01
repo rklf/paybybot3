@@ -54,6 +54,27 @@ test('compte démo : le tableau de bord montre les véhicules', async ({ page })
   await expect(page.getByText('AB-123-CD').first()).toBeVisible()
 })
 
+test('ticket avancé par PayByBot : affiché sur le tableau de bord, hors de l’appli PayByPhone', async ({ page }) => {
+  await page.route('**/api/overview*', async (route) => {
+    const res = await route.fetch()
+    const data = await res.json()
+    // Before sign-in the answer has no sessions: passed on as it is.
+    if (data.vehicles?.length) {
+      const s = { id: 'advanced-r1', location: '75005', plate: data.vehicles[0].plate, start: null, rate: '1',
+        expire: new Date(Date.now() + 5 * 86_400_000).toISOString(), resident: true, cost: null, advanced: true }
+      data.sessions = [s]
+      // Like a client whose card failed: a weekly renewal on the car, whose ticket PayByBot advanced.
+      data.autopilots = [{ id: 'r1', label: '', plate: s.plate, location: s.location, rate: s.rate, duration: 1,
+        unit: 'Days', paymentAccountId: 'c', enabled: true, lastCheck: null, lastPayment: null, lastError: null,
+        nextCheck: s.expire, advancedUntil: s.expire }]
+    }
+    await route.fulfill({ response: res, json: data })
+  })
+  await demo(page)
+  await expect(page.getByText('Ticket avancé par PayByBot')).toBeVisible()
+  await expect(page.getByText(/n’apparaît pas dans votre application PayByPhone/)).toBeVisible()
+})
+
 test('déconnexion après un lien : l’accueil, pas le rideau « parrainage »', async ({ page }) => {
   await demo(page)
   await page.getByRole('button', { name: 'Déconnexion' }).first().click()

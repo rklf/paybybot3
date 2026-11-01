@@ -101,7 +101,14 @@ function Ticket({
 
       {/* The ticket: when it ends (renewal on) or the time left, large, with the end beside it. */}
       <div className="border-t border-ink/[0.06] px-5 py-5">
-        <p className="text-base font-medium text-ink sm:text-[1.05rem]">Ticket en cours</p>
+        <p className="text-base font-medium text-ink sm:text-[1.05rem]">
+          {session.advanced ? 'Ticket avancé par PayByBot' : 'Ticket en cours'}
+        </p>
+        {session.advanced && (
+          <p className="mt-1 text-sm text-ink/60">
+            Il n’apparaît pas dans votre application PayByPhone, mais il couvre bien votre plaque.
+          </p>
+        )}
         {/* The same figures with or without a renewal: each number with its unit beside it, then when it ends. Without
             a renewal, the end in red (to urge setting one up), and the numbers too in the last 15 minutes. */}
         <p className="mt-2 flex items-baseline gap-3 tabular-nums">

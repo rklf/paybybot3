@@ -1771,6 +1771,8 @@ def stored_to_autopilot(row):
         "days": row.get("days") or None, "start": row.get("start") or None,
         "dateFrom": row.get("date_from") or None, "dateTo": row.get("date_to") or None,
         "validate": validate_token(row["owner"], row["id"]) if row.get("last_error") == BANK_WAIT else None,
+        # The end of a ticket PayByBot advanced from its backup account (not in the client's PayByPhone account).
+        "advancedUntil": row.get("advanced_until") or None,
     }
 
 
@@ -3057,16 +3059,31 @@ def overview(pbb_session: str = Cookie(None)):
             log.info("no usable payment method; PayByPhone returned %s",
                      {k: len(v) if isinstance(v, list) else type(v).__name__ for k, v in accounts.items()})
         kept = got["kept"]
+        sessions = [serialize_session(x) for x in got["sessions"]]
         return {
             "vehicles": [{"plate": v["licensePlate"], "country": v.get("country"), "type": v.get("type"),
                           "zone": (kept.get(plate_key(v["licensePlate"])) or {}).get("z")} for v in vehicles],
             "payments": payments,
-            "sessions": [serialize_session(x) for x in got["sessions"]],
+            "sessions": sessions + advanced_sessions(got["renewals"], sessions),
             "autopilots": got["renewals"],
             "history": s.history[:10],
         }
 
     return guarded(load)
+
+
+def advanced_sessions(renewals, sessions):
+    """Tickets PayByBot advanced from its backup account, still running: listed like the client's own tickets (the
+    client's PayByPhone account does not show them), unless that account already shows one for the car."""
+    now, covered = datetime.now(timezone.utc), {plate_key(x.get("plate") or "") for x in sessions}
+    found = []
+    for ap in renewals:
+        until = parse_dt(ap.get("advancedUntil"))
+        if until and until > now and plate_key(ap["plate"]) not in covered:
+            found.append({"id": "advanced-%s" % ap["id"], "location": ap["location"], "plate": ap["plate"],
+                          "start": None, "expire": until.isoformat(), "rate": ap["rate"], "resident": True,
+                          "cost": None, "advanced": True})
+    return found
 
 
 def french_zone(s, number):

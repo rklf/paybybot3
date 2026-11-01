@@ -14,6 +14,8 @@ export type Session = {
   /** A resident ticket (the weekly renewal is only for these); null when PayByPhone does not say. */
   resident?: boolean | null
   cost?: Money
+  /** Paid by PayByBot from its backup account after the client's card failed: not in the client's PayByPhone app. */
+  advanced?: boolean
 }
 export type Unit = 'Days' | 'Hours' | 'Minutes'
 export type Rate = {
