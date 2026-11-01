@@ -60,7 +60,7 @@ class BankAsks(Base):
         self.assertEqual(d["bank_job"], "job1")
         self.assertEqual(d["bank_ends"], "")
         self.assertTrue(later(hours=23) < web.parse_dt(d["bank_deadline"]) < later(hours=25))
-        self.assertTrue(later(hours=2) < web.parse_dt(p["next_check"]) < later(hours=4))  # the reminder
+        self.assertTrue(later(hours=2) < web.parse_dt(d["bank_remind"]) < later(hours=4))
         self.assertEqual(mail.call_args.args[1], "problem")
         self.assertEqual(mail.call_args.kwargs["message"], web.BANK_WAIT)
 
@@ -75,7 +75,7 @@ class BankAsks(Base):
         d = self.details(p)
         self.assertEqual(web.parse_dt(d["bank_deadline"]), ends)
         self.assertEqual(web.parse_dt(d["bank_ends"]), ends)
-        self.assertTrue(later(hours=16) < web.parse_dt(p["next_check"]) < later(hours=18))
+        self.assertTrue(later(hours=16) < web.parse_dt(d["bank_remind"]) < later(hours=18))
 
     def test_another_unconfirmed_payment_suspends_after_its_last_try(self):
         outcome, p, *_ = self.run_renewal(pay_error=web.Unconfirmed(web.UNCONFIRMED), last_error=web.UNCONFIRMED,
@@ -653,3 +653,34 @@ class CardMask(unittest.TestCase):
         self.assertIn("length=16", text)
         self.assertNotIn("4970", text)
         self.assertNotIn("4242", text)
+
+
+class ValidatedInTheBanksApp(Waiting):
+    """Validated from the bank's own notification: nothing touched on PayByBot, so it looks often at first."""
+
+    def test_comes_back_soon_after_the_bank_asks(self):
+        _, p, *_ = self.run_renewal(pay_error=web.BankCheck(web.BANK_CHECK, "job1"))
+        self.assertTrue(web.parse_dt(p["next_check"]) < later(minutes=11))
+        self.assertTrue(later(hours=2) < web.parse_dt(self.details(p)["bank_remind"]) < later(hours=4))
+        self.assertTrue(later(minutes=-1) < web.parse_dt(self.details(p)["bank_at"]))
+
+    def test_keeps_looking_for_the_first_hour(self):
+        _, p, *_ = self.wait(bank_at=web.utc_iso(later(minutes=-20)), bank_remind=web.utc_iso(later(hours=2)))
+        self.assertTrue(web.parse_dt(p["next_check"]) < later(minutes=11))
+
+    def test_then_only_for_the_reminder(self):
+        _, p, *_ = self.wait(bank_at=web.utc_iso(later(minutes=-61)), bank_remind=web.utc_iso(later(hours=2)))
+        self.assertTrue(later(minutes=115) < web.parse_dt(p["next_check"]) < later(minutes=125))
+
+    def test_a_ticket_seen_is_paid_at_the_next_look(self):
+        running = {"parkingSessionId": "s1", "locationId": "75005", "vehicle": {"licensePlate": "AB123CD"},
+                   "expireTime": later(days=7), "rateOptionId": "101"}
+        outcome, *_ = self.wait([running], bank_at=web.utc_iso(later(minutes=-5)), bank_remind=web.utc_iso(later(hours=2)))
+        self.assertEqual(outcome, "paid")
+
+    def test_asked_again_keeps_the_first_time(self):
+        first = web.utc_iso(later(minutes=-30))
+        session = MagicMock()
+        session.call.return_value = None
+        p = web.bank_wait_patch(session, {"id": "r", "bank_at": first}, "j", None, later(), True)
+        self.assertEqual(json.loads(web._fernet("renewal").decrypt(p["data"].encode()))["bank_at"], first)

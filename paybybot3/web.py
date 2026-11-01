@@ -1599,7 +1599,7 @@ def bot_from_refresh(refresh, owner=None):
 
 RENEWAL_FIELDS = ("label", "plate", "location", "rate", "duration", "unit", "payment_account_id", "email", "days",
                   "start", "tz", "cmis_attested_at", "date_from", "date_to",
-                  "bank_job", "bank_ends", "bank_deadline", "bank_remind", "bank_reminded", "refused_tries", "card_warned",
+                  "bank_job", "bank_ends", "bank_deadline", "bank_remind", "bank_reminded", "bank_at", "refused_tries", "card_warned",
                   "card_stats", "card_hint")
 
 
@@ -1887,7 +1887,7 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
                     notify_bank(row)
                     patch["data"] = encrypt_details({**row, "bank_reminded": "1"})
                     reminded = True
-                patch["next_check"] = utc_iso(deadline if reminded else remind)
+                patch["next_check"] = utc_iso(bank_next_look(row, deadline if reminded else remind, now))
         elif ticket and due and not (pause and pause <= ends):
             card = check_payable(session, row["location"], row["rate"], row["plate"], row["payment_account_id"],
                                  avoid=refused)
@@ -2208,19 +2208,28 @@ def read_bank_page(session, job_id, opening):
         log.info("bank challenge unreadable: %s", type(e).__name__)
 
 
+BANK_LOOK = timedelta(minutes=10)  # validated in the bank's own app, PayByBot is not told: it looks for the new ticket
+BANK_LOOK_FOR = timedelta(hours=1)  # the bank's page does not last longer than this
+
+
+def bank_next_look(row, planned, now):
+    asked = parse_dt(row.get("bank_at")) if row.get("bank_at") else None
+    return min(planned, now + BANK_LOOK) if asked and now - asked < BANK_LOOK_FOR else planned
+
+
 def bank_wait_patch(session, row, job_id, active, now, validating):
     """The renewal's state while the bank waits for its card holder; asked again by them, the first deadline stays."""
     ends = aware(covered_until(active)) if active else None
     deadline = ends or now + BANK_WAIT_DAY
     remind = max(now + timedelta(minutes=30), deadline - BANK_REMIND) if ends else now + BANK_REMIND
     details = {"bank_job": job_id or "", "bank_ends": utc_iso(ends) if ends else "", "bank_deadline": utc_iso(deadline),
-               "bank_remind": utc_iso(remind), "bank_reminded": ""}
+               "bank_remind": utc_iso(remind), "bank_reminded": "", "bank_at": utc_iso(now)}
     if validating:
         details.update(bank_deadline=row.get("bank_deadline") or details["bank_deadline"],
                        bank_remind=row.get("bank_remind") or details["bank_remind"],
-                       bank_reminded=row.get("bank_reminded") or "")
+                       bank_reminded=row.get("bank_reminded") or "", bank_at=row.get("bank_at") or details["bank_at"])
     read_bank_page(session, job_id, opening=not validating)
-    return {"last_error": BANK_WAIT, "next_check": utc_iso(now + timedelta(minutes=15) if validating else remind),
+    return {"last_error": BANK_WAIT, "next_check": utc_iso(now + timedelta(minutes=15) if validating else min(remind, now + BANK_LOOK)),
             "data": encrypt_details({**row, **details})}
 
 
