@@ -1163,7 +1163,7 @@ def notify(details, event, **info):
             lines += list(info["message"])
         elif info.get("expire"):
             lines.append("Votre véhicule est couvert jusqu'au %s." % paris_text(info["expire"]))
-        lines.append(PAY_YOURSELF)
+        lines.append(ADVANCE_PROMISE if advances(details) else PAY_YOURSELF)
         send_email(to, "Renouvellement activé · %s" % plate_text(details.get("plate")), "Renouvellement activé",
                    lines, open_app)
     elif event == "advanced":
@@ -1196,8 +1196,12 @@ def notify(details, event, **info):
                        "Le renouvellement a besoin de vous",
                        ["Le renouvellement automatique pour %s est en attente :" % car, message], open_app)
             return
+        card_problem = message not in (UNCONFIRMED, BLOCKED) and not message.startswith(RESIDENT_REFUSED.split("%s")[0])
         next_step = ("Le renouvellement est suspendu : une fois le problème réglé dans PayByPhone, relancez-le "
                      "depuis PayByBot." if info.get("suspended") else
+                     "Vérifiez votre carte dans l'application PayByPhone. En attendant, PayByBot avance votre ticket "
+                     "si elle ne passe pas : votre véhicule reste couvert, et le montant est ajouté à votre prochain "
+                     "prélèvement." if card_problem and advances(details) else
                      "Réglez-le dans l'application PayByPhone : nous réessayons automatiquement dans une heure.")
         send_email(to, "Action requise · renouvellement %s" % plate_text(details.get("plate")),
                    "Le renouvellement a besoin de vous",
@@ -1214,6 +1218,8 @@ def notify_bank(details):
     send_email(details.get("email"), "Votre banque demande une validation · %s" % plate, "Validez votre paiement",
                ["Votre banque demande de confirmer le paiement du ticket de %s, zone %s (Face ID ou code)."
                 % (plate, details.get("location")),
+                "Sans validation dans l'heure, PayByBot avancera votre ticket pour que votre véhicule reste couvert : "
+                "son montant sera ajouté à votre prochain prélèvement." if advances(details) else
                 "Sans cette validation, le ticket ne sera pas renouvelé."], ("Valider mon paiement", link))
 
 
@@ -1296,6 +1302,16 @@ def extension_time(ends):
     day_before = (ends.astimezone(PARIS) - timedelta(days=1)).replace(hour=EXTEND_HOUR, minute=0, second=0,
                                                                          microsecond=0)
     return max(day_before.astimezone(timezone.utc), ends - EARLY_RENEWAL + timedelta(minutes=1))
+
+ADVANCE_PROMISE = ("Si un paiement échoue, vous serez prévenu aussitôt par e-mail, et PayByBot avancera votre ticket "
+                   "pour que votre véhicule reste couvert : son montant sera ajouté à votre prochain prélèvement.")
+
+
+def advances(details):
+    """A resident renewal while the owner's backup account can pay for it: its ticket is advanced when the card fails
+    (programmed tickets never are)."""
+    return not rule_of(details) and backup_ready()
+
 
 PAY_YOURSELF = ("Si un paiement échoue, vous serez prévenu aussitôt par e-mail. Il vous reviendra alors de payer "
                 "vous-même votre ticket dans l'application PayByPhone : tant que ce ne sera pas fait, votre véhicule "
@@ -3711,7 +3727,8 @@ def add_autopilot(body: Autopilot, pbb_session: str = Cookie(None)):
             record_activity("Ticket programmé" if days else "Renouvellement résident activé", s,
                          ["Véhicule %s***, zone %s." % (body.plate[:2], body.location)])
             if message:
-                answer["activation"] = {"title": message[0], "text": message[1], "payYourself": PAY_YOURSELF}
+                answer["activation"] = {"title": message[0], "text": message[1],
+                                        "payYourself": ADVANCE_PROMISE if advances(details) else PAY_YOURSELF}
             elif outcome in ("unconfirmed", "not_payable", "error", "relogin", "blocked", "unreadable"):
                 # Paying now failed while the customer is on the page: say it there, they pay this ticket themselves.
                 answer["activation"] = {"failed": True, "title": "Le paiement n'a pas abouti.",

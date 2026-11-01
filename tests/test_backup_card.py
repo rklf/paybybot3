@@ -288,5 +288,52 @@ class NeverGivesUp(unittest.TestCase):
         self.assertTrue(later(minutes=50) < web.parse_dt(p["next_check"]) < later(minutes=70))
 
 
+
+
+class EmailsSayTheAdvance(unittest.TestCase):
+    """With a backup account, a resident renewal's e-mails say PayByBot advances the ticket, billed afterwards."""
+
+    def setUp(self):
+        self.env = patch.dict(os.environ, {**ENV, "RESEND_API_KEY": "k"})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+
+    def lines(self, event, ready=True, days=None, **info):
+        details = {**ROW, "email": "a@b.fr", "days": days}
+        with patch.object(web, "backup_ready", return_value=ready), patch.object(web, "send_email") as mail, \
+                patch.object(web, "send_push"), patch.object(web, "alert_owner"), \
+                patch.object(web, "validate_link", return_value="https://x"):
+            if event == "bank":
+                web.notify_bank(details)
+            else:
+                web.notify(details, event, **info)
+        return " ".join(" ".join(c.args[3]) for c in mail.call_args_list)
+
+    def test_a_refused_card_says_the_ticket_will_be_advanced(self):
+        text = self.lines("problem", message=web.BANK_CHECK)
+        self.assertIn("avance", text)
+        self.assertIn("prochain prélèvement", text)
+
+    def test_without_backup_a_refused_card_says_nothing_of_it(self):
+        self.assertNotIn("avance", self.lines("problem", ready=False, message=web.BANK_CHECK))
+
+    def test_the_bank_validation_says_the_ticket_is_advanced_without_it(self):
+        text = self.lines("bank")
+        self.assertNotIn("ne sera pas renouvelé", text)
+        self.assertIn("avance", text)
+
+    def test_the_activation_promises_the_advance_instead_of_paying_yourself(self):
+        text = self.lines("activated", expire=later(days=3))
+        self.assertIn("avance", text)
+        self.assertNotIn("payer vous-même", text)
+
+    def test_programmed_tickets_keep_paying_yourself(self):
+        text = self.lines("activated", days=[1, 2], start="09:00", expire=later(days=3))
+        self.assertNotIn("avance votre ticket", text)
+
+    def test_a_resident_right_ended_is_not_advanced(self):
+        self.assertNotIn("avance", self.lines("problem", message=web.RESIDENT_REFUSED % ""))
+
+
 if __name__ == "__main__":
     unittest.main()
