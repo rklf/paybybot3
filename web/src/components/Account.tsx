@@ -85,6 +85,8 @@ function AccountDialog({
 
   if (deleting) return <DeleteConfirm data={data} onCancel={() => setDeleting(false)} onDeleted={onDeleted} />
 
+  const cards = data.payments.filter((p) => p.kind === 'card')
+
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className={ui.dialog}>
@@ -119,6 +121,22 @@ function AccountDialog({
                 <span className="text-right text-ink/60">
                   {data.vehicles.length ? 'Aucun véhicule au tarif résident' : 'Aucun véhicule'}
                 </span>
+              )}
+            </dd>
+          </div>
+
+          <div className={row}>
+            <dt className={label}>{cards.length > 1 ? 'Cartes bancaires' : 'Carte bancaire'}</dt>
+            <dd className="flex flex-col items-end gap-1 text-right font-medium text-ink">
+              {cards.length ? (
+                cards.map((c) => (
+                  <span key={c.id}>
+                    {c.label}
+                    {c.expired && <span className="ml-2 text-sm font-semibold text-destructive">Expirée</span>}
+                  </span>
+                ))
+              ) : (
+                <span className="font-normal text-ink/60">Aucune carte</span>
               )}
             </dd>
           </div>
