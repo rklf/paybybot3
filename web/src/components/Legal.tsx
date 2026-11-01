@@ -16,7 +16,7 @@ export const PUBLISHER = {
   email: 'contact@paybybot.fr',
 }
 
-export const LEGAL_UPDATED = '27 octobre 2026'
+export const LEGAL_UPDATED = '1er novembre 2026'
 export const REPO_URL = 'https://github.com/davidstudiopresto/paybybot3/tree/web-interface'
 
 import { type LegalPage } from '@/lib/legalPages'
@@ -410,7 +410,8 @@ function Terms() {
         </p>
         <p>
           Les tickets sont achetés par vous, depuis votre compte <PayByPhone />, au tarif de <PayByPhone />. <PayByBot /> n’encaisse pas
-          le prix des tickets : seul l’abonnement à <PayByBot /> est facturé (voir « Abonnement et paiement »).
+          le prix des tickets : seul l’abonnement à <PayByBot /> est facturé (voir « Abonnement et paiement »), ainsi que les
+          tickets que <PayByBot /> aurait avancés avec sa carte de secours (voir « Carte de secours »).
         </p>
       </Section>
 
@@ -482,7 +483,17 @@ function Terms() {
         </p>
         <p>
           En cas d’échec d’un paiement, <PayByBot /> vous en informera par e-mail. Le paiement de votre stationnement restera
-          sous votre responsabilité : il vous appartiendra de le régler vous-même dans l’application <PayByPhone />.
+          sous votre responsabilité : il vous appartiendra de le régler vous-même dans l’application <PayByPhone />, sauf
+          si <PayByBot /> l’a avancé avec sa carte de secours.
+        </p>
+        <p>
+          <strong>Carte de secours.</strong> <PayByBot /> peut vous proposer d’ajouter sa carte de secours dans votre compte{' '}
+          <PayByPhone />. Vous l’ajoutez vous-même, et vous pouvez la retirer à tout moment. Elle n’est utilisée que lorsque
+          votre propre carte est refusée ou inutilisable, pour que votre véhicule reste couvert : le paiement suivant
+          réessaie toujours votre carte en premier. Elle ne sert qu’aux tickets de vos renouvellements et tickets programmés,
+          jamais à un autre achat ; tout autre usage pourra vous être facturé de la même façon. Chaque ticket ainsi avancé vous
+          est refacturé au prix payé à <PayByPhone />, sans frais ajoutés, et apparaît sur votre prochain prélèvement{' '}
+          <PayByBot />. <PayByBot /> n’est jamais tenu d’avancer un ticket.
         </p>
       </Section>
 
@@ -575,6 +586,10 @@ function Terms() {
             <PayByBot />, un nouveau ticket est acheté à son prochain passage, et il reste dû. Pour ne plus rien payer, mettez
             le renouvellement en pause ou arrêtez-le depuis <PayByBot /> (« Gérer »). <PayByBot /> conserve, comme justificatif,
             la date et l’état de fin des tickets arrêtés avant leur terme, tels que <PayByPhone /> les indique.
+          </li>
+          <li>
+            <strong>Tickets avancés :</strong> un ticket payé avec la carte de secours de <PayByBot /> (voir « Carte de
+            secours ») est ajouté, au prix payé à <PayByPhone />, à votre prochain prélèvement, avec sa date sur la facture.
           </li>
           <li>
             <strong>Premier prélèvement :</strong> rien n’est prélevé avant la fin du mois offert.

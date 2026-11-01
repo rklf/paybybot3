@@ -95,6 +95,14 @@ class Rebill(unittest.TestCase):
         self.assertEqual(stripe.call_args.kwargs["amount"], 900)
         self.assertEqual(stripe.call_args.kwargs["currency"], "eur")
 
+    def test_the_invoice_line_gives_the_tickets_date(self):
+        now = web.datetime(2026, 11, 5, 19, 30, tzinfo=web.timezone.utc)
+        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk"}), \
+                patch.object(web, "account_by_owner", return_value={"stripe_customer": "cus_1"}), \
+                patch.object(web, "stripe") as stripe:
+            web.rebill_backup({"id": "r", "owner": "o"}, {"cost": {"amount": 9.0, "currency": "EUR"}}, now)
+        self.assertIn("5 novembre 2026", stripe.call_args.kwargs["description"])
+
     def test_no_customer_means_nothing_is_billed(self):
         with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk"}), \
                 patch.object(web, "account_by_owner", return_value={}), \

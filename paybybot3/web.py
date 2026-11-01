@@ -1951,7 +1951,7 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
                              last_error=None)
                 keep_other_card(row, card, patch, on_backup)
                 if on_backup:
-                    rebill_backup(row, result)
+                    rebill_backup(row, result, now)
                 outcome = "paid"
             else:
                 patch.update(next_check=utc_iso(ends + timedelta(seconds=30)), last_error=None)
@@ -1983,7 +1983,7 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
                          last_error=None)
             keep_other_card(row, card, patch, on_backup)
             if on_backup:
-                rebill_backup(row, result)
+                rebill_backup(row, result, now)
             outcome = "paid"
     except BankCheck as e:
         # The card holder is told at once, and the payment is theirs to validate until the car is no longer covered.
@@ -2095,8 +2095,8 @@ def paid_with_backup(session, card):
         return False
 
 
-def rebill_backup(row, result):
-    """A ticket paid with David's backup card: add its cost to the client's next Stripe invoice."""
+def rebill_backup(row, result, now=None):
+    """A ticket paid with David's backup card: add its cost to the client's next Stripe invoice, with its date."""
     if not os.environ.get("STRIPE_SECRET_KEY"):
         return
     account = account_by_owner(row.get("owner"))
@@ -2105,10 +2105,12 @@ def rebill_backup(row, result):
     amount = cost.get("amount")
     if not customer or not amount:
         return
+    day = (now or datetime.now(timezone.utc)).astimezone(PARIS)
     try:
         stripe("POST", "invoiceitems", customer=customer, amount=round(float(amount) * 100),
                currency=(cost.get("currency") or "EUR").lower(),
-               description="Stationnement avancé par PayByBot (carte de secours)")
+               description="Stationnement du %d %s %d avancé par PayByBot (carte de secours)"
+                           % (day.day, MONTH_NAMES[day.month - 1], day.year))
     except Exception as e:
         log.warning("renewal %s: backup rebill not added: %s", row.get("id"), str(e)[:150])
 
