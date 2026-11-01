@@ -1599,7 +1599,7 @@ def bot_from_refresh(refresh, owner=None):
 
 RENEWAL_FIELDS = ("label", "plate", "location", "rate", "duration", "unit", "payment_account_id", "email", "days",
                   "start", "tz", "cmis_attested_at", "date_from", "date_to",
-                  "bank_job", "bank_ends", "bank_deadline", "bank_remind", "bank_reminded")
+                  "bank_job", "bank_ends", "bank_deadline", "bank_remind", "bank_reminded", "refused_tries", "card_warned")
 
 
 def encrypt_details(details):
@@ -1855,6 +1855,7 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
     outcome = "error"
     result, expire = None, None
     try:
+        row = card_warned_row(session, row, now, patch)
         active = running_for(session, row["plate"])
         # Weekly renewal: the next week is added to the running ticket a day before it ends, so a refused payment
         # leaves a day to fix the card while the car is still covered. Not when a pause starts before the end.
@@ -1869,7 +1870,7 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
             # Waiting on the card holder: paid only if the ticket moved, never tried again from here.
             if bank_validated(row, active):
                 expire = covered_until(active)
-                next_check = schedule.next_slot(rule, now) if rule else extension_time(expire)
+                next_check = schedule.next_slot(rule, now) if rule else next_look(expire, now)
                 patch.update(last_payment=utc_iso(now), last_error=None,
                              next_check=utc_iso(next_check or now + timedelta(days=30)))
                 outcome = "paid"
@@ -1886,7 +1887,8 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
                     reminded = True
                 patch["next_check"] = utc_iso(deadline if reminded else remind)
         elif ticket and due and not (pause and pause <= ends):
-            card = check_payable(session, row["location"], row["rate"], row["plate"], row["payment_account_id"])
+            card = check_payable(session, row["location"], row["rate"], row["plate"], row["payment_account_id"],
+                                 avoid=refused)
             try:
                 result, found = extend_and_confirm(session, ticket, row, card)
             except Unconfirmed:
@@ -1900,8 +1902,9 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
                 found = None
             if found:
                 expire = covered_until(found)
-                patch.update(last_payment=utc_iso(now), next_check=utc_iso(extension_time(expire)),
+                patch.update(last_payment=utc_iso(now), next_check=utc_iso(next_look(expire, now)),
                              last_error=None)
+                keep_other_card(row, card, patch)
                 outcome = "paid"
             else:
                 patch.update(next_check=utc_iso(ends + timedelta(seconds=30)), last_error=None)
@@ -1909,11 +1912,15 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
         elif active:
             expire = covered_until(active)
             next_check = expire + timedelta(seconds=30)
+            warning = None
             if rule:  # covered already: never pay twice, look again when it ends or at the next window
                 next_check = schedule.decide(rule, now, None, None, row.get("last_payment"), expire)[1]
-            elif ticket and not (pause and pause <= ends):  # come back a day before the end to extend it
-                next_check = extension_time(ends)
-            patch.update(next_check=utc_iso(next_check or now + timedelta(days=30)), last_error=None)
+            elif ticket and not (pause and pause <= ends):  # come back before the end to look at the card, then extend
+                next_check = next_look(ends, now)
+                warning = checked_ahead(session, row, ends, now)
+                if warning:  # told now, while there is time; looked at again in case it gets fixed
+                    next_check = min(now + CHECK_AGAIN, extension_time(ends))
+            patch.update(next_check=utc_iso(next_check or now + timedelta(days=30)), last_error=warning)
             outcome = "active"
         else:
             keep_early_stops(session, row)  # a week stopped in PayByPhone before its end: kept as proof
@@ -1922,24 +1929,17 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
             result, found = pay_and_confirm(session, row["location"], row["rate"], fmt_qty(row["duration"]),
                                             row["unit"], row["plate"], card)
             expire = covered_until(found)
-            next_check = schedule.next_slot(rule, now) if rule else extension_time(expire)
+            next_check = schedule.next_slot(rule, now) if rule else next_look(expire, now)
             patch.update(last_payment=utc_iso(now), next_check=utc_iso(next_check or now + timedelta(days=30)),
                          last_error=None)
-            if card != row["payment_account_id"]:  # paid with another card: it becomes the renewal's card
-                patch["data"] = encrypt_details({**row, "payment_account_id": card})
-                log.info("renewal %s: now paid with another card of the account", row["id"])
+            keep_other_card(row, card, patch)
             outcome = "paid"
     except BankCheck as e:
         # The card holder is told at once, and the payment is theirs to validate until the car is no longer covered.
         patch.update(bank_wait_patch(session, row, e.job_id, active, now, validating))
         outcome = "bank_wait"
     except Unconfirmed:
-        # One more try an hour later, time to fix the card in PayByPhone: the active ticket is looked for first, so
-        # a payment that went through after all is never paid twice. Still refused then: suspended.
-        if previous_error == UNCONFIRMED:
-            patch.update(enabled=False, last_error=UNCONFIRMED + " Renouvellement suspendu.")
-        else:
-            patch.update(last_error=UNCONFIRMED, next_check=utc_iso(now + RETRY_AFTER))
+        patch.update(refused_patch(row, UNCONFIRMED, previous_error, now, running_end(session, row)))
         outcome = "unconfirmed"
     except NotPayable as e:  # nothing was paid: tell the user, look again in an hour
         patch.update(last_error=str(e), next_check=utc_iso(now + RETRY_AFTER))
@@ -1948,6 +1948,9 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
         if "VehicleAlreadyParked" in str(e):  # a ticket PayByPhone knows of but did not list: wait, not an error
             patch.update(last_error=None, next_check=utc_iso(now + timedelta(minutes=30)))
             outcome = "active"
+        elif "Payment job failed" in str(e):
+            patch.update(refused_patch(row, friendly_error(e), previous_error, now, running_end(session, row)))
+            outcome = "refused"
         else:
             patch.update(last_error=friendly_error(e), next_check=utc_iso(now + timedelta(minutes=30)))
             if is_outage(e):
@@ -1962,6 +1965,96 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
     elif patch.get("last_error") and patch["last_error"] != previous_error:
         notify(row, "problem", message=patch["last_error"], suspended=patch.get("enabled") is False)
     return outcome
+
+
+CHECK_AHEAD = timedelta(days=2)  # the card and the rate are looked at this long before the payment, nothing paid
+CHECK_AGAIN = timedelta(hours=6)  # once a problem is told: enough to clear it soon after it is fixed
+REFUSED_AGAIN = (timedelta(hours=1), timedelta(hours=4), timedelta(hours=8))  # enough time for money or a new card, few
+# enough tries for the bank not to take it for an attack; with another card first when the account has one
+CARD_WARN_DAYS = (7, 30)
+
+
+def next_look(ends, now):
+    """When a weekly renewal comes back: two days before paying, then to pay."""
+    pay = extension_time(ends)
+    return pay - CHECK_AHEAD if now < pay - CHECK_AHEAD else pay
+
+
+def checked_ahead(session, row, ends, now):
+    """Within the two days before paying: what would stop the payment (nothing is paid), or None."""
+    pay = extension_time(ends)
+    if not pay - CHECK_AHEAD <= now < pay:
+        return None
+    try:
+        check_payable(session, row["location"], row["rate"], row["plate"], row["payment_account_id"])
+    except NotPayable as e:
+        return str(e)
+    except Exception as e:
+        log.info("renewal %s: not checked ahead: %s", row.get("id"), type(e).__name__)
+    return None
+
+
+def keep_other_card(row, card, patch):
+    if card != row["payment_account_id"]:  # paid with another card: it becomes the renewal's card
+        patch["data"] = encrypt_details({**row, "payment_account_id": card})
+        log.info("renewal %s: now paid with another card of the account", row["id"])
+
+
+def running_end(session, row):
+    """The end of the running ticket, None if none or unreadable."""
+    try:
+        active = running_for(session, row["plate"])
+        return aware(covered_until(active)) if active else None
+    except Exception:
+        return None
+
+
+def refused_patch(row, message, previous_error, now, ends):
+    """A payment refused or not confirmed: tried again later and later, the running ticket being looked at first, so
+    one that went through after all is never paid twice. The last try comes before the car stops being covered.
+    After all of them: suspended."""
+    tries = int(row.get("refused_tries") or 0) if previous_error == message else 0
+    if tries >= len(REFUSED_AGAIN):
+        return {"enabled": False, "last_error": message + " Renouvellement suspendu."}
+    again = now + REFUSED_AGAIN[tries]
+    if ends and now + timedelta(minutes=30) < ends - timedelta(minutes=30) < again:
+        again = ends - timedelta(minutes=30)
+    return {"last_error": message, "next_check": utc_iso(again), "data": encrypt_details({**row, "refused_tries": tries + 1})}
+
+
+def warn_card_ending(session, row, now):
+    """An e-mail 30 then 7 days before the account's last valid card ends, once each. What was told, or None."""
+    cards = [p for p in normalize_accounts(session.call("get_payment_accounts") or {}, now) if p["kind"] == "card"]
+    valid = [p for p in cards if not p["expired"]]
+    if not valid or not row.get("email") or any(not p["validUntil"] for p in valid):
+        return None
+    last = max(valid, key=lambda p: p["validUntil"])
+    days = (parse_dt(last["validUntil"]) - now).days
+    within = next((d for d in CARD_WARN_DAYS if days <= d), None)
+    mark = "%s:%s" % (last["label"].split("—")[-1].strip(), within)
+    if within is None or mark == row.get("card_warned"):
+        return None
+    send_email(row["email"], "Votre carte bancaire expire bientôt", "Votre carte expire bientôt",
+               ["La carte bancaire de votre compte PayByPhone arrive à expiration (%s)."
+                % last["label"].split("—")[-1].strip(),
+                "Ajoutez votre nouvelle carte dans l'application PayByPhone avant cette date : "
+                "sans carte valable, votre renouvellement ne pourra plus payer."],
+               ("Ouvrir PayByBot", APP_URL))
+    return mark
+
+
+def card_warned_row(session, row, now, patch):
+    """The row, marked once the e-mail is sent. A failure here never stops a renewal."""
+    try:
+        mark = warn_card_ending(session, row, now)
+    except Exception as e:
+        log.info("renewal %s: card end not read: %s", row.get("id"), type(e).__name__)
+        return row
+    if not mark:
+        return row
+    row = {**row, "card_warned": mark}
+    patch["data"] = encrypt_details(row)
+    return row
 
 
 def bank_validated(row, active):

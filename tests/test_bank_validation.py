@@ -77,8 +77,9 @@ class BankAsks(Base):
         self.assertEqual(web.parse_dt(d["bank_ends"]), ends)
         self.assertTrue(later(hours=16) < web.parse_dt(p["next_check"]) < later(hours=18))
 
-    def test_another_unconfirmed_payment_still_suspends_at_the_second_try(self):
-        outcome, p, *_ = self.run_renewal(pay_error=web.Unconfirmed(web.UNCONFIRMED), last_error=web.UNCONFIRMED)
+    def test_another_unconfirmed_payment_suspends_after_its_last_try(self):
+        outcome, p, *_ = self.run_renewal(pay_error=web.Unconfirmed(web.UNCONFIRMED), last_error=web.UNCONFIRMED,
+                                          refused_tries=len(web.REFUSED_AGAIN))
         self.assertEqual(outcome, "unconfirmed")
         self.assertFalse(p["enabled"])
 
@@ -452,3 +453,139 @@ class HiddenStep(unittest.TestCase):
         with patch.object(web, "open_bank_page") as opened, patch.object(web.time, "sleep"):
             web.read_bank_page(self.session(*[hidden] * 20), "j", opening=True)
         opened.assert_called_once()
+
+
+class RefusedAgain(Base):
+    def test_tried_again_later_and_later_then_suspended(self):
+        spaced = []
+        for tries, hours in enumerate((1, 4, 8)):
+            outcome, p, *_ = self.run_renewal(pay_error=web.Unconfirmed(web.UNCONFIRMED), last_error=web.UNCONFIRMED if tries else None, refused_tries=tries)
+            self.assertNotIn("enabled", p)
+            spaced.append(web.parse_dt(p["next_check"]))
+            self.assertTrue(later(hours=hours - 0.1) < spaced[-1] < later(hours=hours + 0.1))
+        _, p, *_ = self.run_renewal(pay_error=web.Unconfirmed(web.UNCONFIRMED), last_error=web.UNCONFIRMED, refused_tries=3)
+        self.assertFalse(p["enabled"])
+
+    def test_a_refused_payment_is_not_tried_every_half_hour(self):
+        refused = RuntimeError("Payment job failed: []")
+        _, p, *_ = self.run_renewal(pay_error=refused)
+        self.assertEqual(self.details(p)["refused_tries"], 1)
+        self.assertTrue(later(minutes=50) < web.parse_dt(p["next_check"]) < later(minutes=70))
+        message = p["last_error"]
+        _, p, *_ = self.run_renewal(pay_error=refused, last_error=message, refused_tries=3)
+        self.assertFalse(p["enabled"])
+
+    def test_another_problem_does_not_count_as_a_refusal(self):
+        _, p, *_ = self.run_renewal(pay_error=OSError("down"))
+        self.assertNotIn("refused_tries", self.details(p) if "data" in p else {})
+        self.assertTrue(web.parse_dt(p["next_check"]) < later(minutes=35))
+
+    def test_a_ticket_ending_soon_gets_its_try_before_the_end(self):
+        ends = later(hours=3)
+        running = {"parkingSessionId": "s1", "locationId": "75005", "vehicle": {"licensePlate": "AB123CD"},
+                   "expireTime": ends, "rateOptionId": "101"}
+        with patch.object(web, "extendable", return_value=running), \
+                patch.object(web, "extension_time", return_value=later(hours=-1)):
+            _, p, *_ = self.run_renewal([running], extend_error=web.Unconfirmed(web.UNCONFIRMED), last_error=web.UNCONFIRMED, refused_tries=1)
+        self.assertTrue(web.parse_dt(p["next_check"]) < ends - timedelta(minutes=29))
+
+
+class Extending(Base):
+    def running(self, **k):
+        return {"parkingSessionId": "s1", "locationId": "75005", "vehicle": {"licensePlate": "AB123CD"},
+                "expireTime": later(**k), "rateOptionId": "101"}
+
+    def test_after_a_refusal_the_other_card_extends_and_is_kept(self):
+        ticket = self.running(hours=10)
+        moved = {**ticket, "expireTime": later(days=8)}
+        stored = []
+        with patch.object(web, "extendable", return_value=ticket), \
+                patch.object(web, "extension_time", return_value=later(hours=-1)), \
+                patch.object(web, "check_payable", return_value="other") as check, \
+                patch.object(web, "extend_and_confirm", return_value=({"cost": None}, [moved])), \
+                patch.object(web, "with_details", side_effect=lambda r: r), patch.object(web, "guarded_state", return_value="ok"), \
+                patch.object(web, "store", side_effect=lambda *a, **k: stored.append(k)), patch.object(web, "notify"), \
+                patch.object(web.Bot, "from_refresh_token", return_value=MagicMock(refresh_token="t")), \
+                patch.object(web.UserSession, "for_bot", return_value=self.session([ticket])):
+            web.process_renewal({"id": "r1", "owner": "o", "plate": "AB123CD", "location": "75005", "rate": "101", "duration": 7,
+                                 "unit": "Days", "payment_account_id": "c", "last_error": web.UNCONFIRMED, "enabled": True}, refresh_token="t")
+        self.assertTrue(check.call_args.kwargs["avoid"])
+        self.assertEqual(self.details(stored[-1]["p_patch"])["payment_account_id"], "other")
+
+
+class TwoDaysBefore(Base):
+    def run_at(self, ext_hours, check_error=None):
+        ticket = {"parkingSessionId": "s1", "locationId": "75005", "vehicle": {"licensePlate": "AB123CD"},
+                  "expireTime": later(hours=ext_hours + 17), "rateOptionId": "101"}
+        with patch.object(web, "extendable", return_value=ticket), \
+                patch.object(web, "extension_time", return_value=later(hours=ext_hours)), \
+                patch.object(web, "check_payable", side_effect=check_error, return_value="c") as check:
+            result = self.run_renewal([ticket])
+        return result, check
+
+    def test_a_ticket_far_from_its_end_comes_back_two_days_before(self):
+        (outcome, p, *_), check = self.run_at(ext_hours=120)
+        self.assertEqual(outcome, "active")
+        self.assertTrue(later(hours=71) < web.parse_dt(p["next_check"]) < later(hours=73))
+        check.assert_not_called()
+
+    def test_two_days_before_all_is_fine(self):
+        (outcome, p, mail, *_), check = self.run_at(ext_hours=47)
+        check.assert_called_once()
+        self.assertIsNone(p["last_error"])
+        self.assertTrue(later(hours=46) < web.parse_dt(p["next_check"]) < later(hours=48))
+        mail.assert_not_called()
+
+    def test_two_days_before_a_problem_is_told_nothing_is_paid(self):
+        (outcome, p, mail, _, pay, ext), _ = self.run_at(ext_hours=47, check_error=web.NotPayable("Carte expirée"))
+        self.assertEqual(outcome, "active")
+        self.assertEqual(p["last_error"], "Carte expirée")
+        self.assertTrue(later(hours=5) < web.parse_dt(p["next_check"]) < later(hours=7))
+        self.assertEqual(mail.call_args.kwargs["message"], "Carte expirée")
+        ext.assert_not_called()
+
+    def test_a_failed_check_changes_nothing(self):
+        (outcome, p, *_), _ = self.run_at(ext_hours=47, check_error=OSError("down"))
+        self.assertEqual(outcome, "active")
+        self.assertIsNone(p["last_error"])
+
+
+class CardEnding(unittest.TestCase):
+    def warn(self, month_end_days, warned=""):
+        end = datetime.now(timezone.utc) + timedelta(days=month_end_days)
+        session = MagicMock()
+        session.call.return_value = {"paymentCards": [{"cardType": "Visa", "maskedCardNumber": "**4242", "paymentAccountId": "c",
+                                                       "expiryMonth": end.month, "expiryYear": end.year}]}
+        row = {"email": "a@b.fr", "plate": "AB123CD", "card_warned": warned}
+        with patch.object(web, "send_email") as mail:
+            mark = web.warn_card_ending(session, row, end - timedelta(days=month_end_days))
+        return mark, mail
+
+    def test_far_nothing(self):
+        mark, mail = self.warn(120)
+        self.assertIsNone(mark)
+        mail.assert_not_called()
+
+    def test_within_a_month_once(self):
+        mark, mail = self.warn(10)
+        mail.assert_called_once()
+        self.assertIn("carte", mail.call_args.args[1].lower())
+        again, mail = self.warn(10, warned=mark)
+        self.assertIsNone(again)
+        mail.assert_not_called()
+
+    def test_another_card_still_good_nothing(self):
+        session = MagicMock()
+        session.call.return_value = {"paymentCards": [
+            {"paymentAccountId": "c", "maskedCardNumber": "**1", "expiryMonth": 12, "expiryYear": 2099},
+            {"paymentAccountId": "d", "maskedCardNumber": "**2", "expiryMonth": 1, "expiryYear": 2020}]}
+        with patch.object(web, "send_email") as mail:
+            self.assertIsNone(web.warn_card_ending(session, {"email": "a@b.fr"}, datetime.now(timezone.utc)))
+        mail.assert_not_called()
+
+    def test_no_card_with_a_date_nothing(self):
+        session = MagicMock()
+        session.call.return_value = {"paymentCards": [{"paymentAccountId": "c", "maskedCardNumber": "**1"}]}
+        with patch.object(web, "send_email") as mail:
+            self.assertIsNone(web.warn_card_ending(session, {"email": "a@b.fr"}, datetime.now(timezone.utc)))
+        mail.assert_not_called()

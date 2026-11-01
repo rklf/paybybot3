@@ -66,14 +66,14 @@ class EarlyRenewal(unittest.TestCase):
         self.assertEqual(outcome, "paid")
         self.assertIn("extend", [c.args[0] for c in session.call.call_args_list])
         new_end = ticket["expireTime"] + timedelta(days=7)
-        self.assertEqual(next_check, web.extension_time(new_end))
+        self.assertEqual(next_check, web.next_look(new_end, datetime.now(timezone.utc)))
         self.assertEqual(mail.call_args.args[1], "paid")
 
     def test_waits_until_a_day_before_the_end(self):
         outcome, p, mail, session, ticket, next_check = self.run_renewal(hours_left=72)
         self.assertEqual(outcome, "active")
         self.assertNotIn("extend", [c.args[0] for c in session.call.call_args_list])
-        self.assertEqual(next_check, web.extension_time(ticket["expireTime"]))
+        self.assertEqual(next_check, web.next_look(ticket["expireTime"], datetime.now(timezone.utc)))
 
     def test_extension_refused_buys_at_the_end_as_before(self):
         refused = RuntimeError('Quote error: [{"reason": "MaxStayExceeded"}]')
