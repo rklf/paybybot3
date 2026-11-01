@@ -28,6 +28,8 @@ import threading
 import time
 import uuid
 from datetime import date, datetime, time as dtime, timedelta, timezone
+from html.parser import HTMLParser
+from urllib.parse import urljoin, urlsplit
 from zoneinfo import ZoneInfo
 from pathlib import Path
 
@@ -1972,6 +1974,72 @@ def bank_validated(row, active):
     return before is None or aware(covered_until(active)) > before
 
 
+BANK_HOPS = 4
+BANK_TIMEOUT = 8
+
+
+class BankAutoForm(HTMLParser):
+    """Reads a page's first form: where it goes, its hidden fields, and whether anything in it is for a person."""
+
+    def __init__(self):
+        super().__init__()
+        self.action, self.method, self.fields, self.for_a_person = None, "", {}, False
+        self.inside = self.done = False
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "form" and not self.done and self.action is None:
+            self.action, self.method, self.inside = attrs.get("action") or "", (attrs.get("method") or "get").lower(), True
+        elif self.inside and tag == "input" and (attrs.get("type") or "text").lower() == "hidden":
+            if attrs.get("name"):
+                self.fields[attrs["name"]] = attrs.get("value") or ""
+        elif self.inside and tag in ("input", "button", "select", "textarea"):
+            self.for_a_person = True
+
+    def handle_endtag(self, tag):
+        if tag == "form" and self.inside:
+            self.inside, self.done = False, True
+
+
+def bank_auto_form(html):
+    """(where, fields) of a form the page sends by itself, else None: never what a card holder would fill or choose."""
+    if ".submit()" not in html:
+        return None
+    form = BankAutoForm()
+    form.feed(html)
+    if not form.action or form.method != "post" or form.for_a_person:
+        return None
+    return form.action, form.fields
+
+
+def open_bank_page(page):
+    """Opens the page of a payment waiting on the bank, as a browser would, so that the bank can alert its client's
+    phone. Under trial on the owner's own account. Validates nothing and states what it is (no invented browser data);
+    logs what answered, never the content."""
+    html = base64.b64decode(page["html"]).decode("utf-8", "replace") if page.get("html") else ""
+    form = bank_auto_form(html)
+    where, fields = page.get("url"), None
+    if not where and form:
+        where, fields = form
+    if not where:
+        log.info("bank page: nothing to open by itself")
+        return
+    http = requests.Session()
+    http.headers["User-Agent"] = "PayByBot"
+    for hop in range(BANK_HOPS):
+        if urlsplit(where).scheme != "https":
+            log.info("bank page %s: not https", hop)
+            return
+        answer = (http.post(where, data=fields, timeout=BANK_TIMEOUT) if fields is not None
+                  else http.get(where, timeout=BANK_TIMEOUT))
+        log.info("bank page %s: host=%s status=%s script=%s", hop, urlsplit(answer.url).hostname, answer.status_code,
+                 "<script" in answer.text.lower())
+        form = bank_auto_form(answer.text)
+        if not form:
+            return
+        where, fields = urljoin(answer.url, form[0]), form[1]
+
+
 def bank_wait_patch(session, row, job_id, active, now, validating):
     """The renewal's state while the bank waits for its card holder; asked again by them, the first deadline stays."""
     ends = aware(covered_until(active)) if active else None
@@ -1986,6 +2054,8 @@ def bank_wait_patch(session, row, job_id, active, now, validating):
     try:  # what PayByPhone gives (never its content): the page may be a link or a whole page
         page = session.call("get_job_challenge", job_id) if job_id else None
         log.info("bank challenge: url=%s html=%s", bool((page or {}).get("url")), len((page or {}).get("html") or ""))
+        if page and page.get("pending") and not validating and row.get("owner") in admin_owners():
+            open_bank_page(page)
     except Exception as e:
         log.info("bank challenge unreadable: %s", type(e).__name__)
     return {"last_error": BANK_WAIT, "next_check": utc_iso(now + timedelta(minutes=15) if validating else remind),

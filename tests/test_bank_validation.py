@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import unittest
@@ -280,3 +281,98 @@ class Push(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def encoded(html):
+    return base64.b64encode(html.encode()).decode()
+
+
+AUTO_FORM = """<html><body onload="document.forms[0].submit()">
+<form method="POST" action="https://acs.bank.test/challenge"><input type="hidden" name="creq" value="SECRET"></form>
+</body></html>"""
+
+
+class ServerOpensBankPage(unittest.TestCase):
+    def opened(self, page, *answers):
+        http = MagicMock()
+        http.headers = {}
+        replies = iter(answers or [MagicMock(url="https://acs.bank.test/end", status_code=200, text="<p>Attente</p>")])
+        http.get.side_effect = lambda *a, **k: next(replies)
+        http.post.side_effect = lambda *a, **k: next(replies)
+        with patch.object(web.requests, "Session", return_value=http):
+            web.open_bank_page(page)
+        return http
+
+    def test_a_link_is_opened(self):
+        http = self.opened({"url": "https://acs.bank.test/x", "html": None})
+        self.assertEqual(http.get.call_args.args[0], "https://acs.bank.test/x")
+        http.post.assert_not_called()
+
+    def test_a_page_sending_itself_is_sent(self):
+        http = self.opened({"url": None, "html": encoded(AUTO_FORM)})
+        self.assertEqual(http.post.call_args.args[0], "https://acs.bank.test/challenge")
+        self.assertEqual(http.post.call_args.kwargs["data"], {"creq": "SECRET"})
+
+    def test_the_next_page_sending_itself_is_sent_too(self):
+        first = MagicMock(url="https://acs.bank.test/a", status_code=200, text=AUTO_FORM)
+        last = MagicMock(url="https://acs.bank.test/end", status_code=200, text="<p>Attente</p>")
+        http = self.opened({"url": "https://acs.bank.test/x", "html": None}, first, last)
+        http.post.assert_called_once()
+
+    def test_stops_after_a_few_pages(self):
+        loop = MagicMock(url="https://acs.bank.test/a", status_code=200, text=AUTO_FORM)
+        http = self.opened({"url": "https://acs.bank.test/x", "html": None}, *[loop] * 20)
+        self.assertEqual(http.get.call_count + http.post.call_count, web.BANK_HOPS)
+
+    def test_nothing_the_card_holder_must_fill_or_choose_is_sent(self):
+        for html in (AUTO_FORM.replace('type="hidden"', 'type="password"'),
+                     AUTO_FORM.replace('</form>', '<input type="submit" value="Annuler"></form>'),
+                     AUTO_FORM.replace('</form>', '<button>Annuler</button></form>'),
+                     AUTO_FORM.replace('document.forms[0].submit()', '')):
+            http = self.opened({"url": None, "html": encoded(html)})
+            http.post.assert_not_called()
+
+    def test_only_https(self):
+        http = self.opened({"url": "http://acs.bank.test/x", "html": None})
+        http.get.assert_not_called()
+        http = self.opened({"url": None, "html": encoded(AUTO_FORM.replace("https://", "http://"))})
+        http.post.assert_not_called()
+
+    def test_never_presents_itself_as_a_phone(self):
+        self.assertEqual(self.opened({"url": "https://acs.bank.test/x"}).headers["User-Agent"], "PayByBot")
+
+    def test_the_logs_keep_no_content(self):
+        with self.assertLogs(web.log, "INFO") as logs:
+            self.opened({"url": None, "html": encoded(AUTO_FORM)})
+        self.assertNotIn("SECRET", "\n".join(logs.output))
+        self.assertNotIn("/challenge", "\n".join(logs.output))
+
+
+class OnlyOnTheOwnersAccount(unittest.TestCase):
+    def patch_for(self, owner, validating=False):
+        session = MagicMock()
+        session.call.return_value = {"pending": True, "url": "https://acs.bank.test/x", "html": None}
+        row = {"id": "r1", "owner": owner}
+        with patch.dict(os.environ, {"PAYBYBOT_SECRET": "s" * 40}), \
+                patch.object(web, "admin_owners", return_value={"me"}), \
+                patch.object(web, "open_bank_page") as opened:
+            web.bank_wait_patch(session, row, "job1", None, datetime.now(timezone.utc), validating)
+        return opened
+
+    def test_the_owner(self):
+        self.patch_for("me").assert_called_once()
+
+    def test_a_client(self):
+        self.patch_for("client").assert_not_called()
+
+    def test_not_when_the_card_holder_is_opening_it(self):
+        self.patch_for("me", validating=True).assert_not_called()
+
+    def test_a_failure_changes_nothing(self):
+        session = MagicMock()
+        session.call.return_value = {"pending": True, "url": "https://acs.bank.test/x", "html": None}
+        with patch.dict(os.environ, {"PAYBYBOT_SECRET": "s" * 40}), \
+                patch.object(web, "admin_owners", return_value={"me"}), \
+                patch.object(web, "open_bank_page", side_effect=OSError("down")):
+            p = web.bank_wait_patch(session, {"id": "r1", "owner": "me"}, "job1", None, datetime.now(timezone.utc), False)
+        self.assertEqual(p["last_error"], web.BANK_WAIT)
