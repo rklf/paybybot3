@@ -4163,7 +4163,13 @@ def admin_service_action(body: ServiceAction, pbb_admin: str = Cookie(None)):
     return guarded(lambda: service_action(body.action))
 
 
-_admin_parking = {}  # owner -> (when read, its vehicles and running tickets)
+_admin_parking = {}  # owner -> (when read, its vehicles and running tickets, its cards' end dates)
+
+
+def card_dates(accounts):
+    """A client's cards for the owner's page: when they end, nothing that identifies them."""
+    return [{"exp": p["label"].split(" — exp. ")[-1] if p["validUntil"] else None, "validUntil": p["validUntil"],
+             "expired": p["expired"]} for p in normalize_accounts(accounts) if p["kind"] == "card"]
 
 
 @app.get("/api/admin/activity")
@@ -4227,21 +4233,27 @@ def admin_clients(pbb_admin: str = Cookie(None)):
     def read_parking(owner):
         try:
             bot = bot_from_refresh(None, owner)
+            try:
+                cards = card_dates(bot.get_payment_accounts())
+            except Exception as e:
+                log.info("admin: cards unreadable for a client: %s", type(e).__name__)
+                cards = None
             vehicles = [v["licensePlate"] for v in bot.get_vehicles() if not v.get("archived")]
             running = {}
             for x in bot.get_parking_sessions():
                 plate, end = (x.get("vehicle") or {}).get("licensePlate"), x.get("expireTime")
                 if plate and end and (plate not in running or end > running[plate]):
                     running[plate] = end
-            return [{"plate": p, "expire": running[p].isoformat() if p in running else None} for p in vehicles]
+            return {"vehicles": [{"plate": p, "expire": running[p].isoformat() if p in running else None} for p in vehicles],
+                    "cards": cards}
         except Exception as e:
             log.info("admin: PayByPhone unreadable for a client: %s", type(e).__name__)
             return None
 
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=8) as pool:
-        for client, vehicles in zip(clients, pool.map(parking, [c.pop("owner") for c in clients])):
-            client["vehicles"] = vehicles
+        for client, found in zip(clients, pool.map(parking, [c.pop("owner") for c in clients])):
+            client["vehicles"], client["cards"] = (found["vehicles"], found["cards"]) if found else (None, None)
     return clients
 
 

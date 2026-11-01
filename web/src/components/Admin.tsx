@@ -128,6 +128,8 @@ export type AdminClient = {
   price: number | null
   /** Each vehicle on PayByPhone with its running ticket's end (null: none); null if PayByPhone could not be read. */
   vehicles: { plate: string; expire: string | null }[] | null
+  /** When each of the client's cards ends (MM/AA); null if PayByPhone could not be read. */
+  cards: { exp: string | null; validUntil: string | null; expired?: boolean }[] | null
   renewals: number
   /** How the account came: through a user's link, or the link asked by e-mail (none for accounts before). */
   origin?: 'parrainage' | 'sans_parrainage' | null
@@ -230,8 +232,24 @@ type Row = {
   ticket: 'En cours' | 'Aucun' | 'Illisible'
   expire: string | null
   left: string | null
+  /** The end dates of the client's cards. */
+  card: string
+  cardState: CardState
   /** ok: subscribed and covered; alert: subscribed and no time left (a real problem); none: no offer running. */
   status: 'ok' | 'alert' | 'none'
+}
+
+const CARD_SOON = 60 * 86_400_000
+type CardState = 'Expirée' | 'Bientôt' | 'OK' | 'Date inconnue' | 'Aucune' | 'Illisible'
+
+/** A client is safe while one card still works: judged on the card ending last. */
+function cardState(cards: AdminClient['cards'], now: number): CardState {
+  if (!cards) return 'Illisible'
+  if (!cards.length) return 'Aucune'
+  const valid = cards.filter((c) => !c.expired)
+  if (!valid.length) return 'Expirée'
+  if (valid.some((c) => !c.validUntil)) return 'Date inconnue'
+  return Math.max(...valid.map((c) => new Date(c.validUntil!).getTime())) - now <= CARD_SOON ? 'Bientôt' : 'OK'
 }
 
 const STATUS_TEXT = { ok: 'OK', alert: 'Problème', none: 'Non suivi' } as const
@@ -245,6 +263,7 @@ const COLUMNS: { key: keyof Row; label: string; choices?: string[] }[] = [
   { key: 'active', label: 'Statut de l’offre', choices: ['Actif', 'Inactif'] },
   { key: 'ticket', label: 'Ticket', choices: ['En cours', 'Aucun', 'Illisible'] },
   { key: 'left', label: 'Expire' },
+  { key: 'cardState', label: 'Carte', choices: ['Expirée', 'Bientôt', 'OK', 'Date inconnue', 'Aucune', 'Illisible'] },
   { key: 'status', label: 'État', choices: ['OK', 'Problème', 'Non suivi'] },
 ]
 
@@ -258,6 +277,8 @@ function rowsOf(clients: AdminClient[], now: number): Row[] {
       active: (c.subscribed ? 'Actif' : 'Inactif') as Row['active'],
       origin: (c.origin === 'sans_parrainage' ? 'Sans parrainage' : c.origin === 'parrainage' ? 'Parrainage' : '—') as Row['origin'],
       price: c.price != null ? `${euros(c.price)} / ${c.plan === 'yearly' ? 'an' : 'mois'}` : '',
+      card: (c.cards ?? []).map((x) => x.exp ?? '?').join(', '),
+      cardState: cardState(c.cards, now),
     }
     if (c.vehicles === null) return [{ ...base, plate: null, ticket: 'Illisible', expire: null, left: null, status: c.subscribed ? 'alert' : 'none' } as Row]
     return c.vehicles.map((v) => {
@@ -284,10 +305,11 @@ function VehicleTable({ clients }: { clients: AdminClient[] }) {
     const id = setInterval(() => setNow(Date.now()), 60_000)
     return () => clearInterval(id)
   }, [])
-  // Problems first, then covered vehicles, then those without an offer.
+  // Problems first, then covered vehicles, then those without an offer; cards ending first within each.
   const rows = useMemo(() => {
     const order = { alert: 0, ok: 1, none: 2 }
-    return rowsOf(clients, now).sort((a, b) => order[a.status] - order[b.status])
+    const urgent = (r: Row) => (r.cardState === 'Expirée' ? 0 : r.cardState === 'Bientôt' ? 1 : 2)
+    return rowsOf(clients, now).sort((a, b) => order[a.status] - order[b.status] || urgent(a) - urgent(b))
   }, [clients, now])
   const shown = rows.filter((r) =>
     COLUMNS.every(({ key, choices }) => {
@@ -298,6 +320,10 @@ function VehicleTable({ clients }: { clients: AdminClient[] }) {
   )
   const alerts = rows.filter((r) => r.status === 'alert').length
   const vehicles = rows.filter((r) => r.plate).length
+  // One client can have several vehicles: counted once.
+  const cardsIn = (state: CardState) => clients.filter((c) => cardState(c.cards, now) === state).length
+  const expiredCards = cardsIn('Expirée')
+  const soonCards = cardsIn('Bientôt')
   const field = 'mt-2 h-8 w-full min-w-0 rounded-lg border border-ink/10 bg-white px-2 text-xs font-normal text-ink outline-none focus:border-eu'
 
   return (
@@ -305,6 +331,8 @@ function VehicleTable({ clients }: { clients: AdminClient[] }) {
       <p className="mt-2 text-sm text-ink/55">
         {vehicles} véhicule{vehicles > 1 ? 's' : ''}
         {alerts > 0 && <span className="font-semibold text-destructive"> · {alerts} sans ticket alors que l’abonnement est actif</span>}
+        {expiredCards > 0 && <span className="font-semibold text-destructive"> · {expiredCards} client{expiredCards > 1 ? 's' : ''} avec carte expirée</span>}
+        {soonCards > 0 && <span className="font-semibold text-[#9a6700]"> · {soonCards} carte{soonCards > 1 ? 's' : ''} à renouveler sous 60 jours</span>}
         {shown.length !== rows.length && <> · {shown.length} ligne{shown.length > 1 ? 's' : ''} affichée{shown.length > 1 ? 's' : ''}</>}
       </p>
       <div className="mt-3 overflow-x-auto rounded-2xl border border-ink/10 bg-white">
@@ -372,6 +400,12 @@ function VehicleTable({ clients }: { clients: AdminClient[] }) {
                   ) : (
                     <span className="text-ink/40">—</span>
                   )}
+                </td>
+                <td className="px-3 py-3 whitespace-nowrap tabular-nums">
+                  {r.card ? <span className="text-ink">{r.card}</span> : <span className="text-ink/40">—</span>}
+                  {r.cardState === 'Expirée' && <span className="block text-xs font-semibold text-destructive">Expirée</span>}
+                  {r.cardState === 'Bientôt' && <span className="block text-xs font-semibold text-[#9a6700]">Bientôt</span>}
+                  {(r.cardState === 'Illisible' || r.cardState === 'Date inconnue') && <span className="block text-xs text-ink/50">{r.cardState}</span>}
                 </td>
                 <td className="px-3 py-3">
                   <span

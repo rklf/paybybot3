@@ -54,3 +54,14 @@ class _Request:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CardDates(unittest.TestCase):
+    def test_only_the_end_dates_of_cards(self):
+        found = web.card_dates({"paymentCards": [
+            {"cardType": "Visa", "maskedCardNumber": "****4242", "paymentAccountId": "a", "expiryMonth": 4, "expiryYear": 2099},
+            {"cardType": "Visa", "maskedCardNumber": "****1111", "paymentAccountId": "b", "expiryMonth": 1, "expiryYear": 2020},
+            {"cardType": "Visa", "maskedCardNumber": "****2222", "paymentAccountId": "c"}],
+            "paypalAccounts": [{"paymentAccountId": "p"}]})
+        self.assertEqual([(c["exp"], c["expired"]) for c in found], [("04/99", False), ("01/20", True), (None, False)])
+        self.assertNotIn("4242", str(found))

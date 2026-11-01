@@ -82,6 +82,31 @@ test('mon compte : la carte bancaire et sa date de fin', async ({ page }) => {
   await expect(page.getByRole('dialog').getByText(/Visa •••• 4242 — exp\. \d\d\/\d\d/)).toBeVisible()
 })
 
+test('admin : les dates de fin des cartes des clients', async ({ page }) => {
+  const client = (name: string, cards: unknown) => ({
+    name, email: `${name}@test.fr`, created: '2026-10-01T10:00:00Z', plan: 'monthly', subscribed: true, price: 450,
+    renewals: 1, vehicles: [{ plate: 'AB123CD', expire: new Date(Date.now() + 3 * 86_400_000).toISOString() }], cards,
+  })
+  const soon = new Date(Date.now() + 20 * 86_400_000).toISOString()
+  const replies: Record<string, unknown> = {
+    stats: { accounts: 3, accounts_7d: 0, accounts_30d: 3, renewals: 3, renewals_active: 3, renewals_paused: 0, renewals_error: 0, paid_7d: 0, signups_by_day: [] },
+    clients: [
+      client('sereine', [{ exp: '04/99', validUntil: '2099-04-30T23:59:59+00:00', expired: false }]),
+      client('bientot', [{ exp: '12/26', validUntil: soon, expired: false }]),
+      client('perimee', [{ exp: '01/20', validUntil: '2020-01-31T23:59:59+00:00', expired: true }]),
+    ],
+    activity: [],
+    service: { interrupted: false, customers: 0 },
+  }
+  await page.route('**/api/admin/*', (route) => route.fulfill({ json: replies[new URL(route.request().url()).pathname.split('/').pop()!] ?? {} }))
+  await page.goto(LINK + '#/admin')
+  await expect(page.getByText('1 client avec carte expirée')).toBeVisible()
+  await expect(page.getByText('1 carte à renouveler sous 60 jours')).toBeVisible()
+  await page.getByRole('combobox', { name: 'Filtrer : Carte' }).selectOption('Expirée')
+  await expect(page.getByText('01/20')).toBeVisible()
+  await expect(page.getByText('04/99')).toBeHidden()
+})
+
 test('lien de test : le petit ticket à payer s’ouvre', async ({ page }) => {
   await demo(page)
   await page.evaluate(() => { window.location.hash = '#/test-ticket' })
