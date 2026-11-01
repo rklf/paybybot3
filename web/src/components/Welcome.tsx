@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { ArrowRight, Car, Check, CreditCard, Minus, Phone, Ticket, UserRound } from 'lucide-react'
+import { ArrowRight, Car, Check, CreditCard, Loader2, Minus, Phone, RefreshCw, Ticket, UserRound } from 'lucide-react'
 import { LoadingLine } from '@/components/Loading'
 import { RemotePanel } from '@/components/RemoteScene'
 import { CardGate } from '@/components/Riverain'
@@ -61,20 +61,42 @@ function Row({
 }
 
 /** First sign-in: everything PayByBot found in the PayByPhone account, so the user can check it is right. */
-export function Welcome({ me, data, onContinue }: { me: Me; data: Overview; onContinue: () => void }) {
+export function Welcome({
+  me,
+  data,
+  onContinue,
+  onRefresh,
+}: {
+  me: Me
+  data: Overview
+  onContinue: () => void
+  /** Read the PayByPhone account again (a vehicle or a card changed in the PayByPhone app meanwhile). */
+  onRefresh?: () => Promise<void>
+}) {
   // The account's vehicles: with the arrondissement of their resident rate when they have one (found on PayByPhone,
   // never typed); undefined: looking.
   const [vehicles, setVehicles] = useState<PricedVehicle[] | undefined>(undefined)
+  const [reloads, setReloads] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+  async function refresh() {
+    setRefreshing(true)
+    try {
+      await onRefresh?.()
+      setReloads((n) => n + 1)
+    } finally {
+      setRefreshing(false)
+    }
+  }
   useEffect(() => {
     // The pricing lists the vehicles with their resident zone; when it lists none (or fails), the account's
     // vehicles as PayByPhone gives them, without a zone: every vehicle shows, resident or not.
     const fallback = () =>
       data.vehicles.map((v): PricedVehicle => ({ plate: v.plate, type: v.type, zone: null, monthly: 0, yearly: 0, renewed: false }))
-    api.pricing().then(
+    api.pricing(reloads ? 0 : undefined).then(
       (p) => setVehicles(p.vehicles?.length ? p.vehicles : fallback()),
       () => setVehicles(fallback()),
     )
-  }, [me.demo])
+  }, [me.demo, reloads])
 
   // Without a resident rate, the pricing lists every vehicle with no zone: they take non-resident tickets.
   const residents = vehicles?.some((v) => v.zone) ?? false
@@ -186,7 +208,22 @@ export function Welcome({ me, data, onContinue }: { me: Me; data: Overview; onCo
 
           <p className="rise mt-4 text-sm leading-relaxed text-ink/55" style={{ animationDelay: `${next()}ms` }}>
             Rien n’a été modifié dans votre compte <PayByPhone />, et votre mot de passe n’est pas enregistré. Un véhicule
-            ou une carte à changer ? Faites-le dans l’application <PayByPhone /> : <PayByBot /> suit automatiquement.
+            ou une carte à changer ? Faites-le dans l’application <PayByPhone />, puis touchez « Rafraîchir ».
+          </p>
+          <button
+            onClick={refresh}
+            disabled={refreshing}
+            className={cn('rise mt-3 gap-2', ui.pillGray)}
+            style={{ animationDelay: `${next()}ms` }}
+          >
+            {refreshing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Rafraîchir
+          </button>
+          <p className="rise mt-4 text-sm leading-relaxed text-ink/55" style={{ animationDelay: `${next()}ms` }}>
+            Si votre carte bancaire est refusée un jour, <PayByBot /> peut avancer votre ticket pour que votre véhicule
+            reste couvert. Son montant est alors ajouté à votre prochain prélèvement.{' '}
+            <a href="#/cgu" target="_blank" rel="noopener" className={ui.link}>
+              En savoir plus
+            </a>
           </p>
 
           <button

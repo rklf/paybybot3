@@ -174,6 +174,42 @@ test('mon compte : la carte bancaire et sa date de fin', async ({ page }) => {
   await expect(app).toHaveAttribute('href', 'https://paybyphone.onelink.me/ZQkh/')
 })
 
+test('mon compte : ajouter un véhicule à l’abonnement, le dernier reste coché', async ({ page }) => {
+  const vehicle = (plate: string) => ({ plate, zone: '75105', monthly: 950, yearly: 9120, renewed: false })
+  const sent: unknown[] = []
+  await page.route('**/api/account', (route) =>
+    route.fulfill({ json: { email: 'a@b.fr', zone: '75105', plan: 'yearly', subscribed: true } }),
+  )
+  await page.route('**/api/pricing', (route) =>
+    route.fulfill({ json: { zone: '75105', monthly: 950, yearly: 9120, vehicles: [vehicle('AB-123-CD'), vehicle('GH-456-JK')], billed: ['AB-123-CD'] } }),
+  )
+  await page.route('**/api/account/vehicles', (route) => {
+    const body = route.request().postDataJSON()
+    sent.push(body)
+    return route.fulfill({
+      json: { plan: 'yearly', added: ['GH456JK'], removed: [], stops: [], chargeCents: 760, creditCents: 0, months: 1, total: 18240, nextBilling: '2026-11-25T00:00:00+00:00' },
+    })
+  })
+  let question = ''
+  page.on('dialog', (d) => {
+    question = d.message()
+    d.accept()
+  })
+  await demo(page)
+  await page.getByRole('button', { name: 'Mon compte' }).first().click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByText(/Abonnement annuel · 1 véhicule/)).toBeVisible()
+  await expect(dialog.getByRole('checkbox', { name: /AB-123-CD/ })).toBeDisabled()
+  await dialog.getByRole('checkbox', { name: /GH-456-JK/ }).click()
+  await expect.poll(() => sent.length).toBe(2)
+  expect(question).toContain('Ajouter GH456JK')
+  expect(question).toContain('7,60')
+  expect(sent).toEqual([
+    { plates: ['AB123CD', 'GH456JK'], confirm: false },
+    { plates: ['AB123CD', 'GH456JK'], confirm: true },
+  ])
+})
+
 test('admin : les dates de fin des cartes des clients', async ({ page }) => {
   const client = (name: string, cards: unknown) => ({
     name, email: `${name}@test.fr`, created: '2026-10-01T10:00:00Z', plan: 'monthly', subscribed: true, price: 450,

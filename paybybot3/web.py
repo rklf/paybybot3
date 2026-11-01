@@ -27,6 +27,7 @@ import secrets
 import threading
 import time
 import uuid
+import calendar
 from datetime import date, datetime, time as dtime, timedelta, timezone
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
@@ -3204,6 +3205,34 @@ def plan_total(monthlies, plan="monthly"):
     return monthly if plan == "monthly" else int(round(monthly * 12 * (1 - YEARLY_DISCOUNT)))
 
 
+def now_utc():
+    return datetime.now(timezone.utc)
+
+
+def add_months(dt, n):
+    year, month = divmod(dt.month - 1 + n, 12)
+    year, month = dt.year + year, month + 1
+    return dt.replace(year=year, month=month, day=min(dt.day, calendar.monthrange(year, month)[1]))
+
+
+def months_left(now, end):
+    """Months until the next billing date, the month already started counting whole (never billed by the day)."""
+    n = 1
+    while add_months(now, n) < end:
+        n += 1
+    return n
+
+
+def change_cents(plan, months, added, removed):
+    """(charged now, credited on the next invoice) when vehicles are added or removed. The month started is always
+    due: an added vehicle pays it whole (yearly: with the months left, at the yearly price); a removed one keeps it,
+    and a yearly subscription is credited the whole months after it."""
+    if plan != "yearly":
+        return MONTHLY_PRICE * added, 0
+    month = int(MONTHLY_PRICE * (1 - YEARLY_DISCOUNT))
+    return month * months * added, month * (months - 1) * removed
+
+
 def plate_key(plate):
     """A plate as compared: « AB-123 cd » and « AB123CD » are the same vehicle."""
     return re.sub(r"[^0-9A-Z]", "", str(plate).upper())
@@ -3464,6 +3493,7 @@ def fmt_qty(value):
 @app.post("/api/pay")
 def pay(body: Parking, pbb_session: str = Cookie(None)):
     s = current(pbb_session)
+    guarded(lambda: ensure_covered(s, body.plate))
 
     def run():
         pending = s.unconfirmed.get((body.plate, body.location))
@@ -3638,6 +3668,7 @@ def add_autopilot(body: Autopilot, pbb_session: str = Cookie(None)):
         if not refresh:
             raise HTTPException(401, "Reconnectez-vous pour activer le renouvellement automatique.")
         check_offer(s)
+        guarded(lambda: ensure_covered(s, body.plate))
 
         def save():
             row = store("renewal_save", p_row={
@@ -4238,6 +4269,128 @@ def own_subscription(s):
     if s.demo or not sub_id or not os.environ.get("STRIPE_SECRET_KEY"):
         raise HTTPException(400, "Aucun abonnement à gérer.")
     return account, sub_id
+
+
+def subscription_of(account):
+    """(status, plan, next billing date) of the running Stripe subscription, or None without one."""
+    sub_id = account.get("stripe_subscription")
+    if not sub_id or not os.environ.get("STRIPE_SECRET_KEY"):
+        return None
+    sub = stripe("GET", "subscriptions/" + sub_id)
+    if sub.get("status") not in ACTIVE_STATUSES:
+        return None
+    item = ((sub.get("items") or {}).get("data") or [{}])[0]
+    plan = "yearly" if ((item.get("price") or {}).get("recurring") or {}).get("interval") == "year" else "monthly"
+    end = item.get("current_period_end") or sub.get("current_period_end")
+    return sub["status"], plan, datetime.fromtimestamp(end, timezone.utc) if end else now_utc()
+
+
+def charge_now(account, cents, description):
+    """Charge the subscription's card at once (vehicles added). A refusal leaves nothing behind."""
+    customer = account.get("stripe_customer")
+    stripe("POST", "invoiceitems", customer=customer, amount=cents, currency="eur", description=description)
+    invoice = stripe("POST", "invoices", customer=customer, pending_invoice_items_behavior="include",
+                     auto_advance="false")
+    try:
+        stripe("POST", "invoices/%s/pay" % invoice["id"])
+    except HTTPException:
+        try:
+            stripe("POST", "invoices/%s/void" % invoice["id"])
+        except HTTPException:
+            pass
+        raise HTTPException(402, "Votre carte a été refusée : le véhicule n'a pas été ajouté. Changez de carte dans "
+                                 "« Gérer », puis réessayez.")
+
+
+def stop_renewals(s, plates):
+    """Vehicles taken off the subscription: their renewals and programmed tickets stop (a running ticket stays)."""
+    if HOSTED and not s.demo:
+        owner = owner_id(s.username)
+        for row in store("renewal_list", p_owner=owner) or []:
+            try:
+                if plate_key(with_details(row)["plate"]) in plates:
+                    store("renewal_delete", p_owner=owner, p_id=row["id"])
+            except Exception as e:
+                log.warning("renewal %s: not stopped: %s", row.get("id"), type(e).__name__)
+    else:
+        for ap_id, ap in list(s.autopilots.items()):
+            if plate_key(ap["plate"]) in plates:
+                s.autopilots.pop(ap_id, None)
+
+
+def plural(n, word):
+    return word + ("s" if n > 1 else "")
+
+
+class CoveredChange(BaseModel):
+    plates: list[Annotated[str, Field(max_length=20)]] = Field(max_length=20)
+    confirm: bool = False  # False: only what it would cost, nothing changed
+
+
+@app.post("/api/account/vehicles")
+def covered_vehicles(body: CoveredChange, pbb_session: str = Cookie(None)):
+    """« Mon compte »: the vehicles the subscription covers. An added vehicle pays the month started at once (yearly:
+    the months left); a removed one stops its renewal and, yearly, is credited the whole months after this one."""
+    s = current(pbb_session)
+    found = guarded(lambda: account_pricing(s)) or {}
+    known = [plate_key(v["plate"]) for v in found.get("vehicles") or []]
+    plates = [k for k in dict.fromkeys(plate_key(p) for p in body.plates) if k in known]
+    if not plates:
+        raise HTTPException(400, "Gardez au moins un véhicule : pour tout arrêter, résiliez l'abonnement.")
+    old = {plate_key(p) for p in found.get("billed") or []}
+    added, removed = [p for p in plates if p not in old], sorted(old - set(plates))
+    stops = sorted(set(removed) & guarded(lambda: renewed_plates(s)))
+    account = guarded(lambda: load_account(s))
+    sub = guarded(lambda: subscription_of(account)) if HOSTED and not s.demo else None
+    plan, end, months, charge, credit = account.get("plan") or "monthly", None, 0, 0, 0
+    if sub:
+        status, plan, end = sub
+        months = months_left(now_utc(), end)
+        if status != "trialing":  # the free month: the first payment covers every vehicle chosen by then
+            charge, credit = change_cents(plan, months, len(added), len(removed))
+    answer = {"plan": plan, "added": added, "removed": removed, "stops": stops, "chargeCents": charge,
+              "creditCents": credit, "months": months, "total": plan_total([MONTHLY_PRICE] * len(plates), plan),
+              "nextBilling": end.isoformat() if end else None}
+    if not body.confirm:
+        return answer
+    if charge:
+        charge_now(account, charge, "%s %s : %s, %d mois" % (
+            plural(len(added), "Véhicule"), plural(len(added), "ajouté"), ", ".join(added), months))
+    if credit:
+        stripe("POST", "invoiceitems", customer=account.get("stripe_customer"), amount=-credit, currency="eur",
+               description="%s %s : %s, %d mois crédités" % (
+                   plural(len(removed), "Véhicule"), plural(len(removed), "retiré"), ", ".join(removed), months - 1))
+    if stops:
+        stop_renewals(s, set(stops))
+    guarded(lambda: save_account(s, {"chosen_plates": plates}))
+    guarded(lambda: account_pricing(s))  # the subscription follows these vehicles from its next billing date
+    record_activity("Véhicules de l'abonnement modifiés", s, ["%d véhicule(s)." % len(plates)])
+    return answer
+
+
+def ensure_covered(s, plate):
+    """No renewal, programmed ticket or ticket from PayByBot for a vehicle the subscription does not cover. During
+    the free month it is simply added; after it, the client adds it first and pays the month started."""
+    if not HOSTED or s.demo:
+        return
+    found = account_pricing(s) or {}
+    billed = [plate_key(p) for p in found.get("billed") or []]
+    key = plate_key(plate)
+    if key in billed:
+        return
+    account = load_account(s)
+    sub = subscription_of(account)
+    if not sub:  # no subscription yet: check_offer asks for one first
+        return
+    status, plan, end = sub
+    if status == "trialing":
+        save_account(s, {"chosen_plates": billed + [key]})
+        account_pricing(s)
+        return
+    cents = change_cents(plan, months_left(now_utc(), end), 1, 0)[0]
+    raise HTTPException(402, {"code": "not_covered", "plate": key, "cents": cents,
+                              "message": "Ce véhicule n'est pas dans votre abonnement : ajoutez-le d'abord (%s)."
+                                         % money_text({"amount": cents / 100})})
 
 
 @app.get("/api/billing/subscription")

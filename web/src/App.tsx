@@ -405,6 +405,7 @@ export default function App() {
         <Welcome
           me={me}
           data={data}
+          onRefresh={refresh}
           onContinue={() => {
             setOnboarding(false)
             setAutoRenew(true)

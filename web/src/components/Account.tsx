@@ -4,10 +4,35 @@ import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { PlansDialog } from '@/components/Pricing'
 import { arrondissement, PayByBot, PayByPhone, Plate, ZonePlate } from '@/components/signs'
-import { api, clock, type Account, type Overview, type PricedVehicle } from '@/lib/api'
+import { api, clock, type Account, type CoveredChange, type Overview, type PricedVehicle, type Pricing } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { ui } from '@/lib/styles'
 import { LoadingLine } from '@/components/Loading'
+
+const plateKey = (p: string) => p.replace(/[^0-9a-z]/gi, '').toUpperCase()
+const euros = (cents: number) => (cents / 100).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })
+const day = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+
+/** What a change of the covered vehicles means, said before it is made. */
+function changeQuestion(c: CoveredChange) {
+  const per = c.plan === 'yearly' ? '/an' : '/mois'
+  const lines: string[] = []
+  if (c.added.length) {
+    lines.push(`Ajouter ${c.added.join(', ')} à votre abonnement ?`)
+    lines.push(
+      c.chargeCents
+        ? `${euros(c.chargeCents)} prélevés maintenant : le mois en cours${c.months > 1 ? ` et les ${c.months - 1} mois jusqu’à votre échéance` : ''}.`
+        : 'Rien n’est prélevé pendant votre mois offert.',
+    )
+  }
+  if (c.removed.length) {
+    lines.push(`Retirer ${c.removed.join(', ')} de votre abonnement ?`)
+    if (c.stops.length) lines.push('Son renouvellement s’arrête ; le ticket en cours reste valable.')
+    lines.push('Le mois en cours reste dû.' + (c.creditCents ? ` ${euros(c.creditCents)} seront crédités sur votre prochaine facture.` : ''))
+  }
+  lines.push(`Nouvel abonnement : ${euros(c.total)}${per}${c.nextBilling ? ` à partir du ${day(c.nextBilling)}` : ''}.`)
+  return lines.join('\n\n')
+}
 
 /** "Mon compte" in the top bar: what PayByBot reads from the PayByPhone account, the home zone and e-mail. */
 export function AccountButton({
@@ -49,9 +74,37 @@ function AccountDialog({
   // Only the « riverain » vehicles, each with the arrondissement PayByPhone gives it the resident rate in (never
   // typed); undefined: looking.
   const [vehicles, setVehicles] = useState<PricedVehicle[] | undefined>(undefined)
-  useEffect(() => {
-    api.pricing().then((p) => setVehicles(p.vehicles ?? []), () => setVehicles([]))
-  }, [])
+  const [pricing, setPricing] = useState<Pricing | null>(null)
+  const [changing, setChanging] = useState<string | null>(null)
+  function loadPricing() {
+    api.pricing().then(
+      (p) => {
+        setPricing(p)
+        setVehicles(p.vehicles ?? [])
+      },
+      () => setVehicles([]),
+    )
+  }
+  useEffect(loadPricing, [])
+  const covered = (pricing?.billed ?? []).map(plateKey)
+
+  /** Tick or untick a vehicle: what it costs is shown first, the change is made once confirmed. */
+  async function toggle(plate: string) {
+    const key = plateKey(plate)
+    const next = covered.includes(key) ? covered.filter((p) => p !== key) : [...covered, key]
+    setChanging(key)
+    try {
+      const preview = await api.coveredVehicles(next, false)
+      if (!window.confirm(changeQuestion(preview))) return
+      await api.coveredVehicles(next, true)
+      toast.success('Votre abonnement est à jour.')
+      loadPricing()
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setChanging(null)
+    }
+  }
 
   // « Gérer »: Stripe's customer portal (card, invoices, cancel), back here after.
   const [opening, setOpening] = useState(false)
@@ -101,22 +154,43 @@ function AccountDialog({
           <div className={row}>
             {/* Resident vehicles show their arrondissement; without a resident rate, just the plate. */}
             <dt className={label}>
-              {(vehicles && vehicles.length > 1 ? 'Véhicules' : 'Véhicule') + (vehicles?.length && vehicles.every((v) => v.zone) ? (vehicles.length > 1 ? ' résidents' : ' résident') : '')}
+              {account?.subscribed && vehicles && vehicles.length > 1 ? 'Véhicules couverts' : (vehicles && vehicles.length > 1 ? 'Véhicules' : 'Véhicule') + (vehicles?.length && vehicles.every((v) => v.zone) ? (vehicles.length > 1 ? ' résidents' : ' résident') : '')}
             </dt>
             <dd className="flex flex-col items-end gap-2">
               {vehicles === undefined ? (
                 <LoadingLine className="pt-1.5" />
               ) : vehicles.length ? (
-                vehicles.map((v) => (
-                  <span key={v.plate} className="flex flex-wrap items-center justify-end gap-2">
-                    <Plate plate={v.plate} size="sm" />
-                    {arrondissement(v.zone) ? (
-                      <span className="text-sm font-semibold text-ink">{arrondissement(v.zone)}</span>
-                    ) : (
-                      <ZonePlate zone={v.zone} />
-                    )}
-                  </span>
-                ))
+                vehicles.map((v) => {
+                  const on = covered.includes(plateKey(v.plate))
+                  const last = on && covered.length === 1
+                  return (
+                    <span key={v.plate} className="flex flex-wrap items-center justify-end gap-2">
+                      <Plate plate={v.plate} size="sm" />
+                      {arrondissement(v.zone) ? (
+                        <span className="text-sm font-semibold text-ink">{arrondissement(v.zone)}</span>
+                      ) : (
+                        <ZonePlate zone={v.zone} />
+                      )}
+                      {account?.subscribed && (
+                        <button
+                          type="button"
+                          role="checkbox"
+                          aria-checked={on}
+                          aria-label={`${v.plate} couvert par l’abonnement`}
+                          title={last ? 'Le dernier véhicule reste couvert : pour tout arrêter, résiliez l’abonnement.' : undefined}
+                          disabled={last || !!changing}
+                          onClick={() => toggle(v.plate)}
+                          className={cn(
+                            'grid size-5 shrink-0 place-items-center rounded-[4px] border-2 text-xs font-bold transition disabled:opacity-50',
+                            on ? 'border-eu bg-eu text-white' : 'border-ink/25 bg-white',
+                          )}
+                        >
+                          {changing === plateKey(v.plate) ? <Loader2 className="size-3 animate-spin" /> : on ? '✓' : null}
+                        </button>
+                      )}
+                    </span>
+                  )
+                })
               ) : (
                 <span className="text-right text-ink/60">
                   {data.vehicles.length ? 'Aucun véhicule au tarif résident' : 'Aucun véhicule'}
@@ -124,6 +198,15 @@ function AccountDialog({
               )}
             </dd>
           </div>
+
+          {account?.subscribed && pricing && covered.length > 0 && (
+            <div className="py-3 text-right text-sm text-ink/60">
+              Abonnement {account.plan === 'yearly' ? 'annuel' : 'mensuel'} · {covered.length} véhicule
+              {covered.length > 1 ? 's' : ''} couvert{covered.length > 1 ? 's' : ''} ·{' '}
+              {euros((account.plan === 'yearly' ? pricing.yearly : pricing.monthly) ?? 0)}
+              {account.plan === 'yearly' ? '/an' : '/mois'}
+            </div>
+          )}
 
           <div className={row}>
             <dt className={label}>{cards.length > 1 ? 'Cartes bancaires' : 'Carte bancaire'}</dt>
