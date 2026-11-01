@@ -66,15 +66,25 @@ function AccountDialog({
   }
   useEffect(loadPricing, [])
   const covered = (pricing?.billed ?? []).map(plateKey)
+  // The boxes ticked or unticked, not saved yet (null: as the subscription is): one paywall for them all.
+  const [draft, setDraft] = useState<string[] | null>(null)
+  const ticked = draft ?? covered
+  const same = (a: string[], b: string[]) => a.length === b.length && a.every((p) => b.includes(p))
 
-  /** Tick or untick a vehicle: the paywall shows what it costs, the change is made once confirmed there. */
-  async function toggle(plate: string) {
+  function toggle(plate: string) {
     const key = plateKey(plate)
-    const next = covered.includes(key) ? covered.filter((p) => p !== key) : [...covered, key]
-    setChanging(key)
+    const next = ticked.includes(key) ? ticked.filter((p) => p !== key) : [...ticked, key]
+    setDraft(same(next, covered) ? null : next)
+  }
+
+  /** The paywall shows what the changes cost; they are made once confirmed there. */
+  async function update() {
+    if (!draft) return
+    setChanging('all')
     try {
-      if (await askCoverage(next)) {
+      if (await askCoverage(draft)) {
         toast.success('Votre abonnement est à jour.')
+        setDraft(null)
         loadPricing()
       }
     } finally {
@@ -137,8 +147,8 @@ function AccountDialog({
                 <LoadingLine className="pt-1.5" />
               ) : vehicles.length ? (
                 vehicles.map((v) => {
-                  const on = covered.includes(plateKey(v.plate))
-                  const last = on && covered.length === 1
+                  const on = ticked.includes(plateKey(v.plate))
+                  const last = on && ticked.length === 1
                   return (
                     <span key={v.plate} className="flex flex-wrap items-center justify-end gap-2">
                       <Plate plate={v.plate} size="sm" />
@@ -161,7 +171,7 @@ function AccountDialog({
                             on ? 'border-eu bg-eu text-white' : 'border-ink/25 bg-white',
                           )}
                         >
-                          {changing === plateKey(v.plate) ? <Loader2 className="size-3 animate-spin" /> : on ? '✓' : null}
+                          {on ? '✓' : null}
                         </button>
                       )}
                     </span>
@@ -177,10 +187,23 @@ function AccountDialog({
 
           {account?.subscribed && pricing && covered.length > 0 && (
             <div className="py-3 text-right text-sm text-ink/60">
-              Abonnement {account.plan === 'yearly' ? 'annuel' : 'mensuel'} · {covered.length} véhicule
-              {covered.length > 1 ? 's' : ''} couvert{covered.length > 1 ? 's' : ''} ·{' '}
-              {euros((account.plan === 'yearly' ? pricing.yearly : pricing.monthly) ?? 0)}
-              {account.plan === 'yearly' ? '/an' : '/mois'}
+              {draft ? (
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <button onClick={() => setDraft(null)} disabled={!!changing} className={ui.navText}>
+                    Annuler
+                  </button>
+                  <button onClick={update} disabled={!!changing} className={cn(ui.pillBlue, 'gap-2')}>
+                    {changing && <Loader2 className="size-4 animate-spin" />} Mettre à jour mon abonnement
+                  </button>
+                </div>
+              ) : (
+                <>
+                  Abonnement {account.plan === 'yearly' ? 'annuel' : 'mensuel'} · {covered.length} véhicule
+                  {covered.length > 1 ? 's' : ''} couvert{covered.length > 1 ? 's' : ''} ·{' '}
+                  {euros((account.plan === 'yearly' ? pricing.yearly : pricing.monthly) ?? 0)}
+                  {account.plan === 'yearly' ? '/an' : '/mois'}
+                </>
+              )}
             </div>
           )}
 

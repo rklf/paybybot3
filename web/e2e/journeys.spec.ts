@@ -174,20 +174,20 @@ test('mon compte : la carte bancaire et sa date de fin', async ({ page }) => {
   await expect(app).toHaveAttribute('href', 'https://paybyphone.onelink.me/ZQkh/')
 })
 
-test('mon compte : ajouter un véhicule à l’abonnement, le dernier reste coché', async ({ page }) => {
+test('mon compte : cocher plusieurs véhicules puis un seul paywall, le dernier reste coché', async ({ page }) => {
   const vehicle = (plate: string) => ({ plate, zone: '75105', monthly: 950, yearly: 9120, renewed: false })
   const sent: unknown[] = []
   await page.route('**/api/account', (route) =>
     route.fulfill({ json: { email: 'a@b.fr', zone: '75105', plan: 'yearly', subscribed: true } }),
   )
   await page.route('**/api/pricing', (route) =>
-    route.fulfill({ json: { zone: '75105', monthly: 950, yearly: 9120, vehicles: [vehicle('AB-123-CD'), vehicle('GH-456-JK')], billed: ['AB-123-CD'] } }),
+    route.fulfill({ json: { zone: '75105', monthly: 950, yearly: 9120, billing: true, billed: ['AB-123-CD'],
+      vehicles: [vehicle('AB-123-CD'), vehicle('GH-456-JK'), vehicle('LM-789-NP')] } }),
   )
   await page.route('**/api/account/vehicles', (route) => {
-    const body = route.request().postDataJSON()
-    sent.push(body)
+    sent.push(route.request().postDataJSON())
     return route.fulfill({
-      json: { plan: 'yearly', added: ['GH456JK'], removed: [], stops: [], chargeCents: 760, creditCents: 0, months: 1, total: 18240, nextBilling: '2026-11-25T00:00:00+00:00' },
+      json: { plan: 'yearly', added: ['GH456JK', 'LM789NP'], removed: [], stops: [], chargeCents: 1520, creditCents: 0, months: 1, total: 27360, nextBilling: '2026-11-25T00:00:00+00:00' },
     })
   })
   await demo(page)
@@ -196,11 +196,14 @@ test('mon compte : ajouter un véhicule à l’abonnement, le dernier reste coch
   await expect(dialog.getByText(/Abonnement annuel · 1 véhicule/)).toBeVisible()
   await expect(dialog.getByRole('checkbox', { name: /AB-123-CD/ })).toBeDisabled()
   await dialog.getByRole('checkbox', { name: /GH-456-JK/ }).click()
-  await page.getByRole('button', { name: 'Payer 7,60 € et continuer' }).click()
+  await dialog.getByRole('checkbox', { name: /LM-789-NP/ }).click()
+  expect(sent).toEqual([]) // nothing asked while ticking
+  await dialog.getByRole('button', { name: 'Mettre à jour mon abonnement' }).click()
+  await page.getByRole('button', { name: 'Payer 15,20 € et continuer' }).click()
   await expect.poll(() => sent.length).toBe(2)
   expect(sent).toEqual([
-    { plates: ['AB123CD', 'GH456JK'], confirm: false },
-    { plates: ['AB123CD', 'GH456JK'], confirm: true },
+    { plates: ['AB123CD', 'GH456JK', 'LM789NP'], confirm: false },
+    { plates: ['AB123CD', 'GH456JK', 'LM789NP'], confirm: true },
   ])
 })
 
