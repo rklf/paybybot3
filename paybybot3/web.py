@@ -1909,7 +1909,7 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
                 patch.update(last_payment=utc_iso(now), last_error=None,
                              next_check=utc_iso(next_check or now + timedelta(days=30)))
                 outcome = "paid"
-            elif now >= parse_dt(row.get("bank_deadline")):
+            elif now >= parse_dt(row.get("bank_deadline")) or (backup_ready() and bank_failed(session, row)):
                 if backup_ready():  # advanced below; if it cannot be, the card is tried again in an hour
                     patch.update(last_error=BANK_CHECK, next_check=utc_iso(now + RETRY_AFTER))
                 else:
@@ -2226,6 +2226,19 @@ def card_warned_row(session, row, now, patch):
     return row
 
 
+def bank_failed(session, row):
+    """The payment the bank was asked to confirm can no longer go through: PayByPhone marks it failed (refused,
+    expired, voided). Then the ticket can be advanced at once, without paying twice. Unreadable or waiting: False."""
+    if not row.get("bank_job"):
+        return False
+    try:
+        job = session.call("_get_job", row["bank_job"])
+    except Exception as e:
+        log.info("bank payment unreadable: %s", type(e).__name__)
+        return False
+    return bool(job) and bool(Bot._job_failures(job))
+
+
 def bank_validated(row, active):
     """The validation went through: a ticket appeared, or the running one now ends later than when it was asked."""
     if not active:
@@ -2339,7 +2352,7 @@ def read_bank_page(session, job_id, opening):
         log.info("bank challenge unreadable: %s", type(e).__name__)
 
 
-BANK_LOOK = timedelta(minutes=10)  # validated in the bank's own app, PayByBot is not told: it looks for the new ticket
+BANK_LOOK = timedelta(minutes=5)  # validated in the bank's own app, PayByBot is not told: it looks for the new ticket
 BANK_LOOK_FOR = timedelta(hours=1)  # the bank's page does not last longer than this
 
 

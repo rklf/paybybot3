@@ -335,5 +335,55 @@ class EmailsSayTheAdvance(unittest.TestCase):
         self.assertNotIn("avance", self.lines("problem", message=web.RESIDENT_REFUSED % ""))
 
 
+
+
+class AdvanceOnceTheBankGivesUp(unittest.TestCase):
+    """The payment the bank asks to confirm is read at PayByPhone: once it has failed (refused, expired), it can no
+    longer go through, so the ticket is advanced at once, without waiting for the hour (no double payment)."""
+
+    def setUp(self):
+        self.env = patch.dict(os.environ, ENV)
+        self.env.start()
+        self.addCleanup(self.env.stop)
+
+    def run_wait(self, job):
+        row = {**ROW, "payment_account_id": "c", "last_error": web.BANK_WAIT, "enabled": True, "email": "a@b.fr",
+               "bank_job": "job1", "bank_deadline": web.utc_iso(later(minutes=50)),
+               "bank_remind": web.utc_iso(later(minutes=40)), "bank_at": web.utc_iso(later(minutes=-6))}
+        stored = []
+        s = MagicMock()
+        s.call.side_effect = lambda name, *a, **k: {"get_parking_sessions": [], "_get_job": job}.get(name)
+        with patch.object(web, "with_details", side_effect=lambda r: r), \
+                patch.object(web, "guarded_state", return_value="ok"), \
+                patch.object(web, "store", side_effect=lambda *a, **k: stored.append(k)), \
+                patch.object(web, "notify"), patch.object(web, "notify_bank"), patch.object(web, "count_card"), \
+                patch.object(web.Bot, "from_refresh_token", return_value=MagicMock(refresh_token="t")), \
+                patch.object(web.UserSession, "for_bot", return_value=s), \
+                patch.object(web, "backup_ready", return_value=True), \
+                patch.object(web, "advance", return_value=({"cost": {"amount": 9.0}},
+                                                           [{"expireTime": later(days=7)}])) as adv:
+            outcome = web.process_renewal(row, refresh_token="t")
+        return outcome, adv, stored[-1]["p_patch"]
+
+    def test_a_failed_payment_is_advanced_at_once(self):
+        failed = {"status": "failed", "captureGroups": [{"stage": "void", "status": "voided", "lineItems": []}]}
+        outcome, adv, _ = self.run_wait(failed)
+        self.assertEqual(outcome, "advanced")
+        adv.assert_called_once()
+
+    def test_a_payment_still_waiting_on_the_bank_is_not_advanced(self):
+        waiting = {"status": "inProgress", "captureGroups": [{"stage": "authorization", "status": "authenticationChallenge",
+                                                              "lineItems": [{"status": "pending"}]}]}
+        outcome, adv, p = self.run_wait(waiting)
+        self.assertEqual(outcome, "bank_wait")
+        adv.assert_not_called()
+        self.assertTrue(web.parse_dt(p["next_check"]) <= later(minutes=5, seconds=5))
+
+    def test_an_unreadable_payment_is_not_advanced(self):
+        outcome, adv, _ = self.run_wait(None)
+        self.assertEqual(outcome, "bank_wait")
+        adv.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
