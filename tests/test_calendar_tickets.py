@@ -76,6 +76,38 @@ class Calendar(unittest.TestCase):
         self.assertEqual((ap["dateFrom"], ap["dateTo"]), (day, day))
         self.assertIsNotNone(web.with_next_ticket(ap)["nextTicket"])
 
+    def test_a_time_already_past_today_is_refused(self):
+        now = datetime(2026, 11, 2, 14, 30, tzinfo=PARIS)
+        body = web.Autopilot(plate="AB123CD", location="78101", rate="102", duration=30, unit="Minutes",
+                             paymentAccountId="demo-card", label="Jours précis", days=EVERY_DAY,
+                             dateFrom="2026-11-02", dateTo="2026-11-02", start="09:00")
+        with patch.object(web, "datetime", wraps=datetime) as clock:
+            clock.now.return_value = now
+            with self.assertRaises(HTTPException) as e:
+                web.checked_days(body)
+        self.assertEqual(e.exception.status_code, 400)
+        self.assertIn("passé", e.exception.detail)
+
+    def test_a_time_still_to_come_today_is_kept(self):
+        now = datetime(2026, 11, 2, 8, 30, tzinfo=PARIS)
+        body = web.Autopilot(plate="AB123CD", location="78101", rate="102", duration=30, unit="Minutes",
+                             paymentAccountId="demo-card", label="Jours précis", days=EVERY_DAY,
+                             dateFrom="2026-11-02", dateTo="2026-11-02", start="09:00")
+        with patch.object(web, "datetime", wraps=datetime) as clock:
+            clock.now.return_value = now
+            days, start = web.checked_days(body)
+        self.assertEqual(start, "09:00")
+
+    def test_while_its_window_is_open_it_is_kept(self):
+        now = datetime(2026, 11, 2, 9, 10, tzinfo=PARIS)
+        body = web.Autopilot(plate="AB123CD", location="78101", rate="102", duration=30, unit="Minutes",
+                             paymentAccountId="demo-card", label="Jours précis", days=EVERY_DAY,
+                             dateFrom="2026-11-02", dateTo="2026-11-02", start="09:00")
+        with patch.object(web, "datetime", wraps=datetime) as clock:
+            clock.now.return_value = now
+            days, _ = web.checked_days(body)
+        self.assertTrue(days)
+
 
 if __name__ == "__main__":
     unittest.main()

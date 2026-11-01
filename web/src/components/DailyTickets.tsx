@@ -519,6 +519,8 @@ export function DailyWizard({
   const ruleDays = calendar ? [0, 1, 2, 3, 4, 5, 6] : days
   // Tickets counted in the price: the days of the period (Sundays free in Paris), or the days ticked each week.
   const count = calendar ? (period ? periodDays(period.from, period.to, isParis(zone)) : 0) : days.length
+  // Today at an hour already gone: no ticket would ever be taken.
+  const hourPast = !!period && count > 0 && !nextTicket(ruleDays, start, null, period)
   const [cost, setCost] = useState<Money | null | undefined>(undefined)
   const cards = data.payments.filter((p) => p.kind === 'card' && !p.expired)
   const [payment, setPayment] = useState(
@@ -731,8 +733,9 @@ export function DailyWizard({
     setSaving(true)
     try {
       await api.addAutopilot(rule() as Parameters<typeof api.addAutopilot>[0])
+      const first = nextTicket(ruleDays, start, chainFrom, period)
       toast.success(chainFrom ? 'Renouvellement activé.' : 'Ticket programmé.', {
-        description: `Prochain ticket ${when(nextTicket(ruleDays, start, chainFrom, period)!)}.`,
+        description: first ? `Prochain ticket ${when(first)}.` : undefined,
       })
       onDone()
       onClose()
@@ -1084,6 +1087,8 @@ export function DailyWizard({
                         ? '—'
                         : chainFrom
                           ? `${euros(cost)} par jour`
+                          : calendar
+                            ? count > 1 ? `${euros({ amount: cost.amount * count, currency: cost.currency })} (${euros(cost)} × ${count})` : euros(cost)
                           : `${euros({ amount: cost.amount * days.length, currency: cost.currency })} par semaine (${euros(cost)} × ${days.length})`,
                   ],
                 ].map(([k, v]) => (
@@ -1119,6 +1124,10 @@ export function DailyWizard({
             </>
           )}
 
+          {step === 3 && hourPast && (
+            <p className="rounded-xl bg-destructive/8 px-4 py-3 text-sm text-destructive">Cette heure est déjà passée : choisissez une heure ou un jour à venir.</p>
+          )}
+
           <div className="flex gap-3 pt-1">
             {step > 1 && (
               <button onClick={() => setStep(step - 1)} className={cn(ui.primaryGray, 'w-auto flex-1')}>
@@ -1136,7 +1145,7 @@ export function DailyWizard({
               </button>
             )}
             {step === 3 && (
-              <button onClick={() => setStep(4)} disabled={!effective || (calendar ? !count : !days.length)} className={cn(ui.primary, 'flex-[2]')}>
+              <button onClick={() => setStep(4)} disabled={!effective || hourPast || (calendar ? !count : !days.length)} className={cn(ui.primary, 'flex-[2]')}>
                 Suivant
               </button>
             )}

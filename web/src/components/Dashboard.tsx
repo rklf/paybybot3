@@ -317,9 +317,10 @@ export function Dashboard({
             // The renewal or ticket chosen just before Stripe is activated now. The « Votre stationnement est
             // désormais automatisé » screen only when one really was: paid from the banner or « Mon compte » with
             // nothing set up yet, a short word says the account is active and what to do next.
-            const { done: renewed, failed, shown } = await runPendingRenewals()
+            const { done: renewed, weekly, failed, shown } = await runPendingRenewals()
             if (renewed) {
-              setCheckoutDone(true)
+              // « Renouvellement auto » is only true of a weekly renewal: a programmed ticket has its own word.
+              if (weekly) setCheckoutDone(true)
               if (!shown)
                 toast.success(renewed > 1 ? `Renouvellement activé pour ${renewed} véhicules.` : 'Renouvellement activé.')
               onRefresh()

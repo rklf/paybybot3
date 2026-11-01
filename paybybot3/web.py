@@ -3482,6 +3482,12 @@ def checked_days(body):
                 date.fromisoformat(last) - date.fromisoformat(first) > timedelta(days=366):
             raise HTTPException(400, "Choisissez un jour ou une période à venir, d'un an au plus.")
         body.dateFrom, body.dateTo = first, last
+        # Today at an hour already gone: it would be saved and never taken.
+        rule = {"days": days, "start": body.start or schedule.DEFAULT_START, "unit": body.unit, "duration": body.duration,
+                "location": body.location, "tz": body.tz, "date_from": first, "date_to": last}
+        now = datetime.now(timezone.utc)
+        if not schedule.current_slot(rule, now) and not schedule.next_slot(rule, now):
+            raise HTTPException(400, "Cette heure est déjà passée : choisissez une heure ou un jour à venir.")
     return days, ((body.start or schedule.DEFAULT_START) if days else None)
 
 

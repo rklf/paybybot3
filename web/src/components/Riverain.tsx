@@ -63,7 +63,7 @@ export function activationToast(activation: Activation, plate?: string) {
 }
 
 /** Back from Stripe with a subscription: activate the renewals chosen before leaving. */
-export async function runPendingRenewals(): Promise<{ done: number; failed: string[]; shown: number }> {
+export async function runPendingRenewals(): Promise<{ done: number; weekly: number; failed: string[]; shown: number }> {
   let items: PendingRenewal[] = []
   try {
     const saved = JSON.parse(localStorage.getItem(PENDING_KEY) || 'null')
@@ -74,6 +74,7 @@ export async function runPendingRenewals(): Promise<{ done: number; failed: stri
   clearPending()
   const failed: string[] = []
   let shown = 0
+  let weekly = 0
   for (const p of items) {
     try {
       const { activation } = await api.addAutopilot({ label: WEEKLY_LABEL, ...p } as Parameters<typeof api.addAutopilot>[0])
@@ -83,6 +84,7 @@ export async function runPendingRenewals(): Promise<{ done: number; failed: stri
         shown += 1
         continue
       }
+      weekly += 1
       saveLast(p)
       if (activation) {
         activationToast(activation, items.length > 1 ? p.plate : undefined)
@@ -92,7 +94,7 @@ export async function runPendingRenewals(): Promise<{ done: number; failed: stri
       failed.push(`${p.plate} : ${(e as Error).message}`)
     }
   }
-  return { done: items.length - failed.length, failed, shown }
+  return { done: items.length - failed.length, weekly, failed, shown }
 }
 const WEEK_DAYS = 7
 

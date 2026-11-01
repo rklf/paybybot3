@@ -8,6 +8,7 @@ import { LoadingLine } from '@/components/Loading'
 import { PayByPhone, Plate, Wordmark } from '@/components/signs'
 import { HostedFooter } from '@/components/Footer'
 import { PublicTopBar } from '@/components/TopBar'
+import { clearPending } from '@/components/Riverain'
 import { api, type PricedVehicle, type Pricing } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { TRY_LABEL, ui } from '@/lib/styles'
@@ -341,7 +342,8 @@ export function PlansDialog({
     setBusy(true)
     try {
       const { url } = await api.checkout(plan, chosen ?? [])
-      onPay?.()
+      if (onPay) onPay()
+      else clearPending() // from the banner: a choice left unpaid earlier is not activated by this payment
       window.location.assign(url)
     } catch (e) {
       toast((e as Error).message)
