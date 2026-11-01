@@ -53,14 +53,14 @@ class Covered(unittest.TestCase):
         self.addCleanup(self.env.stop)
 
     def change(self, plates, confirm, status="active", interval="year", billed=("AA111AA",), renewed=(),
-               pay_error=None, demo=False):
+               pay_error=None, demo=False, account=None):
         s = MagicMock(demo=demo, username="u")
         calls, saved = [], {}
 
         def stripe(method, path, **data):
             calls.append((method, path, data))
             if method == "GET":
-                return {"id": "sub_1", "status": status, "items": {"data": [{
+                return {"id": "sub_1", "status": status, "default_payment_method": "pm_1", "items": {"data": [{
                     "price": {"recurring": {"interval": interval}}, "current_period_end": ts(2027, 11, 25)}]}}
             if path == "invoices":
                 return {"id": "in_1"}
@@ -70,8 +70,8 @@ class Covered(unittest.TestCase):
         with patch.object(web, "current", return_value=s), patch.object(web, "HOSTED", True), \
                 patch.object(web, "now_utc", return_value=NOW), \
                 patch.object(web, "account_pricing", return_value={"vehicles": VEHICLES, "billed": list(billed)}), \
-                patch.object(web, "load_account", return_value={"stripe_subscription": "sub_1",
-                                                                  "stripe_customer": "cus_1"}), \
+                patch.object(web, "load_account", return_value=account or {"stripe_subscription": "sub_1",
+                                                                             "stripe_customer": "cus_1"}), \
                 patch.object(web, "save_account", side_effect=lambda _, p: saved.update(p) or p), \
                 patch.object(web, "renewed_plates", return_value=set(renewed)), \
                 patch.object(web, "stop_renewals") as stop, \
@@ -92,6 +92,8 @@ class Covered(unittest.TestCase):
         item = next(c for c in calls if c[1] == "invoiceitems")
         self.assertEqual(item[2]["amount"], 13 * YEAR)
         self.assertIn(("POST", "invoices/in_1/pay", {}), calls)
+        invoice = next(c for c in calls if c[1] == "invoices")
+        self.assertEqual(invoice[2]["default_payment_method"], "pm_1")  # the subscription's card, not the customer's
         self.assertEqual(saved["chosen_plates"], ["AA111AA", "BB222BB"])
 
     def test_a_refused_charge_keeps_the_vehicles_as_they_were(self):
@@ -114,6 +116,15 @@ class Covered(unittest.TestCase):
             self.change([], confirm=True)
         self.assertEqual(e.exception.status_code, 400)
 
+    def test_during_paybybots_free_month_nothing_is_charged(self):
+        # Stripe says « active » (first charge delayed to the end of the free month), PayByBot knows the free month.
+        account = {"stripe_subscription": "sub_1", "stripe_customer": "cus_1",
+                   "trial_start": web.utc_iso(NOW - web.timedelta(days=5))}
+        answer, calls, saved, _ = self.change(["AA111AA", "BB222BB"], confirm=True, account=account)
+        self.assertEqual(answer["chargeCents"], 0)
+        self.assertEqual([c for c in calls if c[0] == "POST"], [])
+        self.assertEqual(saved["chosen_plates"], ["AA111AA", "BB222BB"])
+
     def test_during_the_free_month_nothing_is_charged(self):
         answer, calls, saved, _ = self.change(["AA111AA", "BB222BB"], confirm=True, status="trialing")
         self.assertEqual(answer["chargeCents"], 0)
@@ -124,7 +135,7 @@ class Covered(unittest.TestCase):
 class OnlyCoveredVehicles(unittest.TestCase):
     """No renewal, programmed ticket or ticket from PayByBot for a vehicle the subscription does not cover."""
 
-    def ensure(self, plate, status="active"):
+    def ensure(self, plate, status="active", account=None):
         s = MagicMock(demo=False, username="u")
         saved = {}
         sub = {"status": status, "items": {"data": [{"price": {"recurring": {"interval": "year"}},
@@ -132,7 +143,7 @@ class OnlyCoveredVehicles(unittest.TestCase):
         with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk"}), patch.object(web, "HOSTED", True), \
                 patch.object(web, "now_utc", return_value=NOW), \
                 patch.object(web, "account_pricing", return_value={"vehicles": VEHICLES, "billed": ["AA111AA"]}), \
-                patch.object(web, "load_account", return_value={"stripe_subscription": "sub_1"}), \
+                patch.object(web, "load_account", return_value=account or {"stripe_subscription": "sub_1"}), \
                 patch.object(web, "save_account", side_effect=lambda _, p: saved.update(p) or p), \
                 patch.object(web, "stripe", return_value=sub):
             web.ensure_covered(s, plate)
@@ -147,6 +158,11 @@ class OnlyCoveredVehicles(unittest.TestCase):
         self.assertEqual(e.exception.status_code, 402)
         self.assertEqual(e.exception.detail["code"], "not_covered")
         self.assertEqual(e.exception.detail["cents"], 13 * YEAR)
+
+    def test_during_paybybots_free_month_it_is_added_without_charge(self):
+        saved = self.ensure("BB222BB", account={"stripe_subscription": "sub_1",
+                                                "trial_start": web.utc_iso(NOW - web.timedelta(days=5))})
+        self.assertEqual(saved["chosen_plates"], ["AA111AA", "BB222BB"])
 
     def test_during_the_free_month_it_is_added_without_charge(self):
         saved = self.ensure("BB222BB", status="trialing")

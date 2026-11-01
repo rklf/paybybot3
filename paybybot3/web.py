@@ -4271,8 +4271,14 @@ def own_subscription(s):
     return account, sub_id
 
 
+def in_free_month(account):
+    """PayByBot's free month: Stripe already says « active » (its first charge is delayed to the month's end)."""
+    start = parse_dt(account.get("trial_start"))
+    return bool(start and now_utc() < start + timedelta(days=TRIAL_DAYS))
+
+
 def subscription_of(account):
-    """(status, plan, next billing date) of the running Stripe subscription, or None without one."""
+    """(status, plan, next billing date, its card) of the running Stripe subscription, or None without one."""
     sub_id = account.get("stripe_subscription")
     if not sub_id or not os.environ.get("STRIPE_SECRET_KEY"):
         return None
@@ -4282,15 +4288,18 @@ def subscription_of(account):
     item = ((sub.get("items") or {}).get("data") or [{}])[0]
     plan = "yearly" if ((item.get("price") or {}).get("recurring") or {}).get("interval") == "year" else "monthly"
     end = item.get("current_period_end") or sub.get("current_period_end")
-    return sub["status"], plan, datetime.fromtimestamp(end, timezone.utc) if end else now_utc()
+    card = sub.get("default_payment_method")
+    return (sub["status"], plan, datetime.fromtimestamp(end, timezone.utc) if end else now_utc(),
+            card.get("id") if isinstance(card, dict) else card)
 
 
-def charge_now(account, cents, description):
-    """Charge the subscription's card at once (vehicles added). A refusal leaves nothing behind."""
+def charge_now(account, cents, description, card):
+    """Charge the subscription's card at once (vehicles added): Checkout keeps the card on the subscription, not on
+    the customer, so it is named. A refusal leaves nothing behind."""
     customer = account.get("stripe_customer")
     stripe("POST", "invoiceitems", customer=customer, amount=cents, currency="eur", description=description)
     invoice = stripe("POST", "invoices", customer=customer, pending_invoice_items_behavior="include",
-                     auto_advance="false")
+                     auto_advance="false", **({"default_payment_method": card} if card else {}))
     try:
         stripe("POST", "invoices/%s/pay" % invoice["id"])
     except HTTPException:
@@ -4343,10 +4352,11 @@ def covered_vehicles(body: CoveredChange, pbb_session: str = Cookie(None)):
     account = guarded(lambda: load_account(s))
     sub = guarded(lambda: subscription_of(account)) if HOSTED and not s.demo else None
     plan, end, months, charge, credit = account.get("plan") or "monthly", None, 0, 0, 0
+    card = None
     if sub:
-        status, plan, end = sub
+        status, plan, end, card = sub
         months = months_left(now_utc(), end)
-        if status != "trialing":  # the free month: the first payment covers every vehicle chosen by then
+        if status != "trialing" and not in_free_month(account):  # free month: the first payment covers them all
             charge, credit = change_cents(plan, months, len(added), len(removed))
     answer = {"plan": plan, "added": added, "removed": removed, "stops": stops, "chargeCents": charge,
               "creditCents": credit, "months": months, "total": plan_total([MONTHLY_PRICE] * len(plates), plan),
@@ -4355,7 +4365,7 @@ def covered_vehicles(body: CoveredChange, pbb_session: str = Cookie(None)):
         return answer
     if charge:
         charge_now(account, charge, "%s %s : %s, %d mois" % (
-            plural(len(added), "Véhicule"), plural(len(added), "ajouté"), ", ".join(added), months))
+            plural(len(added), "Véhicule"), plural(len(added), "ajouté"), ", ".join(added), months), card)
     if credit:
         stripe("POST", "invoiceitems", customer=account.get("stripe_customer"), amount=-credit, currency="eur",
                description="%s %s : %s, %d mois crédités" % (
@@ -4382,8 +4392,8 @@ def ensure_covered(s, plate):
     sub = subscription_of(account)
     if not sub:  # no subscription yet: check_offer asks for one first
         return
-    status, plan, end = sub
-    if status == "trialing":
+    status, plan, end, _ = sub
+    if status == "trialing" or in_free_month(account):
         save_account(s, {"chosen_plates": billed + [key]})
         account_pricing(s)
         return
