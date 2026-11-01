@@ -82,8 +82,8 @@ test('renouvellement résident : s’active depuis la carte du véhicule', async
   await demo(page)
   await page.getByRole('button', { name: 'Activer le renouvellement automatique' }).first().click()
   await page.getByRole('dialog').getByRole('button', { name: /^Activer le renouvellement/ }).click()
-  await expect(page.getByText('Activé', { exact: true }).first()).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByRole('switch', { name: /Renouvellement/ }).first()).toHaveAttribute('aria-checked', 'true')
+  // Under the switch: « Activé » or the next renewal, depending on the ticket.
+  await expect(page.getByRole('switch', { name: /Renouvellement/ }).first()).toHaveAttribute('aria-checked', 'true', { timeout: 15_000 })
 })
 
 test('mon compte : la carte bancaire et sa date de fin', async ({ page }) => {

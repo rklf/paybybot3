@@ -1116,12 +1116,6 @@ export function DailyWizard({
                   </div>
                 )
               )}
-              {nextTicket(ruleDays, start, chainFrom, period) && (
-                <p className="rounded-xl bg-[#e7f6ec] px-4 py-3 text-sm text-[#14703a]">
-                  {chainFrom || editing ? 'Prochain ticket' : 'Premier ticket'} {when(nextTicket(ruleDays, start, chainFrom, period)!)}
-                  {chainFrom && Math.abs(nextTicket(ruleDays, start, chainFrom, period)!.getTime() - chainFrom.getTime()) < 120_000 ? ', dès la fin du ticket en cours' : ''}. Un e-mail à chaque ticket, et une alerte si {withPayByPhone('PayByPhone')} refuse.
-                </p>
-              )}
             </>
           )}
 
