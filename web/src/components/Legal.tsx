@@ -411,7 +411,7 @@ function Terms() {
         <p>
           Les tickets sont achetés par vous, depuis votre compte <PayByPhone />, au tarif de <PayByPhone />. <PayByBot /> n’encaisse pas
           le prix des tickets : seul l’abonnement à <PayByBot /> est facturé (voir « Abonnement et paiement »), ainsi que les
-          tickets que <PayByBot /> aurait avancés avec sa carte de secours (voir « Carte de secours »).
+          tickets que <PayByBot /> aurait avancés pour vous (voir « Ticket avancé par PayByBot »).
         </p>
       </Section>
 
@@ -484,16 +484,17 @@ function Terms() {
         <p>
           En cas d’échec d’un paiement, <PayByBot /> vous en informera par e-mail. Le paiement de votre stationnement restera
           sous votre responsabilité : il vous appartiendra de le régler vous-même dans l’application <PayByPhone />, sauf
-          si <PayByBot /> l’a avancé avec sa carte de secours.
+          si <PayByBot /> l’a avancé pour vous.
         </p>
         <p>
-          <strong>Carte de secours.</strong> <PayByBot /> peut vous proposer d’ajouter sa carte de secours dans votre compte{' '}
-          <PayByPhone />. Vous l’ajoutez vous-même, et vous pouvez la retirer à tout moment. Elle n’est utilisée que lorsque
-          votre propre carte est refusée ou inutilisable, pour que votre véhicule reste couvert : le paiement suivant
-          réessaie toujours votre carte en premier. Elle ne sert qu’aux tickets de vos renouvellements et tickets programmés,
-          jamais à un autre achat ; tout autre usage pourra vous être facturé de la même façon. Chaque ticket ainsi avancé vous
-          est refacturé au prix payé à <PayByPhone />, sans frais ajoutés, et apparaît sur votre prochain prélèvement{' '}
-          <PayByBot />. <PayByBot /> n’est jamais tenu d’avancer un ticket.
+          <strong>Ticket avancé par PayByBot.</strong> Pour un renouvellement résident, si votre carte est refusée
+          ou inutilisable et qu’aucun ticket ne couvre votre véhicule, <PayByBot /> peut payer le ticket lui-même,
+          depuis son propre compte <PayByPhone />, pour la plaque et au tarif de votre renouvellement. Il le fait
+          aussi si votre banque demande une validation que vous ne donnez pas à temps. Ce ticket couvre votre véhicule
+          mais n’apparaît pas dans votre application <PayByPhone /> ; vous en êtes prévenu par e-mail. Chaque ticket
+          ainsi avancé vous est refacturé au prix payé à <PayByPhone />, sans frais ajoutés, sur votre prochain
+          prélèvement <PayByBot />. Le paiement suivant réessaie toujours votre carte en premier. <PayByBot /> n’est
+          jamais tenu d’avancer un ticket, notamment si une somme due reste impayée ou au-delà d’un plafond.
         </p>
       </Section>
 
@@ -588,8 +589,9 @@ function Terms() {
             la date et l’état de fin des tickets arrêtés avant leur terme, tels que <PayByPhone /> les indique.
           </li>
           <li>
-            <strong>Tickets avancés :</strong> un ticket payé avec la carte de secours de <PayByBot /> (voir « Carte de
-            secours ») est ajouté, au prix payé à <PayByPhone />, à votre prochain prélèvement, avec sa date sur la facture.
+            <strong>Tickets avancés :</strong> un ticket payé par <PayByBot /> pour vous (voir « Ticket avancé par
+            PayByBot ») est ajouté, au prix payé à <PayByPhone />, à votre prochain prélèvement, avec sa date sur la
+            facture. Avec l’abonnement annuel, les tickets avancés sont prélevés chaque mois.
           </li>
           <li>
             <strong>Premier prélèvement :</strong> rien n’est prélevé avant la fin du mois offert.

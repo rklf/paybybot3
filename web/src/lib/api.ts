@@ -217,9 +217,11 @@ export const api = {
   /** One action, or all of them without an id. */
   adminActivityDelete: (id?: number) =>
     request<{ ok: true }>(id == null ? '/api/admin/activity' : `/api/admin/activity/${id}`, { method: 'DELETE' }),
-  adminBackupCard: () => request<{ last4: string | null }>('/api/admin/backup-card'),
-  adminBackupCardSet: (last4: string | null) =>
-    request<{ last4: string | null }>('/api/admin/backup-card', { method: 'PUT', body: JSON.stringify({ last4 }) }),
+  adminBackupAccount: () =>
+    request<{ connected: boolean; label: string | null; weekCents: number; capCents: number }>('/api/admin/backup-account'),
+  adminBackupAccountSet: (login: string, password: string) =>
+    post<{ connected: boolean; label: string; cards: string[] }>('/api/admin/backup-account', { login, password }),
+  adminBackupAccountDelete: () => request<{ connected: false }>('/api/admin/backup-account', { method: 'DELETE' }),
   adminService: () => request<import('@/components/Admin').ServiceState>('/api/admin/service'),
   adminServiceAction: (action: 'interrupt' | 'notify' | 'resume') =>
     post<import('@/components/Admin').ServiceState>('/api/admin/service', { action }),

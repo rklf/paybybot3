@@ -199,6 +199,30 @@ test('admin : les dates de fin des cartes des clients', async ({ page }) => {
   await expect(page.getByText('04/99')).toBeHidden()
 })
 
+test('admin : connecter le compte de secours', async ({ page }) => {
+  const stats = { accounts: 0, accounts_7d: 0, accounts_30d: 0, renewals: 0, renewals_active: 0, renewals_paused: 0, renewals_error: 0, paid_7d: 0, signups_by_day: [] }
+  let sent: unknown = null
+  await page.route('**/api/admin/*', (route) => {
+    const name = new URL(route.request().url()).pathname.split('/').pop()!
+    if (name === 'backup-account' && route.request().method() === 'POST') {
+      sent = route.request().postDataJSON()
+      return route.fulfill({ json: { connected: true, label: '0612•••78', cards: ['Visa •••• 9385 — exp. 07/31'] } })
+    }
+    const replies: Record<string, unknown> = {
+      stats, clients: [], activity: [],
+      'backup-account': { connected: false, label: null, weekCents: 0, capCents: 30000 },
+    }
+    return route.fulfill({ json: replies[name] ?? {} })
+  })
+  await page.goto(LINK + '#/admin')
+  await page.getByLabel('Identifiant du compte PayByPhone de secours').fill('0612345678')
+  await page.getByLabel('Mot de passe du compte PayByPhone de secours').fill('secret')
+  await page.getByRole('button', { name: 'Connecter', exact: true }).click()
+  await expect(page.getByText(/Connecté : compte 0612•••78 · Visa •••• 9385/)).toBeVisible()
+  expect(sent).toEqual({ login: '0612345678', password: 'secret' })
+  await expect(page.getByLabel('Mot de passe du compte PayByPhone de secours')).toBeHidden()
+})
+
 test('lien de test : le petit ticket à payer s’ouvre', async ({ page }) => {
   await demo(page)
   await page.evaluate(() => { window.location.hash = '#/test-ticket' })
