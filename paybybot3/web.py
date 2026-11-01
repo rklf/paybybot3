@@ -2039,6 +2039,18 @@ def open_bank_page(page):
         where, fields = urljoin(answer.url, form[0]), form[1]
 
 
+def read_bank_page(session, job_id, opening):
+    """What PayByPhone gives (never its content): the page may be a link or a whole page. Opened unless the card holder
+    is opening it. A failure here changes nothing to the payment."""
+    try:
+        page = session.call("get_job_challenge", job_id) if job_id else None
+        log.info("bank challenge: url=%s html=%s", bool((page or {}).get("url")), len((page or {}).get("html") or ""))
+        if page and page.get("pending") and opening:
+            open_bank_page(page)
+    except Exception as e:
+        log.info("bank challenge unreadable: %s", type(e).__name__)
+
+
 def bank_wait_patch(session, row, job_id, active, now, validating):
     """The renewal's state while the bank waits for its card holder; asked again by them, the first deadline stays."""
     ends = aware(covered_until(active)) if active else None
@@ -2050,13 +2062,7 @@ def bank_wait_patch(session, row, job_id, active, now, validating):
         details.update(bank_deadline=row.get("bank_deadline") or details["bank_deadline"],
                        bank_remind=row.get("bank_remind") or details["bank_remind"],
                        bank_reminded=row.get("bank_reminded") or "")
-    try:  # what PayByPhone gives (never its content): the page may be a link or a whole page
-        page = session.call("get_job_challenge", job_id) if job_id else None
-        log.info("bank challenge: url=%s html=%s", bool((page or {}).get("url")), len((page or {}).get("html") or ""))
-        if page and page.get("pending") and not validating:
-            open_bank_page(page)
-    except Exception as e:
-        log.info("bank challenge unreadable: %s", type(e).__name__)
+    read_bank_page(session, job_id, opening=not validating)
     return {"last_error": BANK_WAIT, "next_check": utc_iso(now + timedelta(minutes=15) if validating else remind),
             "data": encrypt_details({**row, **details})}
 
@@ -3193,6 +3199,8 @@ def pay(body: Parking, pbb_session: str = Cookie(None)):
             result, found = pay_and_confirm(s, body.location, body.rate, fmt_qty(body.duration), body.unit,
                                             body.plate, body.paymentAccountId)
         except Unconfirmed as e:
+            if isinstance(e, BankCheck):
+                read_bank_page(s, e.job_id, opening=True)
             raise HTTPException(504, str(e))
         s.log("success", "Stationnement payé : zone %s, %s" % (body.location, body.plate))
         expire = max(x["expireTime"] for x in found)

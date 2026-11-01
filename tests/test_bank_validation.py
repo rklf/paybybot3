@@ -372,3 +372,22 @@ class OpenedForEveryClient(unittest.TestCase):
                 patch.object(web, "open_bank_page", side_effect=OSError("down")):
             p = web.bank_wait_patch(session, {"id": "r1", "owner": "c"}, "job1", None, datetime.now(timezone.utc), False)
         self.assertEqual(p["last_error"], web.BANK_WAIT)
+
+
+class OneOffTicket(unittest.TestCase):
+    def pay(self, error):
+        session = MagicMock(unconfirmed={})
+        session.call.side_effect = lambda name, *a, **k: {"get_job_challenge": {"pending": True, "url": "https://acs.bank.test/x"}}.get(name, [])
+        body = MagicMock(plate="AB123CD", location="75005", rate="1", duration=1, unit="Hours", paymentAccountId="c")
+        with patch.object(web, "current", return_value=session), patch.object(web, "open_bank_page") as opened, \
+                patch.object(web, "pay_and_confirm", side_effect=error), \
+                self.assertRaises(web.HTTPException) as refused:
+            web.pay(body, "cookie")
+        self.assertEqual(refused.exception.status_code, 504)
+        return opened
+
+    def test_the_bank_asks_the_page_is_opened(self):
+        self.pay(web.BankCheck(web.BANK_CHECK, "job1")).assert_called_once()
+
+    def test_another_unconfirmed_payment_opens_nothing(self):
+        self.pay(web.Unconfirmed(web.UNCONFIRMED)).assert_not_called()
