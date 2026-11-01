@@ -4,35 +4,14 @@ import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { PlansDialog } from '@/components/Pricing'
 import { arrondissement, PayByBot, PayByPhone, Plate, ZonePlate } from '@/components/signs'
-import { api, clock, type Account, type CoveredChange, type Overview, type PricedVehicle, type Pricing } from '@/lib/api'
+import { api, clock, type Account, type Overview, type PricedVehicle, type Pricing } from '@/lib/api'
+import { askCoverage } from '@/lib/coverage'
 import { cn } from '@/lib/utils'
 import { ui } from '@/lib/styles'
 import { LoadingLine } from '@/components/Loading'
 
 const plateKey = (p: string) => p.replace(/[^0-9a-z]/gi, '').toUpperCase()
 const euros = (cents: number) => (cents / 100).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })
-const day = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
-
-/** What a change of the covered vehicles means, said before it is made. */
-function changeQuestion(c: CoveredChange) {
-  const per = c.plan === 'yearly' ? '/an' : '/mois'
-  const lines: string[] = []
-  if (c.added.length) {
-    lines.push(`Ajouter ${c.added.join(', ')} à votre abonnement ?`)
-    lines.push(
-      c.chargeCents
-        ? `${euros(c.chargeCents)} prélevés maintenant : le mois en cours${c.months > 1 ? ` et les ${c.months - 1} mois jusqu’à votre échéance` : ''}.`
-        : 'Rien n’est prélevé pendant votre mois offert.',
-    )
-  }
-  if (c.removed.length) {
-    lines.push(`Retirer ${c.removed.join(', ')} de votre abonnement ?`)
-    if (c.stops.length) lines.push('Son renouvellement s’arrête ; le ticket en cours reste valable.')
-    lines.push('Le mois en cours reste dû.' + (c.creditCents ? ` ${euros(c.creditCents)} seront crédités sur votre prochaine facture.` : ''))
-  }
-  lines.push(`Nouvel abonnement : ${euros(c.total)}${per}${c.nextBilling ? ` à partir du ${day(c.nextBilling)}` : ''}.`)
-  return lines.join('\n\n')
-}
 
 /** "Mon compte" in the top bar: what PayByBot reads from the PayByPhone account, the home zone and e-mail. */
 export function AccountButton({
@@ -88,19 +67,16 @@ function AccountDialog({
   useEffect(loadPricing, [])
   const covered = (pricing?.billed ?? []).map(plateKey)
 
-  /** Tick or untick a vehicle: what it costs is shown first, the change is made once confirmed. */
+  /** Tick or untick a vehicle: the paywall shows what it costs, the change is made once confirmed there. */
   async function toggle(plate: string) {
     const key = plateKey(plate)
     const next = covered.includes(key) ? covered.filter((p) => p !== key) : [...covered, key]
     setChanging(key)
     try {
-      const preview = await api.coveredVehicles(next, false)
-      if (!window.confirm(changeQuestion(preview))) return
-      await api.coveredVehicles(next, true)
-      toast.success('Votre abonnement est à jour.')
-      loadPricing()
-    } catch (e) {
-      toast.error((e as Error).message)
+      if (await askCoverage(next)) {
+        toast.success('Votre abonnement est à jour.')
+        loadPricing()
+      }
     } finally {
       setChanging(null)
     }

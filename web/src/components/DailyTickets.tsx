@@ -8,6 +8,7 @@ import { isoDay, periodDays, periodText, RangeCalendar } from '@/components/Rang
 import { clearPending, pauseState, RenewalActions, savePending, type PendingRenewal } from '@/components/Riverain'
 import { arrondissement, PayByPhone, Plate, withPayByPhone } from '@/components/signs'
 import { api, ApiError, unitLabel, type Autopilot, type Money, type Overview, type Rate, type Unit } from '@/lib/api'
+import { askCoverage } from '@/lib/coverage'
 import { ui } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 
@@ -484,10 +485,20 @@ export function DailyWizard({
   editing?: Autopilot
 }) {
   const [step, setStep] = useState(1)
-  const [plate, setPlate] = useState(
-    editing?.plate ??
-      data.vehicles.find((v) => initialPlate && keyOf(v.plate) === keyOf(initialPlate))?.plate ?? data.vehicles[0]?.plate ?? '',
-  )
+  // One vehicle or several, the same ticket for each; the first one chosen is the one the rates are looked up for.
+  const [picked, setPicked] = useState<string[]>(() => {
+    const first =
+      editing?.plate ??
+      data.vehicles.find((v) => initialPlate && keyOf(v.plate) === keyOf(initialPlate))?.plate ?? data.vehicles[0]?.plate
+    return first ? [first] : []
+  })
+  const plate = picked[0] ?? ''
+  const pick = (p: string) =>
+    setPicked((now) =>
+      now.some((x) => keyOf(x) === keyOf(p))
+        ? now.length > 1 ? now.filter((x) => keyOf(x) !== keyOf(p)) : now // at least one vehicle
+        : [...now, p],
+    )
   // Its settings, applied once its rate is found again (then the user's own choices win).
   const edit = useRef(editing ?? null)
   const editPeriod = editing ? periodOf(editing) : null
@@ -734,12 +745,12 @@ export function DailyWizard({
     }
   }, [step, effective?.ratePolicyId, duration, unit, zone, plate, payment]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const rule = (): PendingRenewal => ({
+  const rule = (forPlate = plate): PendingRenewal => ({
     location: zone,
     rate: effective!.ratePolicyId,
     duration,
     unit,
-    plate,
+    plate: forPlate,
     paymentAccountId: payment,
     label: DAILY_LABEL,
     days: ruleDays,
@@ -757,9 +768,14 @@ export function DailyWizard({
     if (editing) return save()
     setSaving(true)
     try {
-      await api.addAutopilot(rule() as Parameters<typeof api.addAutopilot>[0])
+      // Vehicles the subscription does not cover yet: its paywall first (nothing is programmed if it is cancelled).
+      const prices = await api.pricing(0)
+      const billed = prices.billed ?? []
+      const uncovered = prices.billing ? picked.filter((p) => !billed.some((b) => keyOf(b) === keyOf(p))) : []
+      if (uncovered.length && !(await askCoverage([...billed, ...uncovered]))) return
+      for (const p of picked) await api.addAutopilot(rule(p) as Parameters<typeof api.addAutopilot>[0])
       const first = nextTicket(ruleDays, start, chainFrom, period)
-      toast.success(chainFrom ? 'Renouvellement activé.' : 'Ticket programmé.', {
+      toast.success(chainFrom ? 'Renouvellement activé.' : picked.length > 1 ? `${picked.length} tickets programmés.` : 'Ticket programmé.', {
         description: first ? `Prochain ticket ${when(first)}.` : undefined,
       })
       onDone()
@@ -815,16 +831,16 @@ export function DailyWizard({
           {step === 1 && (
             <>
               <div>
-                <p className={ui.label}>Véhicule</p>
+                <p className={ui.label}>{editing ? 'Véhicule' : 'Véhicules · un ou plusieurs'}</p>
                 <div className="flex flex-wrap gap-2">
                   {data.vehicles.filter((v) => !editing || keyOf(v.plate) === keyOf(editing.plate)).map((v) => (
                     <button
                       key={v.plate}
-                      onClick={() => setPlate(v.plate)}
-                      aria-pressed={keyOf(plate) === keyOf(v.plate)}
+                      onClick={() => !editing && pick(v.plate)}
+                      aria-pressed={picked.some((p) => keyOf(p) === keyOf(v.plate))}
                       className={cn(
                         'rounded-xl border p-2 transition',
-                        keyOf(plate) === keyOf(v.plate)
+                        picked.some((p) => keyOf(p) === keyOf(v.plate))
                           ? 'border-[#4e9aa0] bg-[#4e9aa0]/[0.08] ring-1 ring-[#4e9aa0]'
                           : 'border-ink/15 opacity-70 hover:opacity-100',
                       )}
@@ -1097,7 +1113,14 @@ export function DailyWizard({
             <>
               <dl className="divide-y divide-ink/[0.06] rounded-xl border border-ink/10 text-sm">
                 {[
-                  ['Véhicule', <Plate key="p" plate={plate} size="sm" />],
+                  [
+                    picked.length > 1 ? 'Véhicules' : 'Véhicule',
+                    <span key="p" className="flex flex-wrap justify-end gap-1.5">
+                      {picked.map((p) => (
+                        <Plate key={p} plate={p} size="sm" />
+                      ))}
+                    </span>,
+                  ],
                   ['Zone', place ?? `Zone ${zone}`],
                   ['Ticket', optionText(effective)[0]],
                   [
@@ -1194,9 +1217,9 @@ export function DailyWizard({
       </DialogContent>
       {paywall && (
         <PlansDialog
-          plates={[plate]}
+          plates={picked}
           // A change is not replayed after Stripe (the ticket already exists): it is saved again from its card.
-          onPay={() => !editing && savePending([rule()])}
+          onPay={() => !editing && savePending(picked.map((p) => rule(p)))}
           onClose={() => {
             clearPending()
             setPaywall(false)

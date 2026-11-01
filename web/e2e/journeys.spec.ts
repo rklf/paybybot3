@@ -190,24 +190,83 @@ test('mon compte : ajouter un véhicule à l’abonnement, le dernier reste coch
       json: { plan: 'yearly', added: ['GH456JK'], removed: [], stops: [], chargeCents: 760, creditCents: 0, months: 1, total: 18240, nextBilling: '2026-11-25T00:00:00+00:00' },
     })
   })
-  let question = ''
-  page.on('dialog', (d) => {
-    question = d.message()
-    d.accept()
-  })
   await demo(page)
   await page.getByRole('button', { name: 'Mon compte' }).first().click()
   const dialog = page.getByRole('dialog')
   await expect(dialog.getByText(/Abonnement annuel · 1 véhicule/)).toBeVisible()
   await expect(dialog.getByRole('checkbox', { name: /AB-123-CD/ })).toBeDisabled()
   await dialog.getByRole('checkbox', { name: /GH-456-JK/ }).click()
+  await page.getByRole('button', { name: 'Payer 7,60 € et continuer' }).click()
   await expect.poll(() => sent.length).toBe(2)
-  expect(question).toContain('Ajouter GH456JK')
-  expect(question).toContain('7,60')
   expect(sent).toEqual([
     { plates: ['AB123CD', 'GH456JK'], confirm: false },
     { plates: ['AB123CD', 'GH456JK'], confirm: true },
   ])
+})
+
+/** « Programmer un ticket » for AB-123-CD and GH-456-JK (only AB-123-CD covered), up to « Activer ». */
+async function twoVehicleTicket(page: Page, confirmReply: { status: number; json: unknown }) {
+  const vehicle = (plate: string) => ({ plate, zone: null, monthly: 950, yearly: 9120, renewed: false })
+  const covered: unknown[] = []
+  const programmed: string[] = []
+  await page.route('**/api/pricing', (route) =>
+    route.fulfill({ json: { zone: null, monthly: 950, yearly: 9120, billing: true, billed: ['AB-123-CD'],
+      vehicles: [vehicle('AB-123-CD'), vehicle('GH-456-JK'), vehicle('LM-789-NP')] } }),
+  )
+  await page.route('**/api/account/vehicles', (route) => {
+    const body = route.request().postDataJSON()
+    covered.push(body)
+    if (body.confirm) return route.fulfill(confirmReply)
+    return route.fulfill({ json: { plan: 'monthly', added: ['GH456JK'], removed: [], stops: [], chargeCents: 950,
+      creditCents: 0, months: 1, total: 1900, nextBilling: '2026-11-25T00:00:00+00:00' } })
+  })
+  page.on('request', (r) => r.method() === 'POST' && r.url().endsWith('/api/autopilots') && programmed.push(r.postDataJSON().plate))
+  await demo(page)
+  await wizardButton(page).click()
+  await page.getByRole('button', { name: /GH-456-JK/ }).click()
+  await expect(page.getByRole('button', { name: /GH-456-JK/ })).toHaveAttribute('aria-pressed', 'true')
+  const zone = page.getByRole('combobox')
+  await zone.fill('690')
+  await page.getByRole('option', { name: /69000/ }).click()
+  await page.getByRole('button', { name: 'Suivant' }).click()
+  await page.getByRole('button', { name: /Visiteur/ }).first().click()
+  await page.getByRole('button', { name: 'Suivant' }).click()
+  await page.getByRole('button', { name: 'Date spécifique' }).click()
+  await page.getByRole('button', { name: new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }), exact: true }).click()
+  await page.locator('input[type=time]').fill('23:59')
+  await page.getByRole('button', { name: 'Suivant', exact: true }).click()
+  await page.getByRole('button', { name: 'Activer' }).click()
+  await expect(page.getByText('Votre abonnement', { exact: true })).toBeVisible()
+  return { covered, programmed }
+}
+
+test('programmer un ticket : deux véhicules, le paywall du véhicule non couvert puis les deux tickets', async ({ page }) => {
+  const { covered, programmed } = await twoVehicleTicket(page, { status: 200, json: { added: ['GH456JK'] } })
+  await expect(page.getByText(/Nouvel abonnement/)).toBeVisible()
+  await page.getByRole('button', { name: 'Payer 9,50 € et continuer' }).click()
+  await expect.poll(() => programmed.length).toBe(2)
+  const keys = (plates: string[]) => plates.map((p) => p.replace(/[^0-9A-Z]/gi, '')).sort()
+  expect(keys(programmed)).toEqual(['AB123CD', 'GH456JK'])
+  expect(covered.map((c) => ({ ...(c as { plates: string[]; confirm: boolean }), plates: keys((c as { plates: string[] }).plates) }))).toEqual([
+    { plates: ['AB123CD', 'GH456JK'], confirm: false },
+    { plates: ['AB123CD', 'GH456JK'], confirm: true },
+  ])
+})
+
+test('programmer un ticket : paywall annulé, rien n’est programmé', async ({ page }) => {
+  const { programmed } = await twoVehicleTicket(page, { status: 200, json: {} })
+  await page.getByRole('button', { name: 'Annuler', exact: true }).click()
+  await expect(page.getByText('Votre abonnement', { exact: true })).toBeHidden()
+  await page.waitForTimeout(500)
+  expect(programmed).toEqual([])
+})
+
+test('programmer un ticket : carte refusée au paywall, rien n’est programmé', async ({ page }) => {
+  const refused = 'Votre carte a été refusée : le véhicule n’a pas été ajouté.'
+  const { programmed } = await twoVehicleTicket(page, { status: 402, json: { detail: refused } })
+  await page.getByRole('button', { name: 'Payer 9,50 € et continuer' }).click()
+  await expect(page.getByText(refused)).toBeVisible()
+  expect(programmed).toEqual([])
 })
 
 test('admin : les dates de fin des cartes des clients', async ({ page }) => {

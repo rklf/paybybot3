@@ -4121,7 +4121,8 @@ def pricing(pbb_session: str = Cookie(None)):
     s = current(pbb_session)
     found = guarded(lambda: account_pricing(s))
     if found:  # « resident » only says whether a vehicle has the resident rate: nothing is locked without one
-        return {**found, "resident": any(v["zone"] for v in found["vehicles"])}
+        # billing: vehicles must be covered by a subscription (online only, never in the demo or the local app)
+        return {**found, "resident": any(v["zone"] for v in found["vehicles"]), "billing": HOSTED and not s.demo}
     log.info("pricing without any vehicle: PayByPhone lists none for this account")
     status = guarded(lambda: resident_status(s))
     return {"zone": status["zone"], "monthly": None, "yearly": None, "resident": status["resident"]}

@@ -1,3 +1,5 @@
+import { askCoverage } from '@/lib/coverage'
+
 export type Money = { amount: number; currency: string }
 
 export type Vehicle = { plate: string; country?: string; type?: string; zone?: string | null }
@@ -100,6 +102,8 @@ export type Pricing = {
   vehicles?: PricedVehicle[]
   /** Plates the subscription is for: those with a renewal (the first vehicle while none has). */
   billed?: string[]
+  /** Online (not the demo nor the local app): vehicles must be covered by the subscription. */
+  billing?: boolean
 }
 export type PricedVehicle = {
   plate: string
@@ -170,24 +174,16 @@ export type CoveredChange = {
   nextBilling: string | null
 }
 
-const euros = (cents: number) => (cents / 100).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })
-
-/** A vehicle the subscription does not cover yet (renewal, programmed ticket, ticket): offered to add it, the month
- *  started being charged at once, then the action is tried again. */
+/** A vehicle the subscription does not cover yet (renewal, programmed ticket, ticket): the paywall offers to add it
+ *  (the month started charged at once), then the action is tried again. */
 async function covering<T>(call: () => Promise<T>): Promise<T> {
   try {
     return await call()
   } catch (e) {
     if (!(e instanceof ApiError) || e.status !== 402 || e.data.code !== 'not_covered') throw e
-    const plate = String(e.data.plate)
-    const ok = window.confirm(
-      `Le véhicule ${plate} n’est pas encore dans votre abonnement.\n\nL’ajouter maintenant ? ${euros(Number(e.data.cents))} ` +
-        'seront prélevés tout de suite sur la carte de votre abonnement.',
-    )
-    if (!ok) throw e
     pricingCall = null
     const billed = (await api.pricing()).billed ?? []
-    await post<CoveredChange>('/api/account/vehicles', { plates: [...billed, plate], confirm: true })
+    if (!(await askCoverage([...billed, String(e.data.plate)]))) throw e
     pricingCall = null
     return call()
   }
