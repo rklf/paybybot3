@@ -4841,34 +4841,44 @@ def admin_clients(pbb_admin: str = Cookie(None)):
             return None
 
     def renewals_of(owner):
-        """Each vehicle's renewal: « Actif », or « Suspendu » (a refused payment, a validation never given)."""
-        states = {}
+        """Each vehicle's renewal: « Actif », or « Suspendu » (a refused payment, a validation never given), and the
+        end of a ticket advanced from the backup account (on the owner's PayByPhone account, not the client's)."""
+        states, advanced = {}, {}
         try:
             for row in store("renewal_list", p_owner=owner) or []:
                 try:
-                    key = plate_key(with_details(row)["plate"])
+                    details = with_details(row)
+                    key = plate_key(details["plate"])
                 except Exception:
                     continue
                 if states.get(key) != "Actif":
                     states[key] = "Actif" if row.get("enabled") else "Suspendu"
+                until = parse_dt(details.get("advanced_until"))
+                if until and until > datetime.now(timezone.utc):
+                    advanced[key] = until
         except Exception as e:
             log.info("admin: renewals unreadable for a client: %s", type(e).__name__)
-        return states
+        return states, advanced
 
-    def status(vehicle, zones, chosen, renewals):
-        """Resident: its arrondissement, False when PayByPhone gives it none, None when never looked up."""
+    def status(vehicle, zones, chosen, renewals, advanced):
+        """Resident: its arrondissement, False when PayByPhone gives it none, None when never looked up. A ticket
+        advanced by PayByBot counts as running (the client's PayByPhone account does not list it)."""
         key = plate_key(vehicle["plate"])
         entry = zones.get(key)
-        return {**vehicle, "resident": (entry.get("z") or False) if entry else None,
-                "covered": key in chosen or key in renewals, "renewal": renewals.get(key)}
+        found = {**vehicle, "resident": (entry.get("z") or False) if entry else None,
+                 "covered": key in chosen or key in renewals, "renewal": renewals.get(key), "advanced": False}
+        until = advanced.get(key)
+        if until and not vehicle.get("expire"):
+            found.update(expire=until.isoformat(), advanced=True)
+        return found
 
     from concurrent.futures import ThreadPoolExecutor
     owners = [c.pop("owner") for c in clients]
     with ThreadPoolExecutor(max_workers=8) as pool:
         for client, owner, found in zip(clients, owners, pool.map(parking, owners)):
             zones, chosen = client.pop("_zones"), client.pop("_chosen")
-            renewals = renewals_of(owner) if found else {}
-            client["vehicles"] = [status(v, zones, chosen, renewals) for v in found["vehicles"]] if found else None
+            renewals, advanced = renewals_of(owner) if found else ({}, {})
+            client["vehicles"] = [status(v, zones, chosen, renewals, advanced) for v in found["vehicles"]] if found else None
             client["cards"] = found["cards"] if found else None
     return clients
 

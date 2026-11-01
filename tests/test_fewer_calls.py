@@ -64,7 +64,33 @@ class AdminKept(unittest.TestCase):
             clients = web.admin_clients(None)
         self.assertEqual(logins, ["o1"])
         self.assertEqual(clients[0]["vehicles"], [{"plate": "AB123CD", "expire": None, "resident": None,
-                                                    "covered": False, "renewal": None}])
+                                                    "covered": False, "renewal": None, "advanced": False}])
+
+    def test_a_ticket_advanced_from_the_backup_account_shows_as_running(self):
+        import json
+        from datetime import datetime, timedelta, timezone
+
+        class FakeBot:
+            def get_vehicles(self):
+                return [{"licensePlate": "FJ-745-AC"}]
+
+            def get_parking_sessions(self):
+                return []  # the advanced ticket is on the owner's account, not the client's
+
+            def get_payment_accounts(self):
+                return {}
+        until = datetime.now(timezone.utc) + timedelta(days=5)
+        texts = {b"acc": b"{}", b"ren": json.dumps({"plate": "FJ745AC", "advanced_until": web.utc_iso(until)}).encode()}
+        answers = {"admin_accounts": [{"owner": "o1", "data": "acc", "renewals_active": 1}],
+                   "renewal_list": [{"id": "r", "enabled": True, "data": "ren"}]}
+        with patch.object(web, "HOSTED", True), patch.object(web, "require_admin"), \
+                patch.object(web, "store", side_effect=lambda fn, **k: answers.get(fn)), \
+                patch.object(web, "bot_from_refresh", return_value=FakeBot()), \
+                patch.object(web, "_fernet") as fernet:
+            fernet.return_value.decrypt.side_effect = lambda b: texts[b]
+            vehicle = web.admin_clients(None)[0]["vehicles"][0]
+        self.assertTrue(vehicle["advanced"])
+        self.assertEqual(web.parse_dt(vehicle["expire"]), web.parse_dt(web.utc_iso(until)))
 
     def test_each_vehicle_says_its_resident_rate_coverage_and_renewal(self):
         import json

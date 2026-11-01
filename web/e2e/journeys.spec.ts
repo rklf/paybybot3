@@ -15,6 +15,12 @@ async function demo(page: Page) {
 }
 
 /** The button that opens the ticket wizard (its name follows the offer: « Programmer un ticket », « Carte mobilité… »). */
+/** Today in Paris, as the calendar shows it (the machine running the tests may be in another time zone). */
+function parisToday() {
+  const p = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Paris' }))
+  return new Date(p.getFullYear(), p.getMonth(), p.getDate())
+}
+
 const wizardButton = (page: Page) =>
   page.getByRole('button', { name: /Programmer un ticket|Carte mobilité/ }).first()
 
@@ -129,7 +135,7 @@ test('programmer un ticket : une heure déjà passée est refusée', async ({ pa
   await page.getByRole('button', { name: 'Suivant' }).click()
   await page.getByRole('button', { name: 'Date spécifique' }).click()
   const label = (d: Date) => d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
-  const today = new Date()
+  const today = parisToday()
   const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1)
   if (yesterday.getMonth() === today.getMonth()) await expect(page.getByRole('button', { name: label(yesterday), exact: true })).toBeDisabled()
   await page.getByRole('button', { name: label(today), exact: true }).click()
@@ -237,7 +243,7 @@ async function twoVehicleTicket(page: Page, confirmReply: { status: number; json
   await page.getByRole('button', { name: /Visiteur/ }).first().click()
   await page.getByRole('button', { name: 'Suivant' }).click()
   await page.getByRole('button', { name: 'Date spécifique' }).click()
-  await page.getByRole('button', { name: new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }), exact: true }).click()
+  await page.getByRole('button', { name: parisToday().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }), exact: true }).click()
   await page.locator('input[type=time]').fill('23:59')
   await page.getByRole('button', { name: 'Suivant', exact: true }).click()
   await page.getByRole('button', { name: 'Activer' }).click()
@@ -286,6 +292,8 @@ test('admin : les dates de fin des cartes des clients', async ({ page }) => {
       client('sereine', [{ exp: '04/99', validUntil: '2099-04-30T23:59:59+00:00', expired: false }]),
       client('bientot', [{ exp: '12/26', validUntil: soon, expired: false }]),
       client('perimee', [{ exp: '01/20', validUntil: '2020-01-31T23:59:59+00:00', expired: true }]),
+      { ...client('avance', [{ exp: '04/99', validUntil: '2099-04-30T23:59:59+00:00', expired: false }]),
+        vehicles: [{ plate: 'FJ745AC', expire: new Date(Date.now() + 5 * 86_400_000).toISOString(), advanced: true }] },
     ],
     activity: [],
     service: { interrupted: false, customers: 0 },
@@ -296,6 +304,7 @@ test('admin : les dates de fin des cartes des clients', async ({ page }) => {
   await expect(page.getByText('1 carte à renouveler sous 60 jours')).toBeVisible()
   await expect(page.getByRole('cell', { name: 'Paris 5e' }).first()).toBeVisible()
   await expect(page.getByRole('cell', { name: 'Suspendu' }).first()).toBeVisible()
+  await expect(page.getByRole('cell', { name: 'Avancé par PayByBot' })).toBeVisible()
   await page.getByRole('combobox', { name: 'Filtrer : Carte' }).selectOption('Expirée')
   await expect(page.getByText('01/20')).toBeVisible()
   await expect(page.getByText('04/99')).toBeHidden()

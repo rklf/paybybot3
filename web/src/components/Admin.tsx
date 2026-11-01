@@ -225,6 +225,8 @@ export type AdminClient = {
         /** In the subscription (ticked, or with a renewal). */
         covered?: boolean
         renewal?: 'Actif' | 'Suspendu' | null
+        /** Its ticket was advanced from the backup account (on the owner's PayByPhone account, not the client's). */
+        advanced?: boolean
       }[]
     | null
   /** When each of the client's cards ends (MM/AA); null if PayByPhone could not be read. */
@@ -331,7 +333,7 @@ type Row = {
   active: 'Actif' | 'Inactif'
   origin: 'Parrainage' | 'Sans parrainage' | '—'
   price: string
-  ticket: 'En cours' | 'Aucun' | 'Illisible'
+  ticket: 'En cours' | 'Avancé' | 'Aucun' | 'Illisible'
   expire: string | null
   left: string | null
   /** The end dates of the client's cards. */
@@ -366,7 +368,7 @@ const COLUMNS: { key: keyof Row; label: string; choices?: string[] }[] = [
   { key: 'origin', label: 'Origine', choices: ['Parrainage', 'Sans parrainage', '—'] },
   { key: 'offer', label: 'Offre', choices: ['Annuel', 'Mensuel', '—'] },
   { key: 'active', label: 'Statut de l’offre', choices: ['Actif', 'Inactif'] },
-  { key: 'ticket', label: 'Ticket', choices: ['En cours', 'Aucun', 'Illisible'] },
+  { key: 'ticket', label: 'Ticket', choices: ['En cours', 'Avancé', 'Aucun', 'Illisible'] },
   { key: 'left', label: 'Expire' },
   { key: 'cardState', label: 'Carte', choices: ['Expirée', 'Bientôt', 'OK', 'Date inconnue', 'Aucune', 'Illisible'] },
   { key: 'status', label: 'État', choices: ['OK', 'Problème', 'Non suivi'] },
@@ -394,7 +396,7 @@ function rowsOf(clients: AdminClient[], now: number): Row[] {
         resident: v.resident ? (arrondissement(v.resident) ?? `Zone ${v.resident}`) : v.resident === false ? 'Non' : 'Inconnu',
         covered: v.covered ? 'Oui' : 'Non',
         renewal: v.renewal ?? 'Aucun',
-        ticket: rest ? 'En cours' : 'Aucun',
+        ticket: rest ? (v.advanced ? 'Avancé' : 'En cours') : 'Aucun',
         expire: rest ? v.expire : null,
         left: rest,
         status: !c.subscribed ? 'none' : rest ? 'ok' : 'alert',
@@ -498,6 +500,10 @@ function VehicleTable({ clients }: { clients: AdminClient[] }) {
                 <td className="px-3 py-3 whitespace-nowrap">
                   {r.ticket === 'En cours' ? (
                     <span className="text-[#14703a]">En cours</span>
+                  ) : r.ticket === 'Avancé' ? (
+                    <span className="text-[#14703a]" title="Payé par le compte de secours : il n'apparaît pas dans le PayByPhone du client">
+                      Avancé par PayByBot
+                    </span>
                   ) : r.ticket === 'Aucun' ? (
                     <span className="text-ink/50">Aucun</span>
                   ) : (
