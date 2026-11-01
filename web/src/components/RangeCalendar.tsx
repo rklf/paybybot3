@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { freeInParis } from '@/lib/freeDays'
 import { cn } from '@/lib/utils'
 
 /** ISO day (local) of a date: 2026-10-26. */
@@ -16,11 +17,11 @@ export function periodText(from: string, to?: string | null) {
   return !to || to === from ? `le ${f(from)}` : `du ${f(from)} au ${f(to)}`
 }
 
-/** The days of a period a ticket is taken (Sundays left out in Paris, where they are free). */
+/** The days of a period a ticket is taken (Sundays and public holidays left out in Paris, where they are free). */
 export function periodDays(from: string, to: string | null | undefined, paris: boolean) {
   const end = fromIso(to || from)
   let n = 0
-  for (const d = fromIso(from); d <= end; d.setDate(d.getDate() + 1)) if (!(paris && d.getDay() === 0)) n++
+  for (const d = fromIso(from); d <= end; d.setDate(d.getDate() + 1)) if (!(paris && freeInParis(d))) n++
   return n
 }
 
@@ -35,10 +36,13 @@ export function RangeCalendar({
   from,
   to,
   onChange,
+  paris = false,
 }: {
   from: string | null
   to: string | null
   onChange: (from: string | null, to: string | null) => void
+  /** A Paris zone: Sundays and public holidays are free, so they cannot be picked as a day. */
+  paris?: boolean
 }) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -90,7 +94,7 @@ export function RangeCalendar({
       <div className="grid grid-cols-7 gap-y-0.5">
         {cells.map((d, i) => {
           if (!d) return <span key={i} />
-          const past = d < today
+          const past = d < today || (paris && freeInParis(d))
           const isStart = same(start, d)
           const isEnd = same(end, d)
           const inside = !!start && !!end && d > start && d < end

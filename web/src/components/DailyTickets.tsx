@@ -553,6 +553,10 @@ export function DailyWizard({
   const [paywall, setPaywall] = useState(false)
 
   const paris = isParis(zone)
+  // A free day picked before coming back to a Paris zone: not a ticket any more.
+  useEffect(() => {
+    if (paris && range.from && !range.to && count === 0) setRange({ from: null, to: null })
+  }, [paris, range.from, range.to, count])
   const place = paris ? arrondissement(zone) : null
   // The visitor rate comes as « léger » and « lourd »: PayByPhone does not know the weight, so one question instead.
   const usable = useMemo(() => (rates ?? []).filter((r) => !r.parkingNotAllowedReason && !resident(r)), [rates])
@@ -1000,7 +1004,7 @@ export function DailyWizard({
                 </div>
                 {calendar ? (
                   <div>
-                    <RangeCalendar from={range.from} to={range.to} onChange={(from, to) => setRange({ from, to })} />
+                    <RangeCalendar from={range.from} to={range.to} paris={paris} onChange={(from, to) => setRange({ from, to })} />
                     <p className="mt-2 text-sm text-ink/60">
                       {period
                         ? `Un ticket ${periodText(period.from, period.to)}${period.to !== period.from ? ', chaque jour' : ''}`.replace(/\.?$/, '.')

@@ -94,6 +94,30 @@ test('programmer un ticket : un tarif sans durées ni nom ne fait pas planter', 
   await expect(page.getByText('Un problème est survenu')).toBeHidden()
 })
 
+test('programmer un ticket : à Paris, les dimanches ne se choisissent pas', async ({ page }) => {
+  const label = (d: Date) => d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
+  const now = new Date()
+  const firstOfNext = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+  const sunday = new Date(firstOfNext.getFullYear(), firstOfNext.getMonth(), 1 + ((7 - firstOfNext.getDay()) % 7))
+  const pick = async (typed: string, option: RegExp) => {
+    await wizardButton(page).click()
+    const zone = page.getByRole('combobox')
+    await zone.fill(typed)
+    await page.getByRole('option', { name: option }).first().click()
+    await page.getByRole('button', { name: 'Suivant' }).click()
+    await page.getByRole('button', { name: /Visiteur/ }).first().click()
+    await page.getByRole('button', { name: 'Suivant' }).click()
+    await page.getByRole('button', { name: 'Date spécifique' }).click()
+    await page.getByRole('button', { name: 'Mois suivant' }).click()
+  }
+  await demo(page)
+  await pick('690', /69000/)
+  await expect(page.getByRole('button', { name: label(sunday), exact: true })).toBeEnabled()
+  await page.reload()
+  await pick('750', /Paris/)
+  await expect(page.getByRole('button', { name: label(sunday), exact: true })).toBeDisabled()
+})
+
 test('programmer un ticket : une heure déjà passée est refusée', async ({ page }) => {
   await demo(page)
   await wizardButton(page).click()
