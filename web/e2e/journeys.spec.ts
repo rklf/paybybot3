@@ -196,7 +196,9 @@ test('mon compte : cocher plusieurs véhicules puis un seul paywall, le dernier 
   await expect(dialog.getByText(/Abonnement annuel · 1 véhicule/)).toBeVisible()
   await expect(dialog.getByRole('checkbox', { name: /AB-123-CD/ })).toBeDisabled()
   await dialog.getByRole('checkbox', { name: /GH-456-JK/ }).click()
+  await expect(dialog.getByText(/Abonnement annuel · 2 véhicules couverts · 182,40/)).toBeVisible()
   await dialog.getByRole('checkbox', { name: /LM-789-NP/ }).click()
+  await expect(dialog.getByText(/Abonnement annuel · 3 véhicules couverts · 273,60/)).toBeVisible()
   expect(sent).toEqual([]) // nothing asked while ticking
   await dialog.getByRole('button', { name: 'Mettre à jour mon abonnement' }).click()
   await page.getByRole('button', { name: 'Payer 15,20 € et continuer' }).click()

@@ -71,6 +71,12 @@ function AccountDialog({
   const ticked = draft ?? covered
   const same = (a: string[], b: string[]) => a.length === b.length && a.every((p) => b.includes(p))
 
+  const yearly = account?.plan === 'yearly'
+  const priceOf = (plates: string[]) =>
+    (vehicles ?? []).filter((v) => plates.includes(plateKey(v.plate))).reduce((sum, v) => sum + (yearly ? v.yearly : v.monthly), 0)
+  const total = priceOf(ticked)
+  const current = priceOf(covered)
+
   function toggle(plate: string) {
     const key = plateKey(plate)
     const next = ticked.includes(key) ? ticked.filter((p) => p !== key) : [...ticked, key]
@@ -186,8 +192,15 @@ function AccountDialog({
           </div>
 
           {account?.subscribed && pricing && covered.length > 0 && (
-            <div className="py-3 text-right text-sm text-ink/60">
-              {draft ? (
+            <div className="space-y-3 py-3 text-right text-sm text-ink/60">
+              {/* The total follows the boxes as they are ticked: the subscription as it would be once updated. */}
+              <p>
+                Abonnement {yearly ? 'annuel' : 'mensuel'} · {ticked.length} véhicule{ticked.length > 1 ? 's' : ''} couvert
+                {ticked.length > 1 ? 's' : ''} · {euros(total)}
+                {yearly ? '/an' : '/mois'}
+                {draft && <span className="block text-ink/45">Aujourd’hui : {euros(current)}{yearly ? '/an' : '/mois'}</span>}
+              </p>
+              {draft && (
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   <button onClick={() => setDraft(null)} disabled={!!changing} className={ui.navText}>
                     Annuler
@@ -196,13 +209,6 @@ function AccountDialog({
                     {changing && <Loader2 className="size-4 animate-spin" />} Mettre à jour mon abonnement
                   </button>
                 </div>
-              ) : (
-                <>
-                  Abonnement {account.plan === 'yearly' ? 'annuel' : 'mensuel'} · {covered.length} véhicule
-                  {covered.length > 1 ? 's' : ''} couvert{covered.length > 1 ? 's' : ''} ·{' '}
-                  {euros((account.plan === 'yearly' ? pricing.yearly : pricing.monthly) ?? 0)}
-                  {account.plan === 'yearly' ? '/an' : '/mois'}
-                </>
               )}
             </div>
           )}
