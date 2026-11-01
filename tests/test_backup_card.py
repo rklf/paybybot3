@@ -54,7 +54,7 @@ ROW = {"id": "r1", "owner": "o", "plate": "FT630FH", "location": "75005", "rate"
 class Advance(unittest.TestCase):
     """The owner's own PayByPhone account pays the client's ticket, for the client's plate."""
 
-    def run_advance(self, backup=None, state="ok", spend=True, pay=None):
+    def run_advance(self, backup=None, state="ok", spend=True, pay=None, owned=()):
         backup = {"credential": "enc", "label": "06•••78"} if backup is None else backup
         calls = []
 
@@ -63,7 +63,9 @@ class Advance(unittest.TestCase):
             return {"backup_account_get": backup, "backup_spend": spend}.get(fn)
         session = MagicMock()
         session.call.side_effect = lambda name, *a, **k: {
-            "_create_quote": {"cost": {"amount": 9.0, "currency": "EUR"}}}.get(name)
+            "_create_quote": {"cost": {"amount": 9.0, "currency": "EUR"}},
+            "get_vehicles": [{"licensePlate": p} for p in owned]}.get(name)
+        self.session = session
         with patch.object(web, "store", side_effect=store), \
                 patch.object(web, "decrypt_credential", return_value="refresh"), \
                 patch.object(web.Bot, "from_refresh_token", return_value=MagicMock(refresh_token="refresh")), \
@@ -74,7 +76,8 @@ class Advance(unittest.TestCase):
                 patch.object(web, "pay_and_confirm", side_effect=pay,
                              return_value=({"cost": {"amount": 9.0}}, [{"expireTime": later(days=7)}])) as paid, \
                 patch.object(web, "rebill_backup") as rebill:
-            answer = web.advance(ROW, later())
+            answer = web.advance(ROW, later(), {"licensePlate": "FT-630-FH", "country": "FR", "jurisdiction": "",
+                                                "type": "Car"})
         return answer, paid, rebill, check, calls
 
     def test_no_backup_account_pays_nothing(self):
@@ -100,6 +103,18 @@ class Advance(unittest.TestCase):
         self.assertEqual(paid.call_args.args[1:], ("75005", "101", web.fmt_qty(7), "Days", "FT630FH", "backupcard"))
         self.assertIn(("backup_spend", {"p_cents": 900, "p_cap": web.BACKUP_WEEKLY_CAP_CENTS}), calls)
         rebill.assert_called_once()
+
+    def test_the_clients_plate_is_added_to_the_backup_account_first(self):
+        self.run_advance()  # PayByPhone pays only for a plate saved in the paying account (VehicleNotFound)
+        added = [c for c in self.session.call.call_args_list if c.args[0] == "add_vehicle"]
+        self.assertEqual(added[0].kwargs, {"licensePlate": "FT-630-FH", "country": "FR", "jurisdiction": "",
+                                           "vehicleType": "Car"})
+        names = [c.args[0] for c in self.session.call.call_args_list]
+        self.assertLess(names.index("add_vehicle"), names.index("_create_quote"))
+
+    def test_a_plate_already_there_is_not_added_again(self):
+        self.run_advance(owned=("FT630FH",))
+        self.assertNotIn("add_vehicle", [c.args[0] for c in self.session.call.call_args_list])
 
     def test_a_refused_advance_gives_the_budget_back(self):
         answer, _, rebill, _, calls = self.run_advance(pay=RuntimeError("Payment job failed: x"))

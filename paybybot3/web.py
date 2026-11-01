@@ -2000,7 +2000,12 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
             if is_outage(e):
                 outage_hit()
     if may_advance and not rule:  # resident renewals: the owner's backup account pays, the client is billed
-        advanced = advance(row, now)
+        try:
+            vehicle = next((v for v in session.call("get_vehicles") or []
+                            if plate_key(v.get("licensePlate") or "") == plate_key(row["plate"])), None)
+        except Exception:
+            vehicle = None
+        advanced = advance(row, now, vehicle)
         if advanced:
             result, found = advanced
             expire = aware(covered_until(found))
@@ -2126,9 +2131,11 @@ def backup_ready():
         return False
 
 
-def advance(row, now):
+def advance(row, now, vehicle=None):
     """The client's card failed and nothing covers the car: the owner's backup PayByPhone account pays the ticket for
-    the client's plate, at the client's rate, and the client is billed for it. (result, ticket) or None."""
+    the client's plate, at the client's rate, and the client is billed for it. PayByPhone pays only for a plate saved
+    in the paying account: the client's vehicle (vehicle: as their account gives it) is saved there first, once.
+    (result, ticket) or None."""
     cents = None
     try:
         backup = store("backup_account_get") or {}
@@ -2141,6 +2148,13 @@ def advance(row, now):
         if bot.refresh_token and bot.refresh_token != refresh:  # PayByPhone may hand a new one: kept for next time
             store("backup_account_set", p_credential=encrypt_credential(bot.refresh_token), p_label=backup.get("label"))
         session = UserSession.for_bot(bot)
+        owned = {plate_key(v.get("licensePlate") or "") for v in session.call("get_vehicles") or [] if not v.get("archived")}
+        if plate_key(row["plate"]) not in owned:
+            v = vehicle or {}
+            session.call("add_vehicle", licensePlate=v.get("licensePlate") or row["plate"],
+                         country=v.get("country") or "FR", jurisdiction=v.get("jurisdiction") or "",
+                         vehicleType=v.get("type") or "Car")
+            log.info("renewal %s: client's vehicle saved on the backup account", row.get("id"))
         card = check_payable(session, row["location"], row["rate"], row["plate"], None)
         quote = session.call("_create_quote", locationId=row["location"], ratePolicyId=str(row["rate"]),
                              durationQuantity=fmt_qty(row["duration"]), durationTimeUnit=row["unit"],

@@ -94,3 +94,13 @@ class AdminKept(unittest.TestCase):
             ("GH456JK", False, False, None),
             ("LM789NP", None, False, None),
         ])
+
+
+class AddVehicle(unittest.TestCase):
+    def test_a_vehicle_is_added_as_the_app_does(self):
+        answer = {"addVehicleV1": {"addVehicleResponse": {"vehicleId": "v1"}}}
+        with patch.object(Bot, "_graphql", return_value=answer) as graphql:
+            self.assertEqual(bare_bot().add_vehicle("FT-630-FH", "FR", "", "Car"), "v1")
+        self.assertEqual(graphql.call_args.args[1], {"input": {"request": {
+            "profileName": "PayByPhone", "licensePlate": "FT-630-FH", "country": "FR", "jurisdiction": "",
+            "type": "Car", "profile": {"photo": "", "description": ""}}}})
