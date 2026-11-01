@@ -109,10 +109,15 @@ test('programmer un ticket : une heure déjà passée est refusée', async ({ pa
   const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1)
   if (yesterday.getMonth() === today.getMonth()) await expect(page.getByRole('button', { name: label(yesterday), exact: true })).toBeDisabled()
   await page.getByRole('button', { name: label(today), exact: true }).click()
-  await page.locator('input[type=time]').fill('00:00')
+  const time = page.locator('input[type=time]')
+  const parisHour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', hour: '2-digit', hourCycle: 'h23' }).format(new Date()))
+  const nextHour = `${String((parisHour + 1) % 24).padStart(2, '0')}:00`
+  await expect(time).toHaveValue(nextHour) // by default, the hour after this one
+  await time.fill('00:00')
   await expect(page.getByText('Cette heure est déjà passée')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Suivant', exact: true })).toBeDisabled()
-  await page.locator('input[type=time]').fill('23:59')
+  if (parisHour < 23) await expect(time).toHaveValue(nextHour) // put right after a moment
+  await time.fill('23:59')
   await expect(page.getByText('Cette heure est déjà passée')).toBeHidden()
   await expect(page.getByRole('button', { name: 'Suivant', exact: true })).toBeEnabled()
 })

@@ -69,6 +69,20 @@ function lengthText(duration: number, unit: Unit) {
 }
 
 /** The next ticket of a precise-days rule (Paris ≈ the browser's time): the next chosen day at the start time. */
+/** Now in Paris, whatever the device's time zone: the server takes tickets at Paris time. */
+function parisNow() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date())
+  const get = (type: string) => parts.find((p) => p.type === type)!.value
+  return { day: `${get('year')}-${get('month')}-${get('day')}`, hour: Number(get('hour')), time: `${get('hour')}:${get('minute')}` }
+}
+
+/** The hour after this one: « 15:00 » at 14:35, the time a new ticket starts by default. */
+function nextHour() {
+  return `${String((parisNow().hour + 1) % 24).padStart(2, '0')}:00`
+}
+
 function nextTicket(days: number[], start: string, after?: Date | null, period?: { from?: string | null; to?: string | null }) {
   const [h, m] = start.split(':').map(Number)
   // Renewing a running ticket: not before it ends (the next one follows on from it).
@@ -506,7 +520,7 @@ export function DailyWizard({
         return `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`
       })()
     : null
-  const [start, setStart] = useState(chainStart ?? '09:00')
+  const [start, setStart] = useState(chainStart ?? nextHour())
   const [days, setDays] = useState<number[]>(editing && !editPeriod ? daysOf(editing) : [0, 1, 2, 3, 4, 5])
   // « Chaque semaine »: the days ticked above; « Calendrier »: one day, or a period from a first to a last day.
   const [planMode, setPlanMode] = useState<'week' | 'calendar'>(editPeriod ? 'calendar' : 'week')
@@ -520,7 +534,14 @@ export function DailyWizard({
   // Tickets counted in the price: the days of the period (Sundays free in Paris), or the days ticked each week.
   const count = calendar ? (period ? periodDays(period.from, period.to, isParis(zone)) : 0) : days.length
   // Today at an hour already gone: no ticket would ever be taken.
-  const hourPast = !!period && count > 0 && !nextTicket(ruleDays, start, null, period)
+  const parisTime = parisNow()
+  const hourPast = !!period && count > 0 && period.to === parisTime.day && start <= parisTime.time
+  // Today at an hour already gone: moved to the next hour, after a moment so that typing « 18 » can pass through « 1 ».
+  useEffect(() => {
+    if (!hourPast) return
+    const id = setTimeout(() => setStart(nextHour()), 2000)
+    return () => clearTimeout(id)
+  }, [hourPast, start])
   const [cost, setCost] = useState<Money | null | undefined>(undefined)
   const cards = data.payments.filter((p) => p.kind === 'card' && !p.expired)
   const [payment, setPayment] = useState(
@@ -626,7 +647,7 @@ export function DailyWizard({
     setOver(false)
     // Paris Handi: taken at 5 h, before 9 h, the day's ticket covers the whole paid day (elsewhere the user says when).
     // Renewing a running ticket: the time it ends, whatever rate is picked (Paris Handi: 5 h, before paid hours).
-    setStart(handi(effective) && paris ? '05:00' : (chainStart ?? '09:00'))
+    setStart(handi(effective) && paris ? '05:00' : (chainStart ?? nextHour()))
   }, [effective?.ratePolicyId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // From a running ticket: its rates looked up at once, its rate chosen, its start time and length taken again, and
@@ -928,7 +949,12 @@ export function DailyWizard({
                   </div>
                   <div>
                     <p className={ui.label}>Heure de prise</p>
-                    <input type="time" value={start} onChange={(e) => setStart(e.target.value || '09:00')} className={ui.field} />
+                    <input
+                      type="time"
+                      value={start}
+                      onChange={(e) => setStart(e.target.value || nextHour())}
+                      className={ui.field}
+                    />
                     <p className="mt-2 text-xs text-ink/45">
                       {!chainFrom && (
                         <>
