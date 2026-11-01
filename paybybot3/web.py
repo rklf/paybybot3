@@ -4376,7 +4376,38 @@ def covered_vehicles(body: CoveredChange, pbb_session: str = Cookie(None)):
     guarded(lambda: save_account(s, {"chosen_plates": plates}))
     guarded(lambda: account_pricing(s))  # the subscription follows these vehicles from its next billing date
     record_activity("Véhicules de l'abonnement modifiés", s, ["%d véhicule(s)." % len(plates)])
+    mail_coverage(account.get("email"), answer, plates)
     return answer
+
+
+def mail_coverage(to, change, plates):
+    """The client's record of a change of the covered vehicles: what was added or removed, charged, credited."""
+    euros = lambda cents: money_text({"amount": cents / 100})
+    lines = []
+    if change["added"]:
+        lines.append("%s %s : %s." % (plural(len(change["added"]), "Véhicule"),
+                                      plural(len(change["added"]), "ajouté"), ", ".join(change["added"])))
+    if change["removed"]:
+        lines.append("%s %s : %s." % (plural(len(change["removed"]), "Véhicule"),
+                                      plural(len(change["removed"]), "retiré"), ", ".join(change["removed"])))
+    if change["stops"]:
+        lines.append("Renouvellement arrêté pour %s ; le ticket en cours reste valable." % ", ".join(change["stops"]))
+    if change["chargeCents"]:
+        lines.append("Prélevé aujourd'hui : %s (%s)." % (euros(change["chargeCents"]), "le mois en cours" if
+                                                         change["months"] <= 1 else "le mois en cours et les %d suivants"
+                                                         % (change["months"] - 1)))
+    elif change["added"]:
+        lines.append("Rien n'est prélevé pendant votre mois offert.")
+    if change["creditCents"]:
+        lines.append("Crédité sur votre prochaine facture : %s. Le mois en cours reste dû." % euros(change["creditCents"]))
+    when = parse_dt(change.get("nextBilling"))
+    lines.append("Votre abonnement couvre maintenant %d véhicule%s : %s%s%s." % (
+        len(plates), "s" if len(plates) > 1 else "", euros(change["total"]),
+        " par an" if change["plan"] == "yearly" else " par mois",
+        " à partir du %d %s" % (when.day, MONTH_NAMES[when.month - 1]) if when else ""))
+    send_email(to, "Votre abonnement PayByBot a changé", "Votre abonnement a changé", lines,
+               ("Ouvrir PayByBot", APP_URL),
+               footer="Vous recevez cet e-mail parce que les véhicules de votre abonnement PayByBot ont changé.")
 
 
 def ensure_covered(s, plate):
@@ -4397,6 +4428,10 @@ def ensure_covered(s, plate):
     if status == "trialing" or in_free_month(account):
         save_account(s, {"chosen_plates": billed + [key]})
         account_pricing(s)
+        plates = billed + [key]
+        mail_coverage(account.get("email"), {"added": [key], "removed": [], "stops": [], "chargeCents": 0,
+                                             "creditCents": 0, "months": 0, "plan": plan, "nextBilling": end.isoformat(),
+                                             "total": plan_total([MONTHLY_PRICE] * len(plates), plan)}, plates)
         return
     cents = change_cents(plan, months_left(now_utc(), end), 1, 0)[0]
     raise HTTPException(402, {"code": "not_covered", "plate": key, "cents": cents,

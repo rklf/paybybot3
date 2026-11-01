@@ -71,12 +71,15 @@ class Covered(unittest.TestCase):
                 patch.object(web, "now_utc", return_value=NOW), \
                 patch.object(web, "account_pricing", return_value={"vehicles": VEHICLES, "billed": list(billed)}), \
                 patch.object(web, "load_account", return_value=account or {"stripe_subscription": "sub_1",
-                                                                             "stripe_customer": "cus_1"}), \
+                                                                             "stripe_customer": "cus_1",
+                                                                             "email": "client@test.fr"}), \
                 patch.object(web, "save_account", side_effect=lambda _, p: saved.update(p) or p), \
                 patch.object(web, "renewed_plates", return_value=set(renewed)), \
                 patch.object(web, "stop_renewals") as stop, \
+                patch.object(web, "send_email") as mail, \
                 patch.object(web, "stripe", side_effect=stripe):
             answer = web.covered_vehicles(web.CoveredChange(plates=list(plates), confirm=confirm), pbb_session="c")
+        self.mail = mail
         return answer, calls, saved, stop
 
     def test_the_preview_changes_nothing(self):
@@ -110,6 +113,19 @@ class Covered(unittest.TestCase):
         self.assertEqual(credit[2]["amount"], -12 * YEAR)
         self.assertNotIn(("POST", "invoices", ), [c[:2] for c in calls])
         self.assertEqual(saved["chosen_plates"], ["AA111AA"])
+
+    def test_the_client_gets_an_email_with_the_new_subscription(self):
+        self.change(["AA111AA", "BB222BB"], confirm=True)
+        to, subject, title, lines = self.mail.call_args.args[:4]
+        self.assertEqual(to, "client@test.fr")
+        text = " ".join(lines)
+        self.assertIn("BB222BB", text)
+        self.assertIn("98,80", text)  # 13 months at 7,60 €
+        self.assertIn("182,40", text)  # the new yearly subscription, two vehicles
+
+    def test_a_preview_sends_no_email(self):
+        self.change(["AA111AA", "BB222BB"], confirm=False)
+        self.mail.assert_not_called()
 
     def test_the_last_vehicle_stays(self):
         with self.assertRaises(HTTPException) as e:
@@ -145,8 +161,9 @@ class OnlyCoveredVehicles(unittest.TestCase):
                 patch.object(web, "account_pricing", return_value={"vehicles": VEHICLES, "billed": ["AA111AA"]}), \
                 patch.object(web, "load_account", return_value=account or {"stripe_subscription": "sub_1"}), \
                 patch.object(web, "save_account", side_effect=lambda _, p: saved.update(p) or p), \
-                patch.object(web, "stripe", return_value=sub):
+                patch.object(web, "send_email") as mail, patch.object(web, "stripe", return_value=sub):
             web.ensure_covered(s, plate)
+        self.mail = mail
         return saved
 
     def test_a_covered_vehicle_goes_through(self):
@@ -160,9 +177,11 @@ class OnlyCoveredVehicles(unittest.TestCase):
         self.assertEqual(e.exception.detail["cents"], 13 * YEAR)
 
     def test_during_paybybots_free_month_it_is_added_without_charge(self):
-        saved = self.ensure("BB222BB", account={"stripe_subscription": "sub_1",
+        saved = self.ensure("BB222BB", account={"stripe_subscription": "sub_1", "email": "client@test.fr",
                                                 "trial_start": web.utc_iso(NOW - web.timedelta(days=5))})
         self.assertEqual(saved["chosen_plates"], ["AA111AA", "BB222BB"])
+        self.assertEqual(self.mail.call_args.args[0], "client@test.fr")
+        self.assertIn("mois offert", " ".join(self.mail.call_args.args[3]))
 
     def test_during_the_free_month_it_is_added_without_charge(self):
         saved = self.ensure("BB222BB", status="trialing")
