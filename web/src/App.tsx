@@ -83,6 +83,16 @@ export default function App() {
   const [autoRenew, setAutoRenew] = useState(false) // past the welcome page: the renewal opens by itself
   const [zoneReady, setZoneReady] = useState(true)
 
+  // A small ticket bought by hand, to try a bank's validation for real: no button leads here.
+  useEffect(() => {
+    const open = () => {
+      if (window.location.hash === '#/test-ticket') setPaying(true)
+    }
+    open()
+    window.addEventListener('hashchange', open)
+    return () => window.removeEventListener('hashchange', open)
+  }, [])
+
   useEffect(() => {
     const onHash = () => {
       setLegal(legalPageFromHash(window.location.hash))

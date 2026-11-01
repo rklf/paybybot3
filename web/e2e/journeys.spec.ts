@@ -75,6 +75,12 @@ test('renouvellement résident : s’active depuis la carte du véhicule', async
   await expect(page.getByRole('switch', { name: /Renouvellement/ }).first()).toHaveAttribute('aria-checked', 'true')
 })
 
+test('lien de test : le petit ticket à payer s’ouvre', async ({ page }) => {
+  await demo(page)
+  await page.evaluate(() => { window.location.hash = '#/test-ticket' })
+  await expect(page.getByRole('heading', { name: 'Quel véhicule ?' })).toBeVisible()
+})
+
 test('pages légales : les conditions d’utilisation s’ouvrent', async ({ page }) => {
   await page.goto(LINK + '#/cgu')
   await expect(page.getByRole('heading', { name: /Conditions/ }).first()).toBeVisible()
