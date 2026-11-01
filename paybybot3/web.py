@@ -41,7 +41,7 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Annotated
 
 from . import schedule
-from .bot import Bot
+from .bot import Bot, bank_asks
 
 log = logging.getLogger("paybybot3.web")
 
@@ -652,8 +652,7 @@ def pay_and_confirm(session, location, rate, duration, unit, plate, paymentAccou
                 result.get("jobStatus"), result.get("jobStages"))
     session.unconfirmed[(plate, location)] = time.time()
     log_diagnosis(session)
-    if result.get("challenged") or any("authenticationChallenge" in str(st.get("status"))
-                                       for st in result.get("jobStages") or []):
+    if result.get("challenged") or any(bank_asks(st.get("status")) for st in result.get("jobStages") or []):
         raise BankCheck(BANK_CHECK, result.get("jobId"))
     raise Unconfirmed(UNCONFIRMED)
 
@@ -1363,8 +1362,7 @@ def extend_and_confirm(session, ticket, row, card, attempts=10, delay=3):
                 result.get("jobStages"))
     session.unconfirmed[(row["plate"], row["location"])] = time.time()
     log_diagnosis(session)
-    if result.get("challenged") or any("authenticationChallenge" in str(st.get("status"))
-                                       for st in result.get("jobStages") or []):
+    if result.get("challenged") or any(bank_asks(st.get("status")) for st in result.get("jobStages") or []):
         raise BankCheck(BANK_CHECK, result.get("jobId"))
     raise Unconfirmed(UNCONFIRMED)
 
@@ -2039,13 +2037,41 @@ def open_bank_page(page):
         where, fields = urljoin(answer.url, form[0]), form[1]
 
 
+HIDDEN_LOOKS = 4
+
+
+def open_hidden_page(hidden):
+    """As PayByPhone gives it: a link, a page, or a base64 page."""
+    if hidden.startswith("https://"):
+        open_bank_page({"url": hidden})
+    else:
+        open_bank_page({"html": base64.b64encode(hidden.encode()).decode() if "<" in hidden else hidden})
+
+
+def past_hidden_step(session, job_id, page):
+    """The bank's hidden page, which nobody sees and the card holder could not open: opened once, then a few looks
+    for the page they validate, which only comes after it."""
+    if not page or not page.get("hidden"):
+        return page
+    open_hidden_page(page["hidden"])
+    for _ in range(HIDDEN_LOOKS):
+        time.sleep(3)
+        page = session.call("get_job_challenge", job_id)
+        log.info("bank hidden step passed: %s", not page.get("hidden"))
+        if not page.get("hidden"):
+            break
+    return page
+
+
 def read_bank_page(session, job_id, opening):
     """What PayByPhone gives (never its content): the page may be a link or a whole page. Opened unless the card holder
     is opening it. A failure here changes nothing to the payment."""
     try:
         page = session.call("get_job_challenge", job_id) if job_id else None
-        log.info("bank challenge: url=%s html=%s", bool((page or {}).get("url")), len((page or {}).get("html") or ""))
-        if page and page.get("pending") and opening:
+        log.info("bank challenge: hidden=%s url=%s html=%s", bool((page or {}).get("hidden")),
+                 bool((page or {}).get("url")), len((page or {}).get("html") or ""))
+        page = past_hidden_step(session, job_id, page)
+        if page and page.get("pending") and opening and not page.get("hidden"):
             open_bank_page(page)
     except Exception as e:
         log.info("bank challenge unreadable: %s", type(e).__name__)
@@ -4630,7 +4656,11 @@ def validate_payment(body: ValidateBody):
         process_renewal(raw, refresh_token=bot.refresh_token or refresh)  # records it as paid and tells the client
         return {"status": "paid"}
     page = session.call("get_job_challenge", row["bank_job"]) if row.get("bank_job") else {}
-    if page.get("pending") and challenge_answer(page):
+    try:
+        page = past_hidden_step(session, row["bank_job"], page)
+    except Exception as e:
+        log.info("bank hidden step: %s", type(e).__name__)
+    if page.get("pending") and not page.get("hidden") and challenge_answer(page):
         store("renewal_update", p_id=row["id"], p_patch={"next_check": utc_iso(now + timedelta(minutes=15))})
         return challenge_answer(page)
     outcome = process_renewal(raw, refresh_token=bot.refresh_token or refresh, refused=True, validating=True)

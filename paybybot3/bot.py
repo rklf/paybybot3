@@ -23,6 +23,14 @@ def _parse_dt(value):
 _VENDORS = {}  # zone number -> PayByPhone vendor id (never changes)
 
 
+HIDDEN_STEP = "authenticationIframePending"
+
+
+def bank_asks(status):
+    """The bank's part of a payment: its hidden page first, then the one the card holder validates."""
+    return "authenticationChallenge" in str(status) or HIDDEN_STEP in str(status)
+
+
 class Bot:
     TOKEN_URL = "https://auth.paybyphoneapis.com/consumer/token"
     GRAPHQL_URL = "https://consumer.paybyphoneapis.com/uapi/graphql"
@@ -518,12 +526,14 @@ class Bot:
         return self._graphql(query, {"jobId": jobId})["getJobV1"]
 
     def get_job_challenge(self, jobId):
-        """A payment waiting on the bank: is it still waiting, and the bank's page to show (a link or a base64 page)."""
+        """A payment waiting on the bank: is it still waiting, its hidden page while it is at that step, and the page
+        to show (a link or a base64 page)."""
         query = """query GetJobV1($jobId: UUID!) {
   getJobV1(jobId: $jobId) {
     captureGroups {
       status
       authentication {
+        hiddenIframe
         challengeUrl
         challengeHtml
       }
@@ -531,9 +541,11 @@ class Bot:
   }
 }"""
         groups = self._graphql(query, {"jobId": jobId})["getJobV1"].get("captureGroups") or []
-        waiting = [g for g in groups if "authenticationChallenge" in str(g.get("status"))]
+        waiting = [g for g in groups if bank_asks(g.get("status"))]
         page = (waiting[0].get("authentication") or {}) if waiting else {}
-        return {"pending": bool(waiting), "url": page.get("challengeUrl"), "html": page.get("challengeHtml")}
+        hidden = page.get("hiddenIframe") if waiting and HIDDEN_STEP in str(waiting[0].get("status")) else None
+        return {"pending": bool(waiting), "hidden": hidden, "url": page.get("challengeUrl"),
+                "html": page.get("challengeHtml")}
 
     _TERMINAL_CAPTURE_STATUSES = {
         "captureNotRequired",
@@ -653,6 +665,8 @@ class Bot:
             if self._job_is_terminal(job):
                 break
             sleep(2)
+        # Still at the bank's hidden step: it may move on by itself, so only said after all the looks above.
+        challenged = challenged or any(HIDDEN_STEP in str(cg.get("status")) for cg in (job or {}).get("captureGroups") or [])
 
         return {
             "quoteId": quote["quoteId"],

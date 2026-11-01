@@ -214,7 +214,7 @@ class ChallengeRead(unittest.TestCase):
                                   "authentication": {"challengeUrl": "https://bank/x", "challengeHtml": None}}]}
         with patch.object(Bot, "_graphql", return_value={"getJobV1": job}):
             self.assertEqual(Bot.__new__(Bot).get_job_challenge("j"),
-                             {"pending": True, "url": "https://bank/x", "html": None})
+                             {"pending": True, "hidden": None, "url": "https://bank/x", "html": None})
 
     def test_over(self):
         job = {"captureGroups": [{"status": "captured", "authentication": None}]}
@@ -391,3 +391,64 @@ class OneOffTicket(unittest.TestCase):
 
     def test_another_unconfirmed_payment_opens_nothing(self):
         self.pay(web.Unconfirmed(web.UNCONFIRMED)).assert_not_called()
+
+
+class HiddenStep(unittest.TestCase):
+    """The bank's hidden page, before the one the card holder validates: the app opens it, nobody sees it."""
+
+    def job(self, status, **authentication):
+        return {"getJobV1": {"captureGroups": [{"status": status, "authentication": authentication}]}}
+
+    def test_read_apart_from_the_page_to_validate(self):
+        with patch.object(Bot, "_graphql", return_value=self.job("authenticationIframePending", hiddenIframe="PAGE")):
+            page = Bot.__new__(Bot).get_job_challenge("j")
+        self.assertEqual(page, {"pending": True, "hidden": "PAGE", "url": None, "html": None})
+
+    def test_gone_once_passed(self):
+        with patch.object(Bot, "_graphql", return_value=self.job("authenticationChallengePending", hiddenIframe="PAGE",
+                                                                 challengeUrl="https://bank/x")):
+            page = Bot.__new__(Bot).get_job_challenge("j")
+        self.assertIsNone(page["hidden"])
+        self.assertEqual(page["url"], "https://bank/x")
+
+    def test_a_payment_stopped_there_is_a_bank_check(self):
+        bot = Bot.__new__(Bot)
+        with patch.object(bot, "_get_vendor_id", return_value="v"), patch.object(bot, "_create_job", return_value="j"), \
+                patch.object(bot, "_get_job", return_value={"status": "x", "captureGroups": [{"status": "authenticationIframePending"}]}), \
+                patch("paybybot3.bot.sleep"):
+            result = bot._charge({"quoteId": "q"}, {"parkingSessionId": "s", "expireTime": "t"}, "75005", "c")
+        self.assertTrue(result["challenged"])
+
+    def session(self, *pages):
+        pages = iter(pages)
+        s = MagicMock()
+        s.call.side_effect = lambda *a, **k: next(pages)
+        return s
+
+    def test_opened_then_the_page_to_validate_is_opened_too(self):
+        hidden = {"pending": True, "hidden": "https://acs.bank.test/method", "url": None, "html": None}
+        visible = {"pending": True, "hidden": None, "url": "https://acs.bank.test/x", "html": None}
+        with patch.object(web, "open_bank_page") as opened, patch.object(web.time, "sleep"):
+            web.read_bank_page(self.session(hidden, hidden, visible), "j", opening=True)
+        self.assertEqual([c.args[0].get("url") for c in opened.call_args_list],
+                         ["https://acs.bank.test/method", "https://acs.bank.test/x"])
+
+    def test_a_whole_page_reaches_the_opening_encoded(self):
+        with patch.object(web, "open_bank_page") as opened:
+            web.open_hidden_page("<form></form>")
+            web.open_hidden_page(base64.b64encode(b"<form></form>").decode())
+        for call in opened.call_args_list:
+            self.assertEqual(base64.b64decode(call.args[0]["html"]), b"<form></form>")
+
+    def test_the_card_holder_opening_it_still_needs_the_hidden_page_passed(self):
+        hidden = {"pending": True, "hidden": "https://acs.bank.test/method", "url": None, "html": None}
+        visible = {"pending": True, "hidden": None, "url": "https://acs.bank.test/x", "html": None}
+        with patch.object(web, "open_bank_page") as opened, patch.object(web.time, "sleep"):
+            web.read_bank_page(self.session(hidden, visible), "j", opening=False)
+        self.assertEqual([c.args[0].get("url") for c in opened.call_args_list], ["https://acs.bank.test/method"])
+
+    def test_it_never_stops_passing_after_a_few_looks(self):
+        hidden = {"pending": True, "hidden": "https://acs.bank.test/method", "url": None, "html": None}
+        with patch.object(web, "open_bank_page") as opened, patch.object(web.time, "sleep"):
+            web.read_bank_page(self.session(*[hidden] * 20), "j", opening=True)
+        opened.assert_called_once()
