@@ -78,6 +78,22 @@ test('programmer un ticket : les tarifs visiteur sont proposés', async ({ page 
   await expect(page.getByRole('button', { name: /Visiteur/ }).first()).toBeVisible()
 })
 
+test('programmer un ticket : un tarif sans durées ni nom ne fait pas planter', async ({ page }) => {
+  const rate = { type: 'Visitor', maxStayStatus: null, parkingNotAllowedReason: null }
+  await page.route('**/api/rates*', (r) => r.fulfill({ json: [
+    { ...rate, ratePolicyId: 'a', name: 'Visiteur', acceptedTimeUnits: null },
+    { ...rate, ratePolicyId: 'b', name: null, acceptedTimeUnits: ['Hours'] },
+  ] }))
+  await demo(page)
+  await wizardButton(page).click()
+  const zone = page.getByRole('combobox')
+  await zone.fill('923')
+  await page.getByRole('option', { name: '92300' }).click()
+  await page.getByRole('button', { name: 'Suivant' }).click()
+  await expect(page.getByText('Quel ticket prendre ?')).toBeVisible()
+  await expect(page.getByText('Un problème est survenu')).toBeHidden()
+})
+
 test('renouvellement résident : s’active depuis la carte du véhicule', async ({ page }) => {
   await demo(page)
   await page.getByRole('button', { name: 'Activer le renouvellement automatique' }).first().click()

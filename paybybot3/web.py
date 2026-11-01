@@ -2934,7 +2934,12 @@ def zone_check(number: str, pbb_session: str = Cookie(None)):
 @app.get("/api/rates")
 def rates(location: str, plate: str, pbb_session: str = Cookie(None)):
     s = current(pbb_session)
-    return guarded(lambda: s.call("get_rate_options", locationId=location.strip(), licensePlate=plate))
+
+    def read():
+        found = s.call("get_rate_options", locationId=location.strip(), licensePlate=plate)
+        log.info("rates zone=%s: %s", location.strip()[:8], [(r.get("type"), r.get("acceptedTimeUnits")) for r in found or []])
+        return found
+    return guarded(read)
 
 
 @app.get("/api/last-card")

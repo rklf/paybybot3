@@ -232,7 +232,10 @@ export const api = {
   zone: (number: string) => request<{ found: boolean }>(`/api/zone?number=${encodeURIComponent(number)}`),
   recentZones: () => request<string[]>('/api/zones/recent'),
   rates: (location: string, plate: string) =>
-    request<Rate[]>(`/api/rates?${new URLSearchParams({ location, plate })}`),
+    // PayByPhone can leave a rate's name or units out in some zones.
+    request<Rate[]>(`/api/rates?${new URLSearchParams({ location, plate })}`).then((list) =>
+      list.map((r) => ({ ...r, name: r.name ?? '', acceptedTimeUnits: r.acceptedTimeUnits ?? [] })),
+    ),
   lastRate: (location: string, plate: string) =>
     request<{ rate: string | null; inZone: boolean }>(`/api/last-rate?${new URLSearchParams({ location, plate })}`),
   quote: (p: Parking & { sessionId?: string; renewal?: boolean }) =>
