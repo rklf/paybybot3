@@ -2014,8 +2014,7 @@ def bank_auto_form(html):
 
 def open_bank_page(page):
     """Opens the page of a payment waiting on the bank, as a browser would, so that the bank can alert its client's
-    phone. Under trial on the owner's own account. Validates nothing and states what it is (no invented browser data);
-    logs what answered, never the content."""
+    phone. Validates nothing and states what it is (no invented browser data); logs what answered, never the content."""
     html = base64.b64decode(page["html"]).decode("utf-8", "replace") if page.get("html") else ""
     form = bank_auto_form(html)
     where, fields = page.get("url"), None
@@ -2054,7 +2053,7 @@ def bank_wait_patch(session, row, job_id, active, now, validating):
     try:  # what PayByPhone gives (never its content): the page may be a link or a whole page
         page = session.call("get_job_challenge", job_id) if job_id else None
         log.info("bank challenge: url=%s html=%s", bool((page or {}).get("url")), len((page or {}).get("html") or ""))
-        if page and page.get("pending") and not validating and row.get("owner") in admin_owners():
+        if page and page.get("pending") and not validating:
             open_bank_page(page)
     except Exception as e:
         log.info("bank challenge unreadable: %s", type(e).__name__)

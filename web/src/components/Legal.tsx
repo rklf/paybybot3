@@ -474,8 +474,9 @@ function Terms() {
         <p>
           Un paiement automatique peut ne pas aboutir, par exemple si votre connexion <PayByPhone /> a expiré, si votre carte est refusée, si votre
           droit au tarif choisi (résident, carte mobilité CMI-S) a pris fin ou si <PayByPhone /> modifie son service. Dans ces cas, <PayByBot /> l’indique sur votre
-          tableau de bord, vous prévient par e-mail et réessaie automatiquement. Si votre banque demande une validation, <PayByBot /> vous
-          alerte et attend que vous la fassiez : sans validation avant la fin de votre ticket (ou sous 24 heures sans ticket en cours), le
+          tableau de bord, vous prévient par e-mail et réessaie automatiquement. Si votre banque demande une validation, <PayByBot /> ouvre
+          automatiquement sa page de validation, pour que votre banque puisse vous envoyer sa notification ; <PayByBot /> ne valide jamais à votre place.
+          Il vous prévient aussi et attend que vous validiez : sans validation avant la fin de votre ticket (ou sous 24 heures sans ticket en cours), le
           renouvellement ou le ticket programmé est suspendu. Il l’est aussi si un paiement n’est pas confirmé par <PayByPhone />, pour éviter un double paiement.
         </p>
         <p>

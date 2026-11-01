@@ -348,31 +348,27 @@ class ServerOpensBankPage(unittest.TestCase):
         self.assertNotIn("/challenge", "\n".join(logs.output))
 
 
-class OnlyOnTheOwnersAccount(unittest.TestCase):
-    def patch_for(self, owner, validating=False):
+class OpenedForEveryClient(unittest.TestCase):
+    def patch_for(self, validating=False, pending=True):
         session = MagicMock()
-        session.call.return_value = {"pending": True, "url": "https://acs.bank.test/x", "html": None}
-        row = {"id": "r1", "owner": owner}
-        with patch.dict(os.environ, {"PAYBYBOT_SECRET": "s" * 40}), \
-                patch.object(web, "admin_owners", return_value={"me"}), \
-                patch.object(web, "open_bank_page") as opened:
-            web.bank_wait_patch(session, row, "job1", None, datetime.now(timezone.utc), validating)
+        session.call.return_value = {"pending": pending, "url": "https://acs.bank.test/x", "html": None}
+        with patch.dict(os.environ, {"PAYBYBOT_SECRET": "s" * 40}), patch.object(web, "open_bank_page") as opened:
+            web.bank_wait_patch(session, {"id": "r1", "owner": "client"}, "job1", None, datetime.now(timezone.utc), validating)
         return opened
 
-    def test_the_owner(self):
-        self.patch_for("me").assert_called_once()
-
-    def test_a_client(self):
-        self.patch_for("client").assert_not_called()
+    def test_any_client_without_activating_anything(self):
+        self.patch_for().assert_called_once()
 
     def test_not_when_the_card_holder_is_opening_it(self):
-        self.patch_for("me", validating=True).assert_not_called()
+        self.patch_for(validating=True).assert_not_called()
+
+    def test_not_when_the_bank_no_longer_waits(self):
+        self.patch_for(pending=False).assert_not_called()
 
     def test_a_failure_changes_nothing(self):
         session = MagicMock()
         session.call.return_value = {"pending": True, "url": "https://acs.bank.test/x", "html": None}
         with patch.dict(os.environ, {"PAYBYBOT_SECRET": "s" * 40}), \
-                patch.object(web, "admin_owners", return_value={"me"}), \
                 patch.object(web, "open_bank_page", side_effect=OSError("down")):
-            p = web.bank_wait_patch(session, {"id": "r1", "owner": "me"}, "job1", None, datetime.now(timezone.utc), False)
+            p = web.bank_wait_patch(session, {"id": "r1", "owner": "c"}, "job1", None, datetime.now(timezone.utc), False)
         self.assertEqual(p["last_error"], web.BANK_WAIT)
