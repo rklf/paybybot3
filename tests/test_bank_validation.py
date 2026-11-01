@@ -589,3 +589,67 @@ class CardEnding(unittest.TestCase):
         with patch.object(web, "send_email") as mail:
             self.assertIsNone(web.warn_card_ending(session, {"email": "a@b.fr"}, datetime.now(timezone.utc)))
         mail.assert_not_called()
+
+
+class CardHistory(Base):
+    def counted(self, patch_):
+        return self.details(patch_)["card_stats"]
+
+    def test_a_refusal_is_counted_for_its_card(self):
+        _, p, *_ = self.run_renewal(pay_error=web.Unconfirmed(web.UNCONFIRMED))
+        self.assertEqual(self.counted(p), {"c": {"refused": 1}})
+
+    def test_counts_add_up_and_survive_what_else_is_written(self):
+        _, p, *_ = self.run_renewal(pay_error=web.BankCheck(web.BANK_CHECK, "job1"), card_stats={"c": {"paid": 2}})
+        self.assertEqual(self.counted(p), {"c": {"paid": 2, "bank": 1}})
+        self.assertEqual(self.details(p)["bank_job"], "job1")
+
+    def test_a_reminder_while_waiting_counts_nothing(self):
+        _, p, *_ = self.run_renewal(last_error=web.BANK_WAIT, bank_job="j", bank_ends="", bank_deadline=web.utc_iso(later(hours=20)),
+                                    bank_remind=web.utc_iso(later(hours=5)), bank_reminded="", card_stats={"c": {"bank": 1}})
+        self.assertNotIn("data", p)
+
+    def test_no_card_data_in_the_counts(self):
+        _, p, *_ = self.run_renewal(pay_error=web.Unconfirmed(web.UNCONFIRMED))
+        self.assertEqual(set(self.counted(p)["c"]), {"refused"})
+
+
+class SecondCardHint(unittest.TestCase):
+    def hint(self, bank, cards=None, told=""):
+        session = MagicMock()
+        session.call.return_value = {"paymentCards": cards if cards is not None else [{"paymentAccountId": "c", "maskedCardNumber": "**1"}]}
+        details = {"email": "a@b.fr", "card_hint": told}
+        with patch.object(web, "send_email") as mail:
+            told_now = web.second_card_hint(session, details, {"bank": bank})
+        return told_now, mail
+
+    def test_once_the_bank_asked_twice_on_the_only_card(self):
+        told, mail = self.hint(2)
+        self.assertTrue(told)
+        mail.assert_called_once()
+
+    def test_not_at_the_first_time(self):
+        told, mail = self.hint(1)
+        self.assertFalse(told)
+        mail.assert_not_called()
+
+    def test_not_twice(self):
+        told, mail = self.hint(3, told="1")
+        self.assertFalse(told)
+        mail.assert_not_called()
+
+    def test_not_with_another_card(self):
+        told, mail = self.hint(2, cards=[{"paymentAccountId": "c", "maskedCardNumber": "**1"}, {"paymentAccountId": "d", "maskedCardNumber": "**2"}])
+        self.assertFalse(told)
+        mail.assert_not_called()
+
+
+class CardMask(unittest.TestCase):
+    def test_says_how_many_digits_show_never_which(self):
+        with self.assertLogs(web.log, "INFO") as logs:
+            web.card_dates({"paymentCards": [{"paymentAccountId": "a", "maskedCardNumber": "497012******4242"}]})
+        text = "\n".join(logs.output)
+        self.assertIn("digits=10", text)
+        self.assertIn("length=16", text)
+        self.assertNotIn("4970", text)
+        self.assertNotIn("4242", text)

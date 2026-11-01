@@ -1599,7 +1599,8 @@ def bot_from_refresh(refresh, owner=None):
 
 RENEWAL_FIELDS = ("label", "plate", "location", "rate", "duration", "unit", "payment_account_id", "email", "days",
                   "start", "tz", "cmis_attested_at", "date_from", "date_to",
-                  "bank_job", "bank_ends", "bank_deadline", "bank_remind", "bank_reminded", "refused_tries", "card_warned")
+                  "bank_job", "bank_ends", "bank_deadline", "bank_remind", "bank_reminded", "refused_tries", "card_warned",
+                  "card_stats", "card_hint")
 
 
 def encrypt_details(details):
@@ -1854,6 +1855,7 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
     session = UserSession.for_bot(bot)
     outcome = "error"
     result, expire = None, None
+    used_card, bank_asked = row.get("payment_account_id"), False
     try:
         row = card_warned_row(session, row, now, patch)
         active = running_for(session, row["plate"])
@@ -1889,6 +1891,7 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
         elif ticket and due and not (pause and pause <= ends):
             card = check_payable(session, row["location"], row["rate"], row["plate"], row["payment_account_id"],
                                  avoid=refused)
+            used_card = card
             try:
                 result, found = extend_and_confirm(session, ticket, row, card)
             except Unconfirmed:
@@ -1926,6 +1929,7 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
             keep_early_stops(session, row)  # a week stopped in PayByPhone before its end: kept as proof
             card = check_payable(session, row["location"], row["rate"], row["plate"], row["payment_account_id"],
                                  avoid=refused)
+            used_card = card
             result, found = pay_and_confirm(session, row["location"], row["rate"], fmt_qty(row["duration"]),
                                             row["unit"], row["plate"], card)
             expire = covered_until(found)
@@ -1937,6 +1941,7 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
     except BankCheck as e:
         # The card holder is told at once, and the payment is theirs to validate until the car is no longer covered.
         patch.update(bank_wait_patch(session, row, e.job_id, active, now, validating))
+        bank_asked = not validating
         outcome = "bank_wait"
     except Unconfirmed:
         patch.update(refused_patch(row, UNCONFIRMED, previous_error, now, running_end(session, row)))
@@ -1957,6 +1962,9 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
                 outage_hit()
     if outcome in ("paid", "active"):
         outage_clear()
+    counted = "bank" if bank_asked else {"paid": "paid", "refused": "refused", "unconfirmed": "refused"}.get(outcome)
+    if counted:
+        count_card(session, row, patch, used_card, counted)
     log.info("renewal %s zone=%s plate=%s: %s", row["id"], row["location"], row["plate"][:2] + "***", outcome)
     store("renewal_update", p_id=row["id"], p_patch=patch)
     if outcome == "paid":
@@ -1992,6 +2000,36 @@ def checked_ahead(session, row, ends, now):
     except Exception as e:
         log.info("renewal %s: not checked ahead: %s", row.get("id"), type(e).__name__)
     return None
+
+
+def second_card_hint(session, details, counts):
+    """Once, when the bank keeps asking on the account's only card: another card gives the payment a second chance.
+    True if told."""
+    if counts.get("bank", 0) < 2 or details.get("card_hint") or not details.get("email"):
+        return False
+    cards = [p for p in normalize_accounts(session.call("get_payment_accounts") or {}) if p["kind"] == "card" and not p["expired"]]
+    if len(cards) != 1:
+        return False
+    send_email(details["email"], "Votre banque demande souvent une validation", "Une seconde carte peut aider",
+               ["Votre banque a demandé plusieurs fois de valider les paiements de votre stationnement.",
+                "Si vous avez une autre carte, ajoutez-la dans l'application PayByPhone : PayByBot pourra l'essayer si "
+                "un paiement n'aboutit pas avec la première."],
+               ("Ouvrir PayByBot", APP_URL))
+    return True
+
+
+def count_card(session, row, patch, card, what):
+    """What happened to a payment, per card of the renewal (stored encrypted with it, gone with it). Never stops it."""
+    try:
+        details = json.loads(_fernet("renewal").decrypt(patch["data"].encode())) if patch.get("data") else row
+        stats = dict(details.get("card_stats") or {})
+        counts = dict(stats.get(card) or {})
+        counts[what] = counts.get(what, 0) + 1
+        stats[card] = counts
+        hint = second_card_hint(session, details, counts)
+        patch["data"] = encrypt_details({**details, "card_stats": stats, "card_hint": details.get("card_hint") or ("1" if hint else "")})
+    except Exception as e:
+        log.info("renewal %s: not counted: %s", row.get("id"), type(e).__name__)
 
 
 def keep_other_card(row, card, patch):
@@ -4287,6 +4325,9 @@ _admin_parking = {}  # owner -> (when read, its vehicles and running tickets, it
 
 def card_dates(accounts):
     """A client's cards for the owner's page: when they end, nothing that identifies them."""
+    for card in accounts.get("paymentCards") or []:  # how the masked number looks, never its digits
+        masked = card.get("maskedCardNumber") or ""
+        log.info("admin: card mask length=%s digits=%s", len(masked), sum(c.isdigit() for c in masked))
     return [{"exp": p["label"].split(" — exp. ")[-1] if p["validUntil"] else None, "validUntil": p["validUntil"],
              "expired": p["expired"]} for p in normalize_accounts(accounts) if p["kind"] == "card"]
 

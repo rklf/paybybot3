@@ -104,6 +104,7 @@ export function SecurityDetails() {
             ['Renouvellement ou ticket programmé : plaque, zone, tarif, durée, jours et heure, moyen de paiement choisi', 'Base de données à Paris', 'Chiffrés', 'Jusqu’à ce que vous l’arrêtiez'],
             ['Compte PayByBot : e-mail (seule donnée saisie), prénom et arrondissement de résidence repris de PayByPhone', 'Base de données à Paris', 'Chiffrés', 'Jusqu’à la suppression du compte'],
             ['Renouvellement ou ticket programmé : e-mail pour les confirmations', 'Base de données à Paris', 'Chiffré', 'Jusqu’à ce que vous le retiriez ou arrêtiez'],
+            ['Historique des paiements par carte (payé, validation demandée, refusé), sans donnée de carte', 'Base de données à Paris', 'Chiffré', 'Jusqu’à la suppression du renouvellement ou du compte'],
             ['Alertes sur le téléphone, si vous les activez : adresse technique fournie par votre navigateur', 'Base de données à Paris', 'Chiffrée', 'Jusqu’à la suppression du compte ou le retrait de l’autorisation'],
             ['Renouvellement ou ticket programmé : dates de pause, de vérification et de paiement', 'Base de données à Paris', 'Dates seules, sans lien lisible avec vous', 'Jusqu’à ce que vous l’arrêtiez'],
             ['Identifiant de votre compte', 'Base de données à Paris', 'Seulement une empreinte : le numéro n’y figure pas', 'Jusqu’à ce que vous l’arrêtiez'],
