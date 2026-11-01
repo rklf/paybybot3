@@ -536,8 +536,8 @@ export function DailyWizard({
   const hasWeight = usable.some(light) && usable.some(heavy)
   const handiRate = usable.find(handi) ?? null
   const effective = usable.find((r) => r.ratePolicyId === rateId) ?? null
-  // Programmed tickets are for the CMI-S card only (no visitor rates offered any more).
-  const options = handiRate ? [handiRate] : []
+  // One question, every answer with its price: the CMI-S card first, then the visitor rates by weight.
+  const options = [...(handiRate ? [handiRate] : []), ...usable.filter((r) => !handi(r)).sort((a, b) => Number(heavy(a)) - Number(heavy(b)))]
   // PayByPhone gives no maximum stay with its rates: a day when the rate sells days; for visitors, Paris' 6 hours,
   // elsewhere up to 24 hours (PayByPhone's quote refuses a longer stay than the zone allows).
   // The units offered per rate: Handi in days only, visitors in minutes or hours; each capped at the rate's maximum.
@@ -594,7 +594,7 @@ export function DailyWizard({
       setRates(list)
       const first = list.filter((r) => !r.parkingNotAllowedReason && !resident(r))
       const kept = edit.current && first.find((r) => r.ratePolicyId === String(edit.current!.rate))
-      setRateId((kept || first.find(handi))?.ratePolicyId ?? null)
+      setRateId((kept || first.find(handi) || first[0])?.ratePolicyId ?? null)
       setStep(2)
     } catch (e) {
       setError((e as Error).message)
@@ -857,6 +857,11 @@ export function DailyWizard({
                     </div>
                   )}
                 </div>
+                {hasWeight && (
+                  <p className="mt-2 text-xs text-ink/45">
+                    {withPayByPhone('PayByPhone ne connaît pas le poids du véhicule : choisissez le tarif qui lui correspond.')}
+                  </p>
+                )}
               </div>
               {effective && handi(effective) && (
                 // PayByPhone does not check the card: the user states it, kept with the ticket.

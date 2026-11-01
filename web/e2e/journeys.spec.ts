@@ -67,6 +67,17 @@ test('programmer un ticket : véhicule choisi, zone de France reconnue', async (
   await expect(page.getByText('zone PayByPhone reconnue', { exact: false })).toBeVisible()
 })
 
+test('programmer un ticket : les tarifs visiteur sont proposés', async ({ page }) => {
+  await demo(page)
+  await wizardButton(page).click()
+  const zone = page.getByRole('combobox')
+  await zone.fill('690')
+  await page.getByRole('option', { name: /69000/ }).click()
+  await page.getByRole('button', { name: 'Suivant' }).click()
+  await expect(page.getByText('Quel ticket prendre ?')).toBeVisible()
+  await expect(page.getByRole('button', { name: /Visiteur/ }).first()).toBeVisible()
+})
+
 test('renouvellement résident : s’active depuis la carte du véhicule', async ({ page }) => {
   await demo(page)
   await page.getByRole('button', { name: 'Activer le renouvellement automatique' }).first().click()
