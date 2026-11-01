@@ -105,6 +105,68 @@ function ServicePanel() {
   )
 }
 
+/** The owner's backup card: the renewals pay with it when the client's own card fails, then the amount goes on the
+ *  client's next invoice. Only its last four digits are kept, never the number. */
+function BackupCardPanel() {
+  const [last4, setLast4] = useState<string | null | undefined>(undefined)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    api.adminBackupCard().then((r) => setLast4(r.last4), (e) => setError((e as Error).message))
+  }, [])
+  async function save(value: string | null) {
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await api.adminBackupCardSet(value)
+      setLast4(r.last4)
+      setDraft('')
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const valid = /^\d{4}$/.test(draft)
+  return (
+    <section className="mt-8 rounded-2xl border border-ink/10 bg-white p-5">
+      <p className="font-heading text-lg font-medium text-ink">Carte de secours</p>
+      <p className="mt-1 text-sm text-ink/55">
+        {last4
+          ? `Active : carte •••• ${last4}. Elle paie quand la carte du client échoue, puis le montant va sur sa prochaine facture.`
+          : last4 === null
+            ? 'Aucune carte de secours : un paiement refusé n’est pas avancé.'
+            : 'Chargement…'}
+      </p>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <input
+          inputMode="numeric"
+          maxLength={4}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value.replace(/\D/g, '').slice(0, 4))}
+          placeholder="4 derniers chiffres"
+          aria-label="4 derniers chiffres de la carte de secours"
+          className="h-10 w-44 rounded-full border border-ink/15 px-4 text-sm text-ink"
+        />
+        <button disabled={busy || !valid} onClick={() => save(draft)} className={ui.pillGray}>
+          {busy && <Loader2 className="size-4 animate-spin" />} {last4 ? 'Remplacer' : 'Enregistrer'}
+        </button>
+        {last4 && (
+          <button
+            disabled={busy}
+            onClick={() => window.confirm('Retirer la carte de secours ? Les paiements refusés ne seront plus avancés.') && save(null)}
+            className={ui.pillGray}
+          >
+            Retirer
+          </button>
+        )}
+      </div>
+      {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
+    </section>
+  )
+}
+
 export type AdminStats = {
   accounts: number
   accounts_7d: number
@@ -513,6 +575,7 @@ export function AdminPage(_: { signedIn?: boolean }) {
         ) : (
           <>
             <ServicePanel />
+            <BackupCardPanel />
 
             <h2 className="mt-12 text-sm font-semibold text-ink/55">Clients{clients ? ` (${clients.length})` : ''}</h2>
             {clients && clients.length === 0 && <p className="mt-3 text-ink/50">Aucun client pour l’instant.</p>}

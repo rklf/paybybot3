@@ -594,10 +594,29 @@ class NotPayable(Exception):
     """Known before paying that PayByPhone will refuse: resident rate no longer granted, no card."""
 
 
+_backup_cache = [0.0, None]  # (when read, last four digits): one database read for a whole scheduler run
+BACKUP_CACHE_SECONDS = 60
+
+
+def backup_last4():
+    """The backup card's last four digits: set on the admin page online, else PAYBYBOT_BACKUP_CARD_LAST4."""
+    if not HOSTED:
+        return os.environ.get("PAYBYBOT_BACKUP_CARD_LAST4", "").strip() or None
+    if time.time() - _backup_cache[0] < BACKUP_CACHE_SECONDS:
+        return _backup_cache[1]
+    try:
+        last4 = (store("service_state_get") or {}).get("backup_card_last4")
+    except Exception as e:  # unreadable: no backup this time rather than no payment at all
+        log.warning("backup card setting unreadable: %s", type(e).__name__)
+        last4 = None
+    _backup_cache[:] = [time.time(), last4]
+    return last4
+
+
 def backup_card_id(accounts):
     """David's shared virtual card, that the client adds to their own PayByPhone account. Recognised by its last four
-    digits (PAYBYBOT_BACKUP_CARD_LAST4); used only when the client's own cards fail, then re-billed on Stripe."""
-    last4 = os.environ.get("PAYBYBOT_BACKUP_CARD_LAST4", "").strip()
+    digits (backup_last4); used only when the client's own cards fail, then re-billed on Stripe."""
+    last4 = backup_last4()
     if not last4:
         return None
     for card in (accounts or {}).get("paymentCards") or []:
@@ -4394,6 +4413,29 @@ def admin_service_action(body: ServiceAction, pbb_admin: str = Cookie(None)):
         raise HTTPException(403, "Accès réservé.")
     require_admin(pbb_admin)
     return guarded(lambda: service_action(body.action))
+
+
+class BackupCard(BaseModel):
+    last4: str | None = Field(default=None, pattern=r"^\d{4}$")  # only the last four digits, never the number
+
+
+@app.get("/api/admin/backup-card")
+def admin_backup_card(pbb_admin: str = Cookie(None)):
+    """The backup card the renewals fall back on: its last four digits, or None."""
+    if not HOSTED:
+        raise HTTPException(403, "Accès réservé.")
+    require_admin(pbb_admin)
+    return {"last4": (guarded(lambda: store("service_state_get")) or {}).get("backup_card_last4")}
+
+
+@app.put("/api/admin/backup-card")
+def admin_backup_card_set(body: BackupCard, pbb_admin: str = Cookie(None)):
+    if not HOSTED:
+        raise HTTPException(403, "Accès réservé.")
+    require_admin(pbb_admin)
+    state = guarded(lambda: store("backup_card_set", p_last4=body.last4)) or {}
+    _backup_cache[:] = [0.0, None]  # used from the next renewal on
+    return {"last4": state.get("backup_card_last4")}
 
 
 _admin_parking = {}  # owner -> (when read, its vehicles and running tickets, its cards' end dates)

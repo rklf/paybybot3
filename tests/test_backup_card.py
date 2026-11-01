@@ -103,5 +103,55 @@ class Rebill(unittest.TestCase):
         stripe.assert_not_called()
 
 
+
+class AdminSetting(unittest.TestCase):
+    """The owner sets the backup card's last four digits on the admin page, no redeploy needed."""
+
+    def setUp(self):
+        web._backup_cache[:] = [0.0, None]
+        self.addCleanup(lambda: web._backup_cache.__setitem__(slice(None), [0.0, None]))
+
+    def test_the_admin_setting_is_used_online(self):
+        with patch.object(web, "HOSTED", True), patch.dict(os.environ, {"PAYBYBOT_BACKUP_CARD_LAST4": ""}), \
+                patch.object(web, "store", return_value={"backup_card_last4": "9385"}):
+            self.assertEqual(web.backup_card_id(accounts(card("c", "1111"), card("b", "9385"))), "b")
+
+    def test_no_setting_online_means_no_backup(self):
+        with patch.object(web, "HOSTED", True), patch.dict(os.environ, {"PAYBYBOT_BACKUP_CARD_LAST4": ""}), \
+                patch.object(web, "store", return_value={"backup_card_last4": None}):
+            self.assertIsNone(web.backup_card_id(accounts(card("b", "9385"))))
+
+    def test_the_setting_is_read_once_for_several_renewals(self):
+        with patch.object(web, "HOSTED", True), \
+                patch.object(web, "store", return_value={"backup_card_last4": "9385"}) as store:
+            web.backup_card_id(accounts(card("b", "9385")))
+            web.backup_card_id(accounts(card("b", "9385")))
+        self.assertEqual(store.call_count, 1)
+
+    def test_the_owner_saves_four_digits(self):
+        with patch.object(web, "HOSTED", True), patch.object(web, "require_admin"), \
+                patch.object(web, "store", return_value={"backup_card_last4": "9385"}) as store:
+            answer = web.admin_backup_card_set(web.BackupCard(last4="9385"), pbb_admin="x")
+        store.assert_called_once_with("backup_card_set", p_last4="9385")
+        self.assertEqual(answer, {"last4": "9385"})
+
+    def test_the_owner_can_remove_it(self):
+        with patch.object(web, "HOSTED", True), patch.object(web, "require_admin"), \
+                patch.object(web, "store", return_value={"backup_card_last4": None}) as store:
+            answer = web.admin_backup_card_set(web.BackupCard(last4=None), pbb_admin="x")
+        store.assert_called_once_with("backup_card_set", p_last4=None)
+        self.assertEqual(answer, {"last4": None})
+
+    def test_anything_but_four_digits_is_refused(self):
+        for bad in ("938", "93855", "abcd", "5438650669359385"):
+            with self.assertRaises(Exception):
+                web.BackupCard(last4=bad)
+
+    def test_the_owner_reads_it(self):
+        with patch.object(web, "HOSTED", True), patch.object(web, "require_admin"), \
+                patch.object(web, "store", return_value={"backup_card_last4": "9385", "failures": 0}):
+            self.assertEqual(web.admin_backup_card(pbb_admin="x"), {"last4": "9385"})
+
+
 if __name__ == "__main__":
     unittest.main()
