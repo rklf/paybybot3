@@ -594,26 +594,48 @@ class NotPayable(Exception):
     """Known before paying that PayByPhone will refuse: resident rate no longer granted, no card."""
 
 
+def backup_card_id(accounts):
+    """David's shared virtual card, that the client adds to their own PayByPhone account. Recognised by its last four
+    digits (PAYBYBOT_BACKUP_CARD_LAST4); used only when the client's own cards fail, then re-billed on Stripe."""
+    last4 = os.environ.get("PAYBYBOT_BACKUP_CARD_LAST4", "").strip()
+    if not last4:
+        return None
+    for card in (accounts or {}).get("paymentCards") or []:
+        if (card.get("maskedCardNumber") or "").endswith(last4):
+            return card.get("paymentAccountId")
+    return None
+
+
 def check_payable(session, location, rate, plate, payment_account_id, avoid=False):
     """The two usual reasons a renewal cannot be paid, checked before paying: the resident rate is no longer
     offered for this car here (permit expired), or the account has no card left. Returns the card to use: the
-    renewal's own, else another card of the account if that one was removed. avoid: the renewal's card was just
-    refused, so another valid card of the account is tried first (e.g. one the user added in PayByPhone since)."""
+    renewal's own, else another of the client's cards. The backup card is last resort: paid only when the client
+    has no usable card of their own. avoid: the renewal's card was just refused, so the next one is tried."""
     rates = session.call("get_rate_options", location, plate) or []
     chosen = next((r for r in rates if str(r.get("ratePolicyId")) == str(rate)), None)
     if not chosen or chosen.get("parkingNotAllowedReason"):
         reason = (chosen or {}).get("parkingNotAllowedReason")
         raise NotPayable(RESIDENT_REFUSED % (" (motif PayByPhone : %s)" % reason if reason else ""))
-    cards = [p for p in normalize_accounts(session.call("get_payment_accounts") or {}) if p["kind"] == "card"]
+    raw = session.call("get_payment_accounts") or {}
+    cards = [p for p in normalize_accounts(raw) if p["kind"] == "card"]
     if not cards:
         raise NotPayable(NO_CARD)
     valid = [p["id"] for p in cards if not p["expired"]]
-    if not valid:  # every card is past its expiry date: the payment would be refused
+    backup = backup_card_id(raw)
+    own = [v for v in valid if v != backup]
+    if not own:  # the client has no usable card of their own
+        if backup and backup in valid:
+            return backup  # pay with David's backup card
         chosen = next((p for p in cards if p["id"] == payment_account_id), cards[0])
         raise NotPayable(CARD_EXPIRED % chosen["label"].split("—")[-1].strip())
-    if avoid and payment_account_id in valid and len(valid) > 1:
-        return next(p for p in valid if p != payment_account_id)
-    return payment_account_id if payment_account_id in valid else valid[0]
+    if avoid and payment_account_id in own:
+        other = next((v for v in own if v != payment_account_id), None)
+        if other:
+            return other  # another of the client's cards before the backup
+        if backup and backup in valid:
+            return backup  # the client's only card was refused: fall back to David's
+        return payment_account_id
+    return payment_account_id if payment_account_id in own else own[0]
 
 
 def pay_and_confirm(session, location, rate, duration, unit, plate, paymentAccountId, attempts=10, delay=3):
@@ -1892,6 +1914,7 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
             card = check_payable(session, row["location"], row["rate"], row["plate"], row["payment_account_id"],
                                  avoid=refused)
             used_card = card
+            on_backup = paid_with_backup(session, card)
             try:
                 result, found = extend_and_confirm(session, ticket, row, card)
             except Unconfirmed:
@@ -1907,7 +1930,9 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
                 expire = covered_until(found)
                 patch.update(last_payment=utc_iso(now), next_check=utc_iso(next_look(expire, now)),
                              last_error=None)
-                keep_other_card(row, card, patch)
+                keep_other_card(row, card, patch, on_backup)
+                if on_backup:
+                    rebill_backup(row, result)
                 outcome = "paid"
             else:
                 patch.update(next_check=utc_iso(ends + timedelta(seconds=30)), last_error=None)
@@ -1930,13 +1955,16 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
             card = check_payable(session, row["location"], row["rate"], row["plate"], row["payment_account_id"],
                                  avoid=refused)
             used_card = card
+            on_backup = paid_with_backup(session, card)
             result, found = pay_and_confirm(session, row["location"], row["rate"], fmt_qty(row["duration"]),
                                             row["unit"], row["plate"], card)
             expire = covered_until(found)
             next_check = schedule.next_slot(rule, now) if rule else next_look(expire, now)
             patch.update(last_payment=utc_iso(now), next_check=utc_iso(next_check or now + timedelta(days=30)),
                          last_error=None)
-            keep_other_card(row, card, patch)
+            keep_other_card(row, card, patch, on_backup)
+            if on_backup:
+                rebill_backup(row, result)
             outcome = "paid"
     except BankCheck as e:
         # The card holder is told at once, and the payment is theirs to validate until the car is no longer covered.
@@ -2032,10 +2060,38 @@ def count_card(session, row, patch, card, what):
         log.info("renewal %s: not counted: %s", row.get("id"), type(e).__name__)
 
 
-def keep_other_card(row, card, patch):
+def keep_other_card(row, card, patch, on_backup=False):
+    if on_backup:  # David's backup card: it must never become the renewal's own card
+        return
     if card != row["payment_account_id"]:  # paid with another card: it becomes the renewal's card
         patch["data"] = encrypt_details({**row, "payment_account_id": card})
         log.info("renewal %s: now paid with another card of the account", row["id"])
+
+
+def paid_with_backup(session, card):
+    """Was the card used David's backup card? The accounts are already cached from check_payable, so this is cheap."""
+    try:
+        return bool(card) and card == backup_card_id(session.call("get_payment_accounts") or {})
+    except Exception:
+        return False
+
+
+def rebill_backup(row, result):
+    """A ticket paid with David's backup card: add its cost to the client's next Stripe invoice."""
+    if not os.environ.get("STRIPE_SECRET_KEY"):
+        return
+    account = account_by_owner(row.get("owner"))
+    customer = account.get("stripe_customer")
+    cost = (result or {}).get("cost") or {}
+    amount = cost.get("amount")
+    if not customer or not amount:
+        return
+    try:
+        stripe("POST", "invoiceitems", customer=customer, amount=round(float(amount) * 100),
+               currency=(cost.get("currency") or "EUR").lower(),
+               description="Stationnement avancé par PayByBot (carte de secours)")
+    except Exception as e:
+        log.warning("renewal %s: backup rebill not added: %s", row.get("id"), str(e)[:150])
 
 
 def running_end(session, row):
