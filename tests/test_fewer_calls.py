@@ -63,4 +63,34 @@ class AdminKept(unittest.TestCase):
             web.admin_clients(None)
             clients = web.admin_clients(None)
         self.assertEqual(logins, ["o1"])
-        self.assertEqual(clients[0]["vehicles"], [{"plate": "AB123CD", "expire": None}])
+        self.assertEqual(clients[0]["vehicles"], [{"plate": "AB123CD", "expire": None, "resident": None,
+                                                    "covered": False, "renewal": None}])
+
+    def test_each_vehicle_says_its_resident_rate_coverage_and_renewal(self):
+        import json
+
+        class FakeBot:
+            def get_vehicles(self):
+                return [{"licensePlate": p} for p in ("AB-123-CD", "GH456JK", "LM789NP")]
+
+            def get_parking_sessions(self):
+                return []
+
+            def get_payment_accounts(self):
+                return {}
+        account = {"vehicle_zones": {"AB123CD": {"z": "75105", "t": 1}, "GH456JK": {"z": None, "t": 1}},
+                   "chosen_plates": ["AB123CD"]}
+        texts = {b"acc": json.dumps(account).encode(), b"ren": json.dumps({"plate": "AB-123-CD"}).encode()}
+        answers = {"admin_accounts": [{"owner": "o1", "data": "acc", "renewals_active": 0}],
+                   "renewal_list": [{"id": "r", "enabled": False, "data": "ren"}]}
+        with patch.object(web, "HOSTED", True), patch.object(web, "require_admin"), \
+                patch.object(web, "store", side_effect=lambda fn, **k: answers.get(fn)), \
+                patch.object(web, "bot_from_refresh", return_value=FakeBot()), \
+                patch.object(web, "_fernet") as fernet:
+            fernet.return_value.decrypt.side_effect = lambda b: texts[b]
+            vehicles = web.admin_clients(None)[0]["vehicles"]
+        self.assertEqual([(v["plate"], v["resident"], v["covered"], v["renewal"]) for v in vehicles], [
+            ("AB-123-CD", "75105", True, "Suspendu"),
+            ("GH456JK", False, False, None),
+            ("LM789NP", None, False, None),
+        ])

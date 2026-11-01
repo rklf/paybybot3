@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plate } from '@/components/signs'
+import { arrondissement, Plate } from '@/components/signs'
 import { ChevronDown, Loader2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ui } from '@/lib/styles'
@@ -216,7 +216,17 @@ export type AdminClient = {
   /** The subscription in cents, per month (monthly) or per year (yearly). */
   price: number | null
   /** Each vehicle on PayByPhone with its running ticket's end (null: none); null if PayByPhone could not be read. */
-  vehicles: { plate: string; expire: string | null }[] | null
+  vehicles:
+    | {
+        plate: string
+        expire: string | null
+        /** Its resident arrondissement; false: PayByPhone gives it none; null: never looked up. */
+        resident?: string | false | null
+        /** In the subscription (ticked, or with a renewal). */
+        covered?: boolean
+        renewal?: 'Actif' | 'Suspendu' | null
+      }[]
+    | null
   /** When each of the client's cards ends (MM/AA); null if PayByPhone could not be read. */
   cards: { exp: string | null; validUntil: string | null; expired?: boolean }[] | null
   renewals: number
@@ -309,6 +319,9 @@ function left(iso: string, now: number) {
 /** One row per vehicle (or per client when PayByPhone could not be read). */
 type Row = {
   plate: string | null
+  resident: string
+  covered: 'Oui' | 'Non' | '—'
+  renewal: 'Actif' | 'Suspendu' | 'Aucun' | '—'
   name: string
   email: string
   created: string
@@ -344,6 +357,9 @@ function cardState(cards: AdminClient['cards'], now: number): CardState {
 const STATUS_TEXT = { ok: 'OK', alert: 'Problème', none: 'Non suivi' } as const
 const COLUMNS: { key: keyof Row; label: string; choices?: string[] }[] = [
   { key: 'plate', label: 'Véhicule' },
+  { key: 'resident', label: 'Résident' },
+  { key: 'covered', label: 'Couvert', choices: ['Oui', 'Non'] },
+  { key: 'renewal', label: 'Renouvellement', choices: ['Actif', 'Suspendu', 'Aucun'] },
   { key: 'name', label: 'Client' },
   { key: 'email', label: 'E-mail' },
   { key: 'created', label: 'Inscrit le' },
@@ -369,12 +385,15 @@ function rowsOf(clients: AdminClient[], now: number): Row[] {
       card: (c.cards ?? []).map((x) => x.exp ?? '?').join(', '),
       cardState: cardState(c.cards, now),
     }
-    if (c.vehicles === null) return [{ ...base, plate: null, ticket: 'Illisible', expire: null, left: null, status: c.subscribed ? 'alert' : 'none' } as Row]
+    if (c.vehicles === null) return [{ ...base, plate: null, resident: '—', covered: '—', renewal: '—', ticket: 'Illisible', expire: null, left: null, status: c.subscribed ? 'alert' : 'none' } as Row]
     return c.vehicles.map((v) => {
       const rest = v.expire ? left(v.expire, now) : null
       return {
         ...base,
         plate: v.plate,
+        resident: v.resident ? (arrondissement(v.resident) ?? `Zone ${v.resident}`) : v.resident === false ? 'Non' : 'Inconnu',
+        covered: v.covered ? 'Oui' : 'Non',
+        renewal: v.renewal ?? 'Aucun',
         ticket: rest ? 'En cours' : 'Aucun',
         expire: rest ? v.expire : null,
         left: rest,
@@ -450,6 +469,11 @@ function VehicleTable({ clients }: { clients: AdminClient[] }) {
             {shown.map((r, i) => (
               <tr key={i} className={`border-t border-ink/10 ${r.status === 'alert' ? 'bg-destructive/[0.04]' : ''}`}>
                 <td className="px-3 py-3 whitespace-nowrap">{r.plate ? <Plate plate={r.plate} size="sm" /> : <span className="text-ink/40">—</span>}</td>
+                <td className="px-3 py-3 whitespace-nowrap text-ink/70">{r.resident}</td>
+                <td className={cn('px-3 py-3', r.covered === 'Non' ? 'text-ink/45' : 'text-ink/70')}>{r.covered}</td>
+                <td className={cn('px-3 py-3', r.renewal === 'Suspendu' ? 'font-semibold text-[#741b11]' : r.renewal === 'Actif' ? 'text-[#14703a]' : 'text-ink/45')}>
+                  {r.renewal}
+                </td>
                 <td className="px-3 py-3 font-semibold text-ink">{r.name}</td>
                 <td className="px-3 py-3 text-ink/70">{r.email}</td>
                 <td className="px-3 py-3 whitespace-nowrap text-ink/70 tabular-nums">{r.created}</td>

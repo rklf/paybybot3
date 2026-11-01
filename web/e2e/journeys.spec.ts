@@ -277,7 +277,7 @@ test('programmer un ticket : carte refusée au paywall, rien n’est programmé'
 test('admin : les dates de fin des cartes des clients', async ({ page }) => {
   const client = (name: string, cards: unknown) => ({
     name, email: `${name}@test.fr`, created: '2026-10-01T10:00:00Z', plan: 'monthly', subscribed: true, price: 450,
-    renewals: 1, vehicles: [{ plate: 'AB123CD', expire: new Date(Date.now() + 3 * 86_400_000).toISOString() }], cards,
+    renewals: 1, vehicles: [{ plate: 'AB123CD', expire: new Date(Date.now() + 3 * 86_400_000).toISOString(), resident: '75005', covered: true, renewal: 'Suspendu' }], cards,
   })
   const soon = new Date(Date.now() + 20 * 86_400_000).toISOString()
   const replies: Record<string, unknown> = {
@@ -294,6 +294,8 @@ test('admin : les dates de fin des cartes des clients', async ({ page }) => {
   await page.goto(LINK + '#/admin')
   await expect(page.getByText('1 client avec carte expirée')).toBeVisible()
   await expect(page.getByText('1 carte à renouveler sous 60 jours')).toBeVisible()
+  await expect(page.getByRole('cell', { name: 'Paris 5e' }).first()).toBeVisible()
+  await expect(page.getByRole('cell', { name: 'Suspendu' }).first()).toBeVisible()
   await page.getByRole('combobox', { name: 'Filtrer : Carte' }).selectOption('Expirée')
   await expect(page.getByText('01/20')).toBeVisible()
   await expect(page.getByText('04/99')).toBeHidden()
