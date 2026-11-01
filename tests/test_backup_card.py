@@ -236,5 +236,57 @@ class AdminAccount(unittest.TestCase):
                                   "capCents": web.BACKUP_WEEKLY_CAP_CENTS})
 
 
+
+
+class NeverGivesUp(unittest.TestCase):
+    """With a backup account, an activated renewal is never stopped for a card: the advance takes over each time."""
+
+    def setUp(self):
+        self.env = patch.dict(os.environ, ENV)
+        self.env.start()
+        self.addCleanup(self.env.stop)
+
+    def refused(self, message, ready, ends=None, tries=3):
+        row = {**ROW, "refused_tries": tries}
+        with patch.object(web, "backup_ready", return_value=ready):
+            return web.refused_patch(row, message, message, later(), ends)
+
+    def test_without_backup_the_last_refusal_suspends(self):
+        self.assertIs(self.refused("refusée", ready=False)["enabled"], False)
+
+    def test_with_backup_a_refusal_waits_for_the_ticket_end_to_advance(self):
+        ends = later(hours=20)
+        patch_ = self.refused("refusée", ready=True, ends=ends)
+        self.assertNotIn("enabled", patch_)
+        self.assertEqual(web.parse_dt(patch_["next_check"]), ends + timedelta(seconds=30))
+
+    def test_with_backup_and_no_ticket_it_keeps_trying(self):
+        patch_ = self.refused("refusée", ready=True)
+        self.assertNotIn("enabled", patch_)
+        self.assertTrue(later(hours=7) < web.parse_dt(patch_["next_check"]) < later(hours=9))
+
+    def test_an_unconfirmed_payment_still_suspends(self):  # it may have gone through: never paid again blindly
+        self.assertIs(self.refused(web.UNCONFIRMED, ready=True)["enabled"], False)
+
+    def test_a_validation_never_given_does_not_suspend_when_the_advance_fails(self):
+        row = {**ROW, "payment_account_id": "c", "last_error": web.BANK_WAIT, "enabled": True, "email": "a@b.fr",
+               "bank_deadline": web.utc_iso(later(minutes=-1))}
+        stored = []
+        s = MagicMock()
+        s.call.side_effect = lambda name, *a, **k: {"get_parking_sessions": []}.get(name)
+        with patch.object(web, "with_details", side_effect=lambda r: r), \
+                patch.object(web, "guarded_state", return_value="ok"), \
+                patch.object(web, "store", side_effect=lambda *a, **k: stored.append(k)), \
+                patch.object(web, "notify"), patch.object(web, "notify_bank"), patch.object(web, "count_card"), \
+                patch.object(web.Bot, "from_refresh_token", return_value=MagicMock(refresh_token="t")), \
+                patch.object(web.UserSession, "for_bot", return_value=s), \
+                patch.object(web, "backup_ready", return_value=True), \
+                patch.object(web, "advance", return_value=None):
+            web.process_renewal(row, refresh_token="t")
+        p = stored[-1]["p_patch"]
+        self.assertNotIn("enabled", p)
+        self.assertTrue(later(minutes=50) < web.parse_dt(p["next_check"]) < later(minutes=70))
+
+
 if __name__ == "__main__":
     unittest.main()

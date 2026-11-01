@@ -1894,7 +1894,10 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
                              next_check=utc_iso(next_check or now + timedelta(days=30)))
                 outcome = "paid"
             elif now >= parse_dt(row.get("bank_deadline")):
-                patch.update(enabled=False, last_error=BANK_CHECK + " Renouvellement suspendu.")
+                if backup_ready():  # advanced below; if it cannot be, the card is tried again in an hour
+                    patch.update(last_error=BANK_CHECK, next_check=utc_iso(now + RETRY_AFTER))
+                else:
+                    patch.update(enabled=False, last_error=BANK_CHECK + " Renouvellement suspendu.")
                 outcome = "unconfirmed"
                 may_advance = not active
             else:
@@ -2159,6 +2162,12 @@ def refused_patch(row, message, previous_error, now, ends):
     After all of them: suspended."""
     tries = int(row.get("refused_tries") or 0) if previous_error == message else 0
     if tries >= len(REFUSED_AGAIN):
+        if message != UNCONFIRMED and backup_ready():
+            # Never stopped for a card while the backup account can take over: looked at again when the ticket
+            # ends (then advanced), or later on, again and again.
+            again = ends + timedelta(seconds=30) if ends and ends > now else now + REFUSED_AGAIN[-1]
+            return {"last_error": message, "next_check": utc_iso(again),
+                    "data": encrypt_details({**row, "refused_tries": tries + 1})}
         return {"enabled": False, "last_error": message + " Renouvellement suspendu."}
     again = now + REFUSED_AGAIN[tries]
     if ends and now + timedelta(minutes=30) < ends - timedelta(minutes=30) < again:
