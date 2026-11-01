@@ -188,6 +188,12 @@ function AccountDialog({
           Vos véhicules sont synchronisés avec votre compte <PayByPhone />. Pour en ajouter ou en modifier un,
           rendez-vous dans l'application <PayByPhone />.
         </p>
+        <div className="px-6 pt-3">
+          {/* PayByPhone's own app link (as in the e-mails): the app when installed, else its store or site. */}
+          <a href="https://paybyphone.onelink.me/ZQkh/" target="_blank" rel="noreferrer" className={cn(ui.pillBlue, 'gap-1')}>
+            Ouvrir <PayByPhone />
+          </a>
+        </div>
 
         <div className={cn('px-6 pb-7', demo ? 'pt-2' : 'pt-6')}>
           {!demo && (
