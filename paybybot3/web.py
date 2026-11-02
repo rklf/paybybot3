@@ -1019,8 +1019,14 @@ def owner_address():
 OUTAGE_AFTER = 3  # renewals in a row PayByPhone did not answer: the service is marked interrupted
 
 
+API_CHANGED = ("Cannot query field", "GRAPHQL_VALIDATION_FAILED", "Unknown argument", "Unknown type")
+
+
 def is_outage(e):
-    """PayByPhone refusing every call (403, 429), down (5xx) or unreachable: not the user's own problem."""
+    """PayByPhone refusing every call (403, 429), down (5xx), unreachable, or no longer understanding PayByBot's
+    questions (its API changed): not the user's own problem."""
+    if "GraphQL error" in str(e) and any(x in str(e) for x in API_CHANGED):
+        return True
     if isinstance(e, requests.HTTPError) and e.response is not None:
         code = e.response.status_code
         return code in (403, 429) or code >= 500
@@ -1188,10 +1194,15 @@ def notify(details, event, **info):
             return
         next_step = ("Le renouvellement est suspendu : une fois le problème réglé dans PayByPhone, relancez-le "
                      "depuis PayByBot." if info.get("suspended") else
-                     "Réglez-le dans l'application PayByPhone : nous réessayons automatiquement dans une heure.")
+                     "Réglez-le dans l'application PayByPhone : nous réessayons automatiquement.")
+        # Until when the car is covered: the time left to act before a fine.
+        covered = ("Votre ticket actuel se termine le %s : sans nouveau paiement d'ici là, payez-le vous-même dans "
+                   "PayByPhone pour éviter une amende." % paris_text(info["ends"]) if info.get("ends") else
+                   "Votre véhicule n'est plus couvert : payez votre ticket dans PayByPhone dès maintenant pour "
+                   "éviter une amende.")
         send_email(to, "Action requise · renouvellement %s" % plate_text(details.get("plate")),
                    "Le renouvellement a besoin de vous",
-                   ["Le renouvellement automatique pour %s n'a pas pu payer :" % car, message, next_step,
+                   ["Le renouvellement automatique pour %s n'a pas pu payer :" % car, message, covered, next_step,
                     SMS_HINT], ("Ouvrir PayByPhone", PAYBYPHONE_URL))
 
 
@@ -1543,6 +1554,19 @@ def decrypt_credential(value):
     return _fernet("credential").decrypt(value.encode()).decode()
 
 
+def sealed_with_old(value, purpose):
+    """Readable only with PAYBYBOT_SECRET_OLD: to seal again with the current secret, so the old one can go."""
+    if not value or not os.environ.get("PAYBYBOT_SECRET_OLD"):
+        return False
+    from cryptography.fernet import Fernet, InvalidToken
+
+    try:
+        Fernet(base64.urlsafe_b64encode(_subkey(_secrets()[0], purpose))).decrypt(value.encode())
+        return False
+    except InvalidToken:
+        return True
+
+
 def stored_refresh(owner):
     """The PayByPhone refresh token kept with this account's renewals, if any."""
     if not owner:
@@ -1853,6 +1877,8 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
         return "relogin"
     if bot.refresh_token and bot.refresh_token != refresh:
         patch["credential"] = encrypt_credential(bot.refresh_token)
+    elif sealed_with_old(row.get("credential"), "credential"):
+        patch["credential"] = encrypt_credential(refresh)
     session = UserSession.for_bot(bot)
     outcome = "error"
     result, expire = None, None
@@ -1966,13 +1992,16 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
     counted = "bank" if bank_asked else {"paid": "paid", "refused": "refused", "unconfirmed": "refused"}.get(outcome)
     if counted:
         count_card(session, row, patch, used_card, counted)
+    if "data" not in patch and sealed_with_old(row.get("data"), "renewal"):
+        patch["data"] = encrypt_details(row)
     log.info("renewal %s zone=%s plate=%s: %s", row["id"], row["location"], row["plate"][:2] + "***", outcome)
     store("renewal_update", p_id=row["id"], p_patch=patch)
     if outcome == "paid":
         notify(row, "paid", cost=(result or {}).get("cost"), expire=expire,
                next=schedule.next_ticket(rule, now, row.get("paused_from"), row.get("paused_until")) if rule else None)
     elif patch.get("last_error") and patch["last_error"] != previous_error:
-        notify(row, "problem", message=patch["last_error"], suspended=patch.get("enabled") is False)
+        notify(row, "problem", message=patch["last_error"], suspended=patch.get("enabled") is False,
+               ends=running_end(session, row))
     return outcome
 
 

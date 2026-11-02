@@ -112,3 +112,14 @@ class Banner(unittest.TestCase):
     def test_not_interrupted_by_default(self):
         with patch.object(web, "HOSTED", True), patch.object(web, "store", return_value={"interrupted_at": None}):
             self.assertFalse(web.config()["interrupted"])
+
+
+class ApiChanged(unittest.TestCase):
+    def test_a_query_paybyphone_no_longer_understands_is_an_outage(self):
+        for text in ('GraphQL error: [{"message": "Cannot query field \\"x\\" on type \\"Job\\"."}]',
+                     'GraphQL error: [{"extensions": {"code": "GRAPHQL_VALIDATION_FAILED"}}]',
+                     'GraphQL error: [{"message": "Unknown argument \\"y\\" on field \\"z\\"."}]'):
+            self.assertTrue(web.is_outage(RuntimeError(text)), text)
+
+    def test_an_answer_about_this_user_is_not(self):
+        self.assertFalse(web.is_outage(RuntimeError('GraphQL error: [{"message": "Vehicle not found"}]')))

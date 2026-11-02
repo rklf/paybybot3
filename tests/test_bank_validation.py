@@ -684,3 +684,40 @@ class ValidatedInTheBanksApp(Waiting):
         session.call.return_value = None
         p = web.bank_wait_patch(session, {"id": "r", "bank_at": first}, "j", None, later(), True)
         self.assertEqual(json.loads(web._fernet("renewal").decrypt(p["data"].encode()))["bank_at"], first)
+
+
+class FailureMail(unittest.TestCase):
+    def mail(self, **info):
+        with patch.object(web, "send_email") as send, patch.object(web, "alert_owner"):
+            web.notify({"email": "a@b.fr", "plate": "AB123CD", "location": "75005"}, "problem",
+                       message="Le paiement a été refusé.", **info)
+        return " ".join(send.call_args.args[3])
+
+    def test_says_until_when_the_car_is_covered(self):
+        text = self.mail(ends=datetime(2026, 11, 6, 11, 35, tzinfo=timezone.utc))
+        self.assertIn("6 novembre", text)
+        self.assertIn("payez-le vous-même", text)
+
+    def test_says_when_the_car_is_not_covered_any_more(self):
+        self.assertIn("n'est plus couvert", self.mail())
+
+    def test_never_promises_a_try_in_one_hour(self):
+        self.assertNotIn("dans une heure", self.mail())
+
+
+class KeyChanged(Base):
+    def test_sealed_with_the_old_key_it_is_sealed_again_with_the_new_one(self):
+        with patch.dict(os.environ, {"PAYBYBOT_SECRET": "o" * 40}):
+            credential = web.encrypt_credential("t")
+            data = web._fernet("renewal").encrypt(b"{}").decode()
+        with patch.dict(os.environ, {"PAYBYBOT_SECRET": "n" * 40, "PAYBYBOT_SECRET_OLD": "o" * 40}):
+            self.assertTrue(web.sealed_with_old(credential, "credential"))
+            _, p, *_ = self.run_renewal([{"parkingSessionId": "s", "locationId": "75005", "vehicle": {"licensePlate": "AB123CD"},
+                                          "expireTime": later(days=5), "rateOptionId": "101"}],
+                                        credential=credential, data=data)
+            self.assertFalse(web.sealed_with_old(p["credential"], "credential"))
+            self.assertEqual(web.decrypt_credential(p["credential"]), "t")
+            self.assertFalse(web.sealed_with_old(p["data"], "renewal"))
+
+    def test_nothing_to_do_without_an_old_key(self):
+        self.assertFalse(web.sealed_with_old(web.encrypt_credential("t"), "credential"))
