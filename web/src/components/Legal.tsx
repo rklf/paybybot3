@@ -445,6 +445,13 @@ function Terms() {
             Indiquer le bon type de véhicule (léger ou lourd) pour le ticket visiteur : <PayByPhone /> ne connaît pas le poids
             du véhicule, et un tarif inférieur à celui dû ne vous couvre pas.
           </li>
+          <li>
+            Déplacer votre véhicule au moins une fois tous les 7 jours : un ticket payé, même renouvelé automatiquement, ne
+            vous autorise pas à rester plus longtemps sur le même emplacement. Au-delà, le stationnement est considéré comme
+            abusif (article R417-12 du Code de la route ; à Paris, 7 jours au plus pour les résidents) et vous expose à une
+            amende et à une mise en fourrière, qui restent à votre charge. <PayByBot /> paie le ticket, il ne déplace pas
+            votre véhicule.
+          </li>
           <li>Garder vos identifiants <PayByPhone /> confidentiels.</li>
           <li>Payer vous-même votre stationnement dans l’application <PayByPhone /> quand un paiement automatique échoue.</li>
           <li>Ne pas perturber le service, ni tenter d’y accéder de façon non autorisée ou de l’utiliser de façon abusive.</li>
