@@ -15,12 +15,6 @@ async function demo(page: Page) {
 }
 
 /** The button that opens the ticket wizard (its name follows the offer: « Programmer un ticket », « Carte mobilité… »). */
-/** Today in Paris, as the calendar shows it (the machine running the tests may be in another time zone). */
-function parisToday() {
-  const p = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Paris' }))
-  return new Date(p.getFullYear(), p.getMonth(), p.getDate())
-}
-
 const wizardButton = (page: Page) =>
   page.getByRole('button', { name: /Programmer un ticket|Carte mobilité/ }).first()
 
@@ -52,27 +46,6 @@ test('lien privé : le rideau se lève sur le site', async ({ page }) => {
 test('compte démo : le tableau de bord montre les véhicules', async ({ page }) => {
   await demo(page)
   await expect(page.getByText('AB-123-CD').first()).toBeVisible()
-})
-
-test('ticket avancé par PayByBot : affiché sur le tableau de bord, hors de l’appli PayByPhone', async ({ page }) => {
-  await page.route('**/api/overview*', async (route) => {
-    const res = await route.fetch()
-    const data = await res.json()
-    // Before sign-in the answer has no sessions: passed on as it is.
-    if (data.vehicles?.length) {
-      const s = { id: 'advanced-r1', location: '75005', plate: data.vehicles[0].plate, start: null, rate: '1',
-        expire: new Date(Date.now() + 5 * 86_400_000).toISOString(), resident: true, cost: null, advanced: true }
-      data.sessions = [s]
-      // Like a client whose card failed: a weekly renewal on the car, whose ticket PayByBot advanced.
-      data.autopilots = [{ id: 'r1', label: '', plate: s.plate, location: s.location, rate: s.rate, duration: 1,
-        unit: 'Days', paymentAccountId: 'c', enabled: true, lastCheck: null, lastPayment: null, lastError: null,
-        nextCheck: s.expire, advancedUntil: s.expire }]
-    }
-    await route.fulfill({ response: res, json: data })
-  })
-  await demo(page)
-  await expect(page.getByText('Ticket avancé par PayByBot')).toBeVisible()
-  await expect(page.getByText(/n’apparaît pas dans votre application PayByPhone/)).toBeVisible()
 })
 
 test('déconnexion après un lien : l’accueil, pas le rideau « parrainage »', async ({ page }) => {
@@ -156,7 +129,7 @@ test('programmer un ticket : une heure déjà passée est refusée', async ({ pa
   await page.getByRole('button', { name: 'Suivant' }).click()
   await page.getByRole('button', { name: 'Date spécifique' }).click()
   const label = (d: Date) => d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
-  const today = parisToday()
+  const today = new Date()
   const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1)
   if (yesterday.getMonth() === today.getMonth()) await expect(page.getByRole('button', { name: label(yesterday), exact: true })).toBeDisabled()
   await page.getByRole('button', { name: label(today), exact: true }).click()
@@ -264,7 +237,7 @@ async function twoVehicleTicket(page: Page, confirmReply: { status: number; json
   await page.getByRole('button', { name: /Visiteur/ }).first().click()
   await page.getByRole('button', { name: 'Suivant' }).click()
   await page.getByRole('button', { name: 'Date spécifique' }).click()
-  await page.getByRole('button', { name: parisToday().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }), exact: true }).click()
+  await page.getByRole('button', { name: new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }), exact: true }).click()
   await page.locator('input[type=time]').fill('23:59')
   await page.getByRole('button', { name: 'Suivant', exact: true }).click()
   await page.getByRole('button', { name: 'Activer' }).click()
@@ -313,8 +286,6 @@ test('admin : les dates de fin des cartes des clients', async ({ page }) => {
       client('sereine', [{ exp: '04/99', validUntil: '2099-04-30T23:59:59+00:00', expired: false }]),
       client('bientot', [{ exp: '12/26', validUntil: soon, expired: false }]),
       client('perimee', [{ exp: '01/20', validUntil: '2020-01-31T23:59:59+00:00', expired: true }]),
-      { ...client('avance', [{ exp: '04/99', validUntil: '2099-04-30T23:59:59+00:00', expired: false }]),
-        vehicles: [{ plate: 'FJ745AC', expire: new Date(Date.now() + 5 * 86_400_000).toISOString(), advanced: true }] },
     ],
     activity: [],
     service: { interrupted: false, customers: 0 },
@@ -325,34 +296,9 @@ test('admin : les dates de fin des cartes des clients', async ({ page }) => {
   await expect(page.getByText('1 carte à renouveler sous 60 jours')).toBeVisible()
   await expect(page.getByRole('cell', { name: 'Paris 5e' }).first()).toBeVisible()
   await expect(page.getByRole('cell', { name: 'Suspendu' }).first()).toBeVisible()
-  await expect(page.getByRole('cell', { name: 'Avancé par PayByBot' })).toBeVisible()
   await page.getByRole('combobox', { name: 'Filtrer : Carte' }).selectOption('Expirée')
   await expect(page.getByText('01/20')).toBeVisible()
   await expect(page.getByText('04/99')).toBeHidden()
-})
-
-test('admin : connecter le compte de secours', async ({ page }) => {
-  const stats = { accounts: 0, accounts_7d: 0, accounts_30d: 0, renewals: 0, renewals_active: 0, renewals_paused: 0, renewals_error: 0, paid_7d: 0, signups_by_day: [] }
-  let sent: unknown = null
-  await page.route('**/api/admin/*', (route) => {
-    const name = new URL(route.request().url()).pathname.split('/').pop()!
-    if (name === 'backup-account' && route.request().method() === 'POST') {
-      sent = route.request().postDataJSON()
-      return route.fulfill({ json: { connected: true, label: '0612•••78', cards: ['Visa •••• 9385 — exp. 07/31'] } })
-    }
-    const replies: Record<string, unknown> = {
-      stats, clients: [], activity: [],
-      'backup-account': { connected: false, label: null, weekCents: 0, capCents: 30000 },
-    }
-    return route.fulfill({ json: replies[name] ?? {} })
-  })
-  await page.goto(LINK + '#/admin')
-  await page.getByLabel('Identifiant du compte PayByPhone de secours').fill('0612345678')
-  await page.getByLabel('Mot de passe du compte PayByPhone de secours').fill('secret')
-  await page.getByRole('button', { name: 'Connecter', exact: true }).click()
-  await expect(page.getByText(/Connecté : compte 0612•••78 · Visa •••• 9385/)).toBeVisible()
-  expect(sent).toEqual({ login: '0612345678', password: 'secret' })
-  await expect(page.getByLabel('Mot de passe du compte PayByPhone de secours')).toBeHidden()
 })
 
 test('lien de test : le petit ticket à payer s’ouvre', async ({ page }) => {

@@ -14,8 +14,6 @@ export type Session = {
   /** A resident ticket (the weekly renewal is only for these); null when PayByPhone does not say. */
   resident?: boolean | null
   cost?: Money
-  /** Paid by PayByBot from its backup account after the client's card failed: not in the client's PayByPhone app. */
-  advanced?: boolean
 }
 export type Unit = 'Days' | 'Hours' | 'Minutes'
 export type Rate = {
@@ -252,11 +250,6 @@ export const api = {
   /** One action, or all of them without an id. */
   adminActivityDelete: (id?: number) =>
     request<{ ok: true }>(id == null ? '/api/admin/activity' : `/api/admin/activity/${id}`, { method: 'DELETE' }),
-  adminBackupAccount: () =>
-    request<{ connected: boolean; label: string | null; weekCents: number; capCents: number }>('/api/admin/backup-account'),
-  adminBackupAccountSet: (login: string, password: string) =>
-    post<{ connected: boolean; label: string; cards: string[] }>('/api/admin/backup-account', { login, password }),
-  adminBackupAccountDelete: () => request<{ connected: false }>('/api/admin/backup-account', { method: 'DELETE' }),
   adminService: () => request<import('@/components/Admin').ServiceState>('/api/admin/service'),
   adminServiceAction: (action: 'interrupt' | 'notify' | 'resume') =>
     post<import('@/components/Admin').ServiceState>('/api/admin/service', { action }),

@@ -105,95 +105,6 @@ function ServicePanel() {
   )
 }
 
-/** The owner's backup PayByPhone account: when a client's card fails and nothing covers the car, it pays the ticket
- *  for the client's plate, and the amount goes on the client's next invoice. Only its login token is kept. */
-function BackupAccountPanel() {
-  const [state, setState] = useState<{ connected: boolean; label: string | null; weekCents: number; capCents: number } | null>(null)
-  const [cards, setCards] = useState<string[]>([])
-  const [login, setLogin] = useState('')
-  const [password, setPassword] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  useEffect(() => {
-    api.adminBackupAccount().then(setState, (e) => setError((e as Error).message))
-  }, [])
-  async function connect() {
-    setBusy(true)
-    setError(null)
-    try {
-      const r = await api.adminBackupAccountSet(login.trim(), password)
-      setState((s) => ({ weekCents: 0, capCents: 0, ...s, connected: true, label: r.label }))
-      setCards(r.cards)
-      setLogin('')
-      setPassword('')
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-  async function disconnect() {
-    if (!window.confirm('Déconnecter le compte de secours ? Plus aucun ticket ne sera avancé.')) return
-    setBusy(true)
-    setError(null)
-    try {
-      await api.adminBackupAccountDelete()
-      setState((s) => (s ? { ...s, connected: false, label: null } : s))
-      setCards([])
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-  const euros = (cents: number) => (cents / 100).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })
-  return (
-    <section className="mt-8 rounded-2xl border border-ink/10 bg-white p-5">
-      <p className="font-heading text-lg font-medium text-ink">Compte de secours</p>
-      <p className="mt-1 text-sm text-ink/55">
-        {state?.connected
-          ? `Connecté : compte ${state.label}${cards.length ? ` · ${cards.join(', ')}` : ''}. Avancé cette semaine : ${euros(state.weekCents)} sur ${euros(state.capCents)}.`
-          : state
-            ? 'Aucun compte connecté : quand la carte d’un client échoue, rien n’est avancé.'
-            : 'Chargement…'}
-      </p>
-      {state?.connected ? (
-        <div className="mt-4">
-          <button disabled={busy} onClick={disconnect} className={ui.pillGray}>
-            Déconnecter
-          </button>
-        </div>
-      ) : (
-        state && (
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <input
-              value={login}
-              onChange={(e) => setLogin(e.target.value)}
-              placeholder="Identifiant PayByPhone"
-              aria-label="Identifiant du compte PayByPhone de secours"
-              autoComplete="off"
-              className="h-10 w-56 rounded-full border border-ink/15 px-4 text-sm text-ink"
-            />
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Mot de passe"
-              aria-label="Mot de passe du compte PayByPhone de secours"
-              autoComplete="new-password"
-              className="h-10 w-44 rounded-full border border-ink/15 px-4 text-sm text-ink"
-            />
-            <button disabled={busy || login.trim().length < 3 || !password} onClick={connect} className={ui.pillGray}>
-              {busy && <Loader2 className="size-4 animate-spin" />} Connecter
-            </button>
-          </div>
-        )
-      )}
-      {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
-    </section>
-  )
-}
-
 export type AdminStats = {
   accounts: number
   accounts_7d: number
@@ -225,8 +136,6 @@ export type AdminClient = {
         /** In the subscription (ticked, or with a renewal). */
         covered?: boolean
         renewal?: 'Actif' | 'Suspendu' | null
-        /** Its ticket was advanced from the backup account (on the owner's PayByPhone account, not the client's). */
-        advanced?: boolean
       }[]
     | null
   /** When each of the client's cards ends (MM/AA); null if PayByPhone could not be read. */
@@ -333,7 +242,7 @@ type Row = {
   active: 'Actif' | 'Inactif'
   origin: 'Parrainage' | 'Sans parrainage' | '—'
   price: string
-  ticket: 'En cours' | 'Avancé' | 'Aucun' | 'Illisible'
+  ticket: 'En cours' | 'Aucun' | 'Illisible'
   expire: string | null
   left: string | null
   /** The end dates of the client's cards. */
@@ -368,7 +277,7 @@ const COLUMNS: { key: keyof Row; label: string; choices?: string[] }[] = [
   { key: 'origin', label: 'Origine', choices: ['Parrainage', 'Sans parrainage', '—'] },
   { key: 'offer', label: 'Offre', choices: ['Annuel', 'Mensuel', '—'] },
   { key: 'active', label: 'Statut de l’offre', choices: ['Actif', 'Inactif'] },
-  { key: 'ticket', label: 'Ticket', choices: ['En cours', 'Avancé', 'Aucun', 'Illisible'] },
+  { key: 'ticket', label: 'Ticket', choices: ['En cours', 'Aucun', 'Illisible'] },
   { key: 'left', label: 'Expire' },
   { key: 'cardState', label: 'Carte', choices: ['Expirée', 'Bientôt', 'OK', 'Date inconnue', 'Aucune', 'Illisible'] },
   { key: 'status', label: 'État', choices: ['OK', 'Problème', 'Non suivi'] },
@@ -396,7 +305,7 @@ function rowsOf(clients: AdminClient[], now: number): Row[] {
         resident: v.resident ? (arrondissement(v.resident) ?? `Zone ${v.resident}`) : v.resident === false ? 'Non' : 'Inconnu',
         covered: v.covered ? 'Oui' : 'Non',
         renewal: v.renewal ?? 'Aucun',
-        ticket: rest ? (v.advanced ? 'Avancé' : 'En cours') : 'Aucun',
+        ticket: rest ? 'En cours' : 'Aucun',
         expire: rest ? v.expire : null,
         left: rest,
         status: !c.subscribed ? 'none' : rest ? 'ok' : 'alert',
@@ -500,10 +409,6 @@ function VehicleTable({ clients }: { clients: AdminClient[] }) {
                 <td className="px-3 py-3 whitespace-nowrap">
                   {r.ticket === 'En cours' ? (
                     <span className="text-[#14703a]">En cours</span>
-                  ) : r.ticket === 'Avancé' ? (
-                    <span className="text-[#14703a]" title="Payé par le compte de secours : il n'apparaît pas dans le PayByPhone du client">
-                      Avancé par PayByBot
-                    </span>
                   ) : r.ticket === 'Aucun' ? (
                     <span className="text-ink/50">Aucun</span>
                   ) : (
@@ -632,7 +537,6 @@ export function AdminPage(_: { signedIn?: boolean }) {
         ) : (
           <>
             <ServicePanel />
-            <BackupAccountPanel />
 
             <h2 className="mt-12 text-sm font-semibold text-ink/55">Clients{clients ? ` (${clients.length})` : ''}</h2>
             {clients && clients.length === 0 && <p className="mt-3 text-ink/50">Aucun client pour l’instant.</p>}

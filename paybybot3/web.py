@@ -1163,19 +1163,9 @@ def notify(details, event, **info):
             lines += list(info["message"])
         elif info.get("expire"):
             lines.append("Votre véhicule est couvert jusqu'au %s." % paris_text(info["expire"]))
-        lines.append(ADVANCE_PROMISE if advances(details) else PAY_YOURSELF)
+        lines.append(PAY_YOURSELF)
         send_email(to, "Renouvellement activé · %s" % plate_text(details.get("plate")), "Renouvellement activé",
                    lines, open_app)
-    elif event == "advanced":
-        send_email(to, "Ticket avancé par PayByBot · %s" % plate_text(details.get("plate")), "Votre ticket a été avancé",
-                   ["Votre carte bancaire n'a pas pu payer le forfait de %s." % car,
-                    "Pour que votre véhicule reste couvert, PayByBot a payé ce forfait%s. Il sera ajouté à votre "
-                    "prochain prélèvement PayByBot." % ((" (%s)" % money_text(info.get("cost")))
-                                                         if money_text(info.get("cost")) else ""),
-                    "Valable jusqu'au %s. Ce ticket n'apparaît pas dans votre application PayByPhone, mais il "
-                    "couvre bien votre plaque." % paris_text(info.get("expire")),
-                    "Vérifiez votre carte dans l'application PayByPhone : le prochain paiement l'essaiera en premier."],
-                   ("Ouvrir PayByPhone", PAYBYPHONE_URL))
     elif event == "paid":
         send_email(to, "Forfait renouvelé · %s" % plate_text(details.get("plate")), "Forfait renouvelé",
                    ["Un nouveau forfait de %s a été payé automatiquement pour %s%s." % (
@@ -1196,12 +1186,8 @@ def notify(details, event, **info):
                        "Le renouvellement a besoin de vous",
                        ["Le renouvellement automatique pour %s est en attente :" % car, message], open_app)
             return
-        card_problem = message not in (UNCONFIRMED, BLOCKED) and not message.startswith(RESIDENT_REFUSED.split("%s")[0])
         next_step = ("Le renouvellement est suspendu : une fois le problème réglé dans PayByPhone, relancez-le "
                      "depuis PayByBot." if info.get("suspended") else
-                     "Vérifiez votre carte dans l'application PayByPhone. En attendant, PayByBot avance votre ticket "
-                     "si elle ne passe pas : votre véhicule reste couvert, et le montant est ajouté à votre prochain "
-                     "prélèvement." if card_problem and advances(details) else
                      "Réglez-le dans l'application PayByPhone : nous réessayons automatiquement dans une heure.")
         send_email(to, "Action requise · renouvellement %s" % plate_text(details.get("plate")),
                    "Le renouvellement a besoin de vous",
@@ -1218,8 +1204,6 @@ def notify_bank(details):
     send_email(details.get("email"), "Votre banque demande une validation · %s" % plate, "Validez votre paiement",
                ["Votre banque demande de confirmer le paiement du ticket de %s, zone %s (Face ID ou code)."
                 % (plate, details.get("location")),
-                "Sans validation dans l'heure, PayByBot avancera votre ticket pour que votre véhicule reste couvert : "
-                "son montant sera ajouté à votre prochain prélèvement." if advances(details) else
                 "Sans cette validation, le ticket ne sera pas renouvelé."], ("Valider mon paiement", link))
 
 
@@ -1302,16 +1286,6 @@ def extension_time(ends):
     day_before = (ends.astimezone(PARIS) - timedelta(days=1)).replace(hour=EXTEND_HOUR, minute=0, second=0,
                                                                          microsecond=0)
     return max(day_before.astimezone(timezone.utc), ends - EARLY_RENEWAL + timedelta(minutes=1))
-
-ADVANCE_PROMISE = ("Si un paiement échoue, vous serez prévenu aussitôt par e-mail, et PayByBot avancera votre ticket "
-                   "pour que votre véhicule reste couvert : son montant sera ajouté à votre prochain prélèvement.")
-
-
-def advances(details):
-    """A resident renewal while the owner's backup account can pay for it: its ticket is advanced when the card fails
-    (programmed tickets never are)."""
-    return not rule_of(details) and backup_ready()
-
 
 PAY_YOURSELF = ("Si un paiement échoue, vous serez prévenu aussitôt par e-mail. Il vous reviendra alors de payer "
                 "vous-même votre ticket dans l'application PayByPhone : tant que ce ne sera pas fait, votre véhicule "
@@ -1627,7 +1601,7 @@ def bot_from_refresh(refresh, owner=None):
 RENEWAL_FIELDS = ("label", "plate", "location", "rate", "duration", "unit", "payment_account_id", "email", "days",
                   "start", "tz", "cmis_attested_at", "date_from", "date_to",
                   "bank_job", "bank_ends", "bank_deadline", "bank_remind", "bank_reminded", "bank_at", "refused_tries", "card_warned",
-                  "card_stats", "card_hint", "advanced_until")
+                  "card_stats", "card_hint")
 
 
 def encrypt_details(details):
@@ -1771,8 +1745,6 @@ def stored_to_autopilot(row):
         "days": row.get("days") or None, "start": row.get("start") or None,
         "dateFrom": row.get("date_from") or None, "dateTo": row.get("date_to") or None,
         "validate": validate_token(row["owner"], row["id"]) if row.get("last_error") == BANK_WAIT else None,
-        # The end of a ticket PayByBot advanced from its backup account (not in the client's PayByPhone account).
-        "advancedUntil": row.get("advanced_until") or None,
     }
 
 
@@ -1885,7 +1857,6 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
     outcome = "error"
     result, expire = None, None
     used_card, bank_asked = row.get("payment_account_id"), False
-    active, may_advance = None, False  # may_advance: nothing covers the car and the client's card failed
     try:
         row = card_warned_row(session, row, now, patch)
         active = running_for(session, row["plate"])
@@ -1898,12 +1869,7 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
         pause = parse_dt(row.get("paused_from")) if until is None or until > now else None
         # At 20:00 the day before the end; when activating, at once if PayByPhone already offers to extend.
         due = bool(ticket) and (now >= extension_time(ends) or ((activating or validating) and ends - now <= EARLY_RENEWAL))
-        advanced_until = parse_dt(row.get("advanced_until"))
-        if not active and advanced_until and advanced_until > now:
-            # Covered by a ticket PayByBot advanced from its own account (not in the client's): nothing to pay yet.
-            patch.update(next_check=utc_iso(advanced_until + timedelta(seconds=30)), last_error=None)
-            outcome = "active"
-        elif previous_error == BANK_WAIT and not validating:
+        if previous_error == BANK_WAIT and not validating:
             # Waiting on the card holder: paid only if the ticket moved, never tried again from here.
             if bank_validated(row, active):
                 expire = covered_until(active)
@@ -1911,13 +1877,9 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
                 patch.update(last_payment=utc_iso(now), last_error=None,
                              next_check=utc_iso(next_check or now + timedelta(days=30)))
                 outcome = "paid"
-            elif now >= parse_dt(row.get("bank_deadline")) or (backup_ready() and bank_failed(session, row)):
-                if backup_ready():  # advanced below; if it cannot be, the card is tried again in an hour
-                    patch.update(last_error=BANK_CHECK, next_check=utc_iso(now + RETRY_AFTER))
-                else:
-                    patch.update(enabled=False, last_error=BANK_CHECK + " Renouvellement suspendu.")
+            elif now >= parse_dt(row.get("bank_deadline")):
+                patch.update(enabled=False, last_error=BANK_CHECK + " Renouvellement suspendu.")
                 outcome = "unconfirmed"
-                may_advance = not active
             else:
                 outcome = "bank_wait"
                 remind, deadline = parse_dt(row.get("bank_remind")), parse_dt(row.get("bank_deadline"))
@@ -1988,7 +1950,6 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
     except NotPayable as e:  # nothing was paid: tell the user, look again in an hour
         patch.update(last_error=str(e), next_check=utc_iso(now + RETRY_AFTER))
         outcome = "not_payable"
-        may_advance = not active and (str(e) == NO_CARD or str(e).startswith(CARD_EXPIRED.split("(")[0]))
     except Exception as e:
         if "VehicleAlreadyParked" in str(e):  # a ticket PayByPhone knows of but did not list: wait, not an error
             patch.update(last_error=None, next_check=utc_iso(now + timedelta(minutes=30)))
@@ -1996,31 +1957,13 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
         elif "Payment job failed" in str(e):
             patch.update(refused_patch(row, friendly_error(e), previous_error, now, running_end(session, row)))
             outcome = "refused"
-            may_advance = not active
         else:
             patch.update(last_error=friendly_error(e), next_check=utc_iso(now + timedelta(minutes=30)))
             if is_outage(e):
                 outage_hit()
-    if may_advance and not rule:  # resident renewals: the owner's backup account pays, the client is billed
-        try:
-            vehicle = next((v for v in session.call("get_vehicles") or []
-                            if plate_key(v.get("licensePlate") or "") == plate_key(row["plate"])), None)
-        except Exception:
-            vehicle = None
-        advanced = advance(row, now, vehicle)
-        if advanced:
-            result, found = advanced
-            expire = aware(covered_until(found))
-            details = json.loads(_fernet("renewal").decrypt(patch["data"].encode())) if patch.get("data") else row
-            patch.pop("enabled", None)
-            patch.update(last_error=None, last_payment=utc_iso(now), next_check=utc_iso(expire + timedelta(seconds=30)),
-                         data=encrypt_details({**details, "advanced_until": utc_iso(expire), "refused_tries": 0,
-                                               "bank_job": "", "bank_deadline": ""}))
-            outcome = "advanced"
-    if outcome in ("paid", "active", "advanced"):
+    if outcome in ("paid", "active"):
         outage_clear()
-    counted = "bank" if bank_asked else {"paid": "paid", "refused": "refused", "unconfirmed": "refused",
-                                         "advanced": "refused"}.get(outcome)
+    counted = "bank" if bank_asked else {"paid": "paid", "refused": "refused", "unconfirmed": "refused"}.get(outcome)
     if counted:
         count_card(session, row, patch, used_card, counted)
     log.info("renewal %s zone=%s plate=%s: %s", row["id"], row["location"], row["plate"][:2] + "***", outcome)
@@ -2028,8 +1971,6 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
     if outcome == "paid":
         notify(row, "paid", cost=(result or {}).get("cost"), expire=expire,
                next=schedule.next_ticket(rule, now, row.get("paused_from"), row.get("paused_until")) if rule else None)
-    elif outcome == "advanced":
-        notify(row, "advanced", cost=(result or {}).get("cost"), expire=expire)
     elif patch.get("last_error") and patch["last_error"] != previous_error:
         notify(row, "problem", message=patch["last_error"], suspended=patch.get("enabled") is False)
     return outcome
@@ -2098,87 +2039,6 @@ def keep_other_card(row, card, patch):
         log.info("renewal %s: now paid with another card of the account", row["id"])
 
 
-def rebill_backup(row, result, now=None):
-    """A ticket PayByBot advanced: add its cost to the client's next Stripe invoice, with its date. A yearly client
-    has the advances billed every month rather than with the next yearly invoice."""
-    if not os.environ.get("STRIPE_SECRET_KEY"):
-        return
-    account = account_by_owner(row.get("owner"))
-    customer = account.get("stripe_customer")
-    cost = (result or {}).get("cost") or {}
-    amount = cost.get("amount")
-    if not customer or not amount:
-        return
-    day = (now or datetime.now(timezone.utc)).astimezone(PARIS)
-    try:
-        stripe("POST", "invoiceitems", customer=customer, amount=round(float(amount) * 100),
-               currency=(cost.get("currency") or "EUR").lower(),
-               description="Stationnement du %d %s %d avancé par PayByBot"
-                           % (day.day, MONTH_NAMES[day.month - 1], day.year))
-        if account.get("plan") == "yearly" and account.get("stripe_subscription"):
-            stripe("POST", "subscriptions/" + account["stripe_subscription"],
-                   **{"pending_invoice_item_interval[interval]": "month"})
-    except Exception as e:
-        log.warning("renewal %s: backup rebill not added: %s", row.get("id"), str(e)[:150])
-
-
-BACKUP_WEEKLY_CAP_CENTS = 30000  # at most this much advanced per week, for all clients together
-
-
-def backup_ready():
-    """The owner connected a backup PayByPhone account on the admin page."""
-    try:
-        return bool((store("backup_account_get") or {}).get("credential"))
-    except Exception:
-        return False
-
-
-def advance(row, now, vehicle=None):
-    """The client's card failed and nothing covers the car: the owner's backup PayByPhone account pays the ticket for
-    the client's plate, at the client's rate, and the client is billed for it. PayByPhone pays only for a plate saved
-    in the paying account: the client's vehicle (vehicle: as their account gives it) is saved there first, once.
-    (result, ticket) or None."""
-    cents = None
-    try:
-        backup = store("backup_account_get") or {}
-        if not backup.get("credential"):
-            return None
-        if billing_state(account_by_owner(row["owner"]), row["owner"]) != "ok":  # an unpaid client gets no advance
-            return None
-        refresh = decrypt_credential(backup["credential"])
-        bot = Bot.from_refresh_token(refresh)
-        if bot.refresh_token and bot.refresh_token != refresh:  # PayByPhone may hand a new one: kept for next time
-            store("backup_account_set", p_credential=encrypt_credential(bot.refresh_token), p_label=backup.get("label"))
-        session = UserSession.for_bot(bot)
-        owned = {plate_key(v.get("licensePlate") or "") for v in session.call("get_vehicles") or [] if not v.get("archived")}
-        if plate_key(row["plate"]) not in owned:
-            v = vehicle or {}
-            session.call("add_vehicle", licensePlate=v.get("licensePlate") or row["plate"],
-                         country=v.get("country") or "FR", jurisdiction=v.get("jurisdiction") or "",
-                         vehicleType=v.get("type") or "Car")
-            log.info("renewal %s: client's vehicle saved on the backup account", row.get("id"))
-        card = check_payable(session, row["location"], row["rate"], row["plate"], None)
-        quote = session.call("_create_quote", locationId=row["location"], ratePolicyId=str(row["rate"]),
-                             durationQuantity=fmt_qty(row["duration"]), durationTimeUnit=row["unit"],
-                             licensePlate=row["plate"], paymentAccountId=card)
-        cents = round(float(quote["cost"]["amount"]) * 100)
-        if not store("backup_spend", p_cents=cents, p_cap=BACKUP_WEEKLY_CAP_CENTS):
-            log.warning("renewal %s: not advanced, weekly cap reached", row.get("id"))
-            return None
-        result, found = pay_and_confirm(session, row["location"], row["rate"], fmt_qty(row["duration"]), row["unit"],
-                                        row["plate"], card)
-    except Exception as e:
-        log.warning("renewal %s: not advanced: %s", row.get("id"), str(e)[:200])
-        if cents and not isinstance(e, Unconfirmed):  # refused for sure: the week's budget is given back
-            try:
-                store("backup_spend", p_cents=-cents, p_cap=BACKUP_WEEKLY_CAP_CENTS)
-            except Exception:
-                pass
-        return None
-    rebill_backup(row, result, now)
-    return result, found
-
-
 def running_end(session, row):
     """The end of the running ticket, None if none or unreadable."""
     try:
@@ -2194,12 +2054,6 @@ def refused_patch(row, message, previous_error, now, ends):
     After all of them: suspended."""
     tries = int(row.get("refused_tries") or 0) if previous_error == message else 0
     if tries >= len(REFUSED_AGAIN):
-        if message != UNCONFIRMED and backup_ready():
-            # Never stopped for a card while the backup account can take over: looked at again when the ticket
-            # ends (then advanced), or later on, again and again.
-            again = ends + timedelta(seconds=30) if ends and ends > now else now + REFUSED_AGAIN[-1]
-            return {"last_error": message, "next_check": utc_iso(again),
-                    "data": encrypt_details({**row, "refused_tries": tries + 1})}
         return {"enabled": False, "last_error": message + " Renouvellement suspendu."}
     again = now + REFUSED_AGAIN[tries]
     if ends and now + timedelta(minutes=30) < ends - timedelta(minutes=30) < again:
@@ -2240,19 +2094,6 @@ def card_warned_row(session, row, now, patch):
     row = {**row, "card_warned": mark}
     patch["data"] = encrypt_details(row)
     return row
-
-
-def bank_failed(session, row):
-    """The payment the bank was asked to confirm can no longer go through: PayByPhone marks it failed (refused,
-    expired, voided). Then the ticket can be advanced at once, without paying twice. Unreadable or waiting: False."""
-    if not row.get("bank_job"):
-        return False
-    try:
-        job = session.call("_get_job", row["bank_job"])
-    except Exception as e:
-        log.info("bank payment unreadable: %s", type(e).__name__)
-        return False
-    return bool(job) and bool(Bot._job_failures(job))
 
 
 def bank_validated(row, active):
@@ -2368,7 +2209,7 @@ def read_bank_page(session, job_id, opening):
         log.info("bank challenge unreadable: %s", type(e).__name__)
 
 
-BANK_LOOK = timedelta(minutes=5)  # validated in the bank's own app, PayByBot is not told: it looks for the new ticket
+BANK_LOOK = timedelta(minutes=10)  # validated in the bank's own app, PayByBot is not told: it looks for the new ticket
 BANK_LOOK_FOR = timedelta(hours=1)  # the bank's page does not last longer than this
 
 
@@ -2380,8 +2221,7 @@ def bank_next_look(row, planned, now):
 def bank_wait_patch(session, row, job_id, active, now, validating):
     """The renewal's state while the bank waits for its card holder; asked again by them, the first deadline stays."""
     ends = aware(covered_until(active)) if active else None
-    # No ticket running: with a backup account, the ticket is advanced once the bank's page has expired.
-    deadline = ends or now + (BANK_LOOK_FOR if backup_ready() else BANK_WAIT_DAY)
+    deadline = ends or now + BANK_WAIT_DAY
     remind = max(now + timedelta(minutes=30), deadline - BANK_REMIND) if ends else now + BANK_REMIND
     details = {"bank_job": job_id or "", "bank_ends": utc_iso(ends) if ends else "", "bank_deadline": utc_iso(deadline),
                "bank_remind": utc_iso(remind), "bank_reminded": "", "bank_at": utc_iso(now)}
@@ -3059,31 +2899,16 @@ def overview(pbb_session: str = Cookie(None)):
             log.info("no usable payment method; PayByPhone returned %s",
                      {k: len(v) if isinstance(v, list) else type(v).__name__ for k, v in accounts.items()})
         kept = got["kept"]
-        sessions = [serialize_session(x) for x in got["sessions"]]
         return {
             "vehicles": [{"plate": v["licensePlate"], "country": v.get("country"), "type": v.get("type"),
                           "zone": (kept.get(plate_key(v["licensePlate"])) or {}).get("z")} for v in vehicles],
             "payments": payments,
-            "sessions": sessions + advanced_sessions(got["renewals"], sessions),
+            "sessions": [serialize_session(x) for x in got["sessions"]],
             "autopilots": got["renewals"],
             "history": s.history[:10],
         }
 
     return guarded(load)
-
-
-def advanced_sessions(renewals, sessions):
-    """Tickets PayByBot advanced from its backup account, still running: listed like the client's own tickets (the
-    client's PayByPhone account does not show them), unless that account already shows one for the car."""
-    now, covered = datetime.now(timezone.utc), {plate_key(x.get("plate") or "") for x in sessions}
-    found = []
-    for ap in renewals:
-        until = parse_dt(ap.get("advancedUntil"))
-        if until and until > now and plate_key(ap["plate"]) not in covered:
-            found.append({"id": "advanced-%s" % ap["id"], "location": ap["location"], "plate": ap["plate"],
-                          "start": None, "expire": until.isoformat(), "rate": ap["rate"], "resident": True,
-                          "cost": None, "advanced": True})
-    return found
 
 
 def french_zone(s, number):
@@ -3771,8 +3596,7 @@ def add_autopilot(body: Autopilot, pbb_session: str = Cookie(None)):
             record_activity("Ticket programmé" if days else "Renouvellement résident activé", s,
                          ["Véhicule %s***, zone %s." % (body.plate[:2], body.location)])
             if message:
-                answer["activation"] = {"title": message[0], "text": message[1],
-                                        "payYourself": ADVANCE_PROMISE if advances(details) else PAY_YOURSELF}
+                answer["activation"] = {"title": message[0], "text": message[1], "payYourself": PAY_YOURSELF}
             elif outcome in ("unconfirmed", "not_payable", "error", "relogin", "blocked", "unreadable"):
                 # Paying now failed while the customer is on the page: say it there, they pay this ticket themselves.
                 answer["activation"] = {"failed": True, "title": "Le paiement n'a pas abouti.",
@@ -4715,56 +4539,6 @@ def admin_service_action(body: ServiceAction, pbb_admin: str = Cookie(None)):
     return guarded(lambda: service_action(body.action))
 
 
-class BackupAccount(BaseModel):
-    login: str = Field(min_length=3, max_length=100)
-    password: str = Field(min_length=1, max_length=200)
-
-
-def backup_status(state):
-    """The backup account as the admin page shows it: never its login token."""
-    week = parse_dt((state or {}).get("week_start"))
-    spent = ((state or {}).get("week_cents") or 0) if week and datetime.now(timezone.utc) - week < timedelta(days=7) else 0
-    return {"connected": bool((state or {}).get("credential")), "label": (state or {}).get("label"),
-            "weekCents": spent, "capCents": BACKUP_WEEKLY_CAP_CENTS}
-
-
-@app.get("/api/admin/backup-account")
-def admin_backup_account(pbb_admin: str = Cookie(None)):
-    """The owner's PayByPhone account that advances a ticket when a client's card fails."""
-    if not HOSTED:
-        raise HTTPException(403, "Accès réservé.")
-    require_admin(pbb_admin)
-    return backup_status(guarded(lambda: store("backup_account_get")))
-
-
-@app.post("/api/admin/backup-account")
-def admin_backup_account_set(body: BackupAccount, pbb_admin: str = Cookie(None)):
-    """The owner logs in their backup account once: only its PayByPhone token is kept, encrypted, never the password."""
-    if not HOSTED:
-        raise HTTPException(403, "Accès réservé.")
-    require_admin(pbb_admin)
-    try:
-        bot, used = connect(body.login, body.password)
-    except requests.HTTPError:
-        raise HTTPException(400, "PayByPhone refuse cet identifiant ou ce mot de passe.")
-    cards = [p["label"] for p in normalize_accounts(bot.get_payment_accounts() or {})
-             if p["kind"] == "card" and not p["expired"]]
-    if not cards:
-        raise HTTPException(400, "Ajoutez d'abord votre carte de secours dans ce compte PayByPhone.")
-    label = used[:4] + "•••" + used[-2:]
-    store("backup_account_set", p_credential=encrypt_credential(bot.refresh_token), p_label=label)
-    return {"connected": True, "label": label, "cards": cards}
-
-
-@app.delete("/api/admin/backup-account")
-def admin_backup_account_delete(pbb_admin: str = Cookie(None)):
-    if not HOSTED:
-        raise HTTPException(403, "Accès réservé.")
-    require_admin(pbb_admin)
-    store("backup_account_set", p_credential=None, p_label=None)
-    return {"connected": False}
-
-
 _admin_parking = {}  # owner -> (when read, its vehicles and running tickets, its cards' end dates)
 
 
@@ -4858,44 +4632,34 @@ def admin_clients(pbb_admin: str = Cookie(None)):
             return None
 
     def renewals_of(owner):
-        """Each vehicle's renewal: « Actif », or « Suspendu » (a refused payment, a validation never given), and the
-        end of a ticket advanced from the backup account (on the owner's PayByPhone account, not the client's)."""
-        states, advanced = {}, {}
+        """Each vehicle's renewal: « Actif », or « Suspendu » (a refused payment, a validation never given)."""
+        states = {}
         try:
             for row in store("renewal_list", p_owner=owner) or []:
                 try:
-                    details = with_details(row)
-                    key = plate_key(details["plate"])
+                    key = plate_key(with_details(row)["plate"])
                 except Exception:
                     continue
                 if states.get(key) != "Actif":
                     states[key] = "Actif" if row.get("enabled") else "Suspendu"
-                until = parse_dt(details.get("advanced_until"))
-                if until and until > datetime.now(timezone.utc):
-                    advanced[key] = until
         except Exception as e:
             log.info("admin: renewals unreadable for a client: %s", type(e).__name__)
-        return states, advanced
+        return states
 
-    def status(vehicle, zones, chosen, renewals, advanced):
-        """Resident: its arrondissement, False when PayByPhone gives it none, None when never looked up. A ticket
-        advanced by PayByBot counts as running (the client's PayByPhone account does not list it)."""
+    def status(vehicle, zones, chosen, renewals):
+        """Resident: its arrondissement, False when PayByPhone gives it none, None when never looked up."""
         key = plate_key(vehicle["plate"])
         entry = zones.get(key)
-        found = {**vehicle, "resident": (entry.get("z") or False) if entry else None,
-                 "covered": key in chosen or key in renewals, "renewal": renewals.get(key), "advanced": False}
-        until = advanced.get(key)
-        if until and not vehicle.get("expire"):
-            found.update(expire=until.isoformat(), advanced=True)
-        return found
+        return {**vehicle, "resident": (entry.get("z") or False) if entry else None,
+                "covered": key in chosen or key in renewals, "renewal": renewals.get(key)}
 
     from concurrent.futures import ThreadPoolExecutor
     owners = [c.pop("owner") for c in clients]
     with ThreadPoolExecutor(max_workers=8) as pool:
         for client, owner, found in zip(clients, owners, pool.map(parking, owners)):
             zones, chosen = client.pop("_zones"), client.pop("_chosen")
-            renewals, advanced = renewals_of(owner) if found else ({}, {})
-            client["vehicles"] = [status(v, zones, chosen, renewals, advanced) for v in found["vehicles"]] if found else None
+            renewals = renewals_of(owner) if found else {}
+            client["vehicles"] = [status(v, zones, chosen, renewals) for v in found["vehicles"]] if found else None
             client["cards"] = found["cards"] if found else None
     return clients
 

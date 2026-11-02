@@ -218,13 +218,6 @@ export function Welcome({
           >
             {refreshing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Rafraîchir
           </button>
-          <p className="rise mt-4 text-sm leading-relaxed text-ink/55" style={{ animationDelay: `${next()}ms` }}>
-            Si votre carte bancaire est refusée un jour, <PayByBot /> peut avancer votre ticket pour que votre véhicule
-            reste couvert. Son montant est alors ajouté à votre prochain prélèvement.{' '}
-            <a href="#/cgu" target="_blank" rel="noopener" className={ui.link}>
-              En savoir plus
-            </a>
-          </p>
 
           <button
             onClick={onContinue}

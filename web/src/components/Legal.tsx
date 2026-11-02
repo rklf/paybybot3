@@ -16,7 +16,7 @@ export const PUBLISHER = {
   email: 'contact@paybybot.fr',
 }
 
-export const LEGAL_UPDATED = '1er novembre 2026'
+export const LEGAL_UPDATED = '27 octobre 2026'
 export const REPO_URL = 'https://github.com/davidstudiopresto/paybybot3/tree/web-interface'
 
 import { type LegalPage } from '@/lib/legalPages'
@@ -410,8 +410,7 @@ function Terms() {
         </p>
         <p>
           Les tickets sont achetés par vous, depuis votre compte <PayByPhone />, au tarif de <PayByPhone />. <PayByBot /> n’encaisse pas
-          le prix des tickets : seul l’abonnement à <PayByBot /> est facturé (voir « Abonnement et paiement »), ainsi que les
-          tickets que <PayByBot /> aurait avancés pour vous (voir « Ticket avancé par PayByBot »).
+          le prix des tickets : seul l’abonnement à <PayByBot /> est facturé (voir « Abonnement et paiement »).
         </p>
       </Section>
 
@@ -483,18 +482,7 @@ function Terms() {
         </p>
         <p>
           En cas d’échec d’un paiement, <PayByBot /> vous en informera par e-mail. Le paiement de votre stationnement restera
-          sous votre responsabilité : il vous appartiendra de le régler vous-même dans l’application <PayByPhone />, sauf
-          si <PayByBot /> l’a avancé pour vous.
-        </p>
-        <p>
-          <strong>Ticket avancé par PayByBot.</strong> Pour un renouvellement résident, si votre carte est refusée
-          ou inutilisable et qu’aucun ticket ne couvre votre véhicule, <PayByBot /> peut payer le ticket lui-même,
-          depuis son propre compte <PayByPhone />, pour la plaque et au tarif de votre renouvellement. Il le fait
-          aussi si votre banque demande une validation que vous ne donnez pas à temps. Ce ticket couvre votre véhicule
-          mais n’apparaît pas dans votre application <PayByPhone /> ; vous en êtes prévenu par e-mail. Chaque ticket
-          ainsi avancé vous est refacturé au prix payé à <PayByPhone />, sans frais ajoutés, sur votre prochain
-          prélèvement <PayByBot />. Le paiement suivant réessaie toujours votre carte en premier. <PayByBot /> n’est
-          jamais tenu d’avancer un ticket, notamment si une somme due reste impayée ou au-delà d’un plafond.
+          sous votre responsabilité : il vous appartiendra de le régler vous-même dans l’application <PayByPhone />.
         </p>
       </Section>
 
@@ -593,11 +581,6 @@ function Terms() {
             <PayByBot />, un nouveau ticket est acheté à son prochain passage, et il reste dû. Pour ne plus rien payer, mettez
             le renouvellement en pause ou arrêtez-le depuis <PayByBot /> (« Gérer »). <PayByBot /> conserve, comme justificatif,
             la date et l’état de fin des tickets arrêtés avant leur terme, tels que <PayByPhone /> les indique.
-          </li>
-          <li>
-            <strong>Tickets avancés :</strong> un ticket payé par <PayByBot /> pour vous (voir « Ticket avancé par
-            PayByBot ») est ajouté, au prix payé à <PayByPhone />, à votre prochain prélèvement, avec sa date sur la
-            facture. Avec l’abonnement annuel, les tickets avancés sont prélevés chaque mois.
           </li>
           <li>
             <strong>Premier prélèvement :</strong> rien n’est prélevé avant la fin du mois offert.

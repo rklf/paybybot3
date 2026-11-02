@@ -458,13 +458,6 @@ export function PlansDialog({
               <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-sm text-ink/50">
                 <Lock className="size-3.5" /> Paiement sécurisé par Stripe. Sans engagement.
               </p>
-              <p className="mt-2 text-center text-sm text-ink/60">
-                Si votre carte bancaire est refusée, PayByBot peut avancer votre ticket pour que votre véhicule reste
-                couvert. Son montant est alors ajouté à votre prochain prélèvement.{' '}
-                <a href="#/cgu" target="_blank" rel="noopener" className={ui.link}>
-                  En savoir plus
-                </a>
-              </p>
               </div>
             </div>
           </div>

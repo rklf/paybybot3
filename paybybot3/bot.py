@@ -130,19 +130,6 @@ class Bot:
             "getVehiclesV3"
         ]
 
-    def add_vehicle(self, licensePlate, country, jurisdiction, vehicleType):
-        """Saves a vehicle on the account, as the app does; returns its id."""
-        query = """mutation AddVehicleV1($input: AddVehicleV1Input!) {
-  addVehicleV1(input: $input) {
-    addVehicleResponse {
-      vehicleId
-    }
-  }
-}"""
-        request = {"profileName": "PayByPhone", "licensePlate": licensePlate, "country": country,
-                   "jurisdiction": jurisdiction, "type": vehicleType, "profile": {"photo": "", "description": ""}}
-        return self._graphql(query, {"input": {"request": request}})["addVehicleV1"]["addVehicleResponse"]["vehicleId"]
-
     def _get_parking_sessions(self, periodType="CURRENT", limit=50):
         query = """query GetParkingSessionsV1($input: GetParkingSessionsInput!) {
   getParkingSessionsV1(input: $input) {
