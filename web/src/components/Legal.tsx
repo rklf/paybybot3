@@ -16,7 +16,7 @@ export const PUBLISHER = {
   email: 'contact@paybybot.fr',
 }
 
-export const LEGAL_UPDATED = '27 octobre 2026'
+export const LEGAL_UPDATED = '2 novembre 2026'
 export const REPO_URL = 'https://github.com/davidstudiopresto/paybybot3/tree/web-interface'
 
 import { type LegalPage } from '@/lib/legalPages'
