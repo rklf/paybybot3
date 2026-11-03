@@ -1095,7 +1095,6 @@ function RiverainDialog({
       </DialogContent>
       {paywall && (
         <PlansDialog
-          plates={ok}
           onPay={() => savePending(ok.map((plate) => parking(found[plate].rate!, plate)))}
           onClose={() => {
             clearPending()

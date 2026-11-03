@@ -381,7 +381,7 @@ export function Landing({ hosted, heroOnly = false, lean = false }: { hosted: bo
             Tarifs
           </h2>
           <p className="mx-auto mt-4 max-w-[32rem] text-center text-[1.05rem] text-ink/60 sm:text-lg">
-            Un prix unique par véhicule, quel que soit le ticket.
+            Un prix unique pour tous vos véhicules, quel que soit le ticket.
           </p>
           <div className="mt-12">
             <PlanCards signedIn={false} />

@@ -5,12 +5,10 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { PlansDialog } from '@/components/Pricing'
 import { arrondissement, PayByBot, PayByPhone, Plate, ZonePlate } from '@/components/signs'
 import { api, clock, type Account, type Overview, type PricedVehicle, type Pricing } from '@/lib/api'
-import { askCoverage } from '@/lib/coverage'
 import { cn } from '@/lib/utils'
 import { ui } from '@/lib/styles'
 import { LoadingLine } from '@/components/Loading'
 
-const plateKey = (p: string) => p.replace(/[^0-9a-z]/gi, '').toUpperCase()
 const euros = (cents: number) => (cents / 100).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })
 
 /** "Mon compte" in the top bar: what PayByBot reads from the PayByPhone account, the home zone and e-mail. */
@@ -54,8 +52,7 @@ function AccountDialog({
   // typed); undefined: looking.
   const [vehicles, setVehicles] = useState<PricedVehicle[] | undefined>(undefined)
   const [pricing, setPricing] = useState<Pricing | null>(null)
-  const [changing, setChanging] = useState<string | null>(null)
-  function loadPricing() {
+  useEffect(() => {
     api.pricing().then(
       (p) => {
         setPricing(p)
@@ -63,40 +60,8 @@ function AccountDialog({
       },
       () => setVehicles([]),
     )
-  }
-  useEffect(loadPricing, [])
-  const covered = (pricing?.billed ?? []).map(plateKey)
-  // The boxes ticked or unticked, not saved yet (null: as the subscription is): one paywall for them all.
-  const [draft, setDraft] = useState<string[] | null>(null)
-  const ticked = draft ?? covered
-  const same = (a: string[], b: string[]) => a.length === b.length && a.every((p) => b.includes(p))
-
+  }, [])
   const yearly = account?.plan === 'yearly'
-  const priceOf = (plates: string[]) =>
-    (vehicles ?? []).filter((v) => plates.includes(plateKey(v.plate))).reduce((sum, v) => sum + (yearly ? v.yearly : v.monthly), 0)
-  const total = priceOf(ticked)
-  const current = priceOf(covered)
-
-  function toggle(plate: string) {
-    const key = plateKey(plate)
-    const next = ticked.includes(key) ? ticked.filter((p) => p !== key) : [...ticked, key]
-    setDraft(same(next, covered) ? null : next)
-  }
-
-  /** The paywall shows what the changes cost; they are made once confirmed there. */
-  async function update() {
-    if (!draft) return
-    setChanging('all')
-    try {
-      if (await askCoverage(draft)) {
-        toast.success('Votre abonnement est à jour.')
-        setDraft(null)
-        loadPricing()
-      }
-    } finally {
-      setChanging(null)
-    }
-  }
 
   // « Gérer »: Stripe's customer portal (card, invoices, cancel), back here after.
   const [opening, setOpening] = useState(false)
@@ -142,77 +107,63 @@ function AccountDialog({
           </DialogDescription>
         </div>
 
-        <dl className="mx-6 mt-5 divide-y divide-ink/10 border-y border-ink/10">
-          <div className={row}>
-            {/* Resident vehicles show their arrondissement; without a resident rate, just the plate. */}
-            <dt className={label}>
-              {account?.subscribed && vehicles && vehicles.length > 1 ? 'Véhicules couverts' : (vehicles && vehicles.length > 1 ? 'Véhicules' : 'Véhicule') + (vehicles?.length && vehicles.every((v) => v.zone) ? (vehicles.length > 1 ? ' résidents' : ' résident') : '')}
-            </dt>
-            <dd className="flex flex-col items-end gap-2">
-              {vehicles === undefined ? (
-                <LoadingLine className="pt-1.5" />
-              ) : vehicles.length ? (
-                vehicles.map((v) => {
-                  const on = ticked.includes(plateKey(v.plate))
-                  const last = on && ticked.length === 1
-                  return (
-                    <span key={v.plate} className="flex flex-wrap items-center justify-end gap-2">
-                      <Plate plate={v.plate} size="sm" />
-                      {arrondissement(v.zone) ? (
-                        <span className="text-sm font-semibold text-ink">{arrondissement(v.zone)}</span>
-                      ) : (
-                        <ZonePlate zone={v.zone} />
-                      )}
-                      {account?.subscribed && (
-                        <button
-                          type="button"
-                          role="checkbox"
-                          aria-checked={on}
-                          aria-label={`${v.plate} couvert par l’abonnement`}
-                          title={last ? 'Le dernier véhicule reste couvert : pour tout arrêter, résiliez l’abonnement.' : undefined}
-                          disabled={last || !!changing}
-                          onClick={() => toggle(v.plate)}
-                          className={cn(
-                            'grid size-5 shrink-0 place-items-center rounded-[4px] border-2 text-xs font-bold transition disabled:opacity-50',
-                            on ? 'border-eu bg-eu text-white' : 'border-ink/25 bg-white',
-                          )}
-                        >
-                          {on ? '✓' : null}
-                        </button>
-                      )}
-                    </span>
-                  )
-                })
-              ) : (
-                <span className="text-right text-ink/60">
-                  {data.vehicles.length ? 'Aucun véhicule au tarif résident' : 'Aucun véhicule'}
-                </span>
-              )}
-            </dd>
+        {/* The vehicles, one row each (plate and zone); one price covers them all. */}
+        <section className="mx-6 mt-6">
+          <div className="flex items-baseline justify-between gap-4">
+            <h3 className="font-heading text-lg font-bold text-ink">
+              {account?.subscribed ? 'Véhicules couverts' : vehicles && vehicles.length > 1 ? 'Vos véhicules' : 'Votre véhicule'}
+            </h3>
+            {!demo && account?.plan && (
+              <button onClick={manage} disabled={opening} className={cn('inline-flex items-center gap-1.5 text-sm', ui.link)}>
+                {opening && <Loader2 className="size-3.5 animate-spin" />}
+                Gérer l’abonnement
+              </button>
+            )}
           </div>
 
-          {account?.subscribed && pricing && covered.length > 0 && (
-            <div className="space-y-3 py-3 text-right text-sm text-ink/60">
-              {/* The total follows the boxes as they are ticked: the subscription as it would be once updated. */}
-              <p>
-                Abonnement {yearly ? 'annuel' : 'mensuel'} · {ticked.length} véhicule{ticked.length > 1 ? 's' : ''} couvert
-                {ticked.length > 1 ? 's' : ''} · {euros(total)}
+          <ul className="mt-3 divide-y divide-ink/10 rounded-xl border border-ink/12 bg-white">
+            {vehicles === undefined ? (
+              <LoadingLine className="px-3 py-4" />
+            ) : vehicles.length ? (
+              vehicles.map((v) => {
+                const zone = arrondissement(v.zone)
+                return (
+                  <li key={v.plate} className="flex items-center gap-3 px-3 py-3">
+                    <Plate plate={v.plate} size="sm" />
+                    <span className="min-w-0 flex-1 text-[0.95rem] font-semibold text-ink">
+                      {zone ?? (v.zone ? <ZonePlate zone={v.zone} /> : <span className="font-normal text-ink/60">Sans tarif résident</span>)}
+                    </span>
+                  </li>
+                )
+              })
+            ) : (
+              <li className="px-3 py-3 text-ink/60">{data.vehicles.length ? 'Aucun véhicule au tarif résident' : 'Aucun véhicule'}</li>
+            )}
+          </ul>
+
+          {account?.subscribed && pricing?.monthly != null && !!vehicles?.length && (
+            <p className="mt-3 flex items-baseline justify-between gap-3 rounded-xl bg-ink/[0.04] px-4 py-3 text-ink">
+              <span>
+                Abonnement {yearly ? 'annuel' : 'mensuel'}
+                {vehicles.length > 1 && <span className="block text-sm text-ink/60">Tous vos véhicules sont inclus.</span>}
+              </span>
+              <span className="font-bold whitespace-nowrap">
+                {euros((yearly ? pricing.yearly : pricing.monthly) ?? 0)}
                 {yearly ? '/an' : '/mois'}
-                {draft && <span className="block text-ink/45">Aujourd’hui : {euros(current)}{yearly ? '/an' : '/mois'}</span>}
-              </p>
-              {draft && (
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  <button onClick={() => setDraft(null)} disabled={!!changing} className={ui.navText}>
-                    Annuler
-                  </button>
-                  <button onClick={update} disabled={!!changing} className={cn(ui.pillBlue, 'gap-2')}>
-                    {changing && <Loader2 className="size-4 animate-spin" />} Mettre à jour mon abonnement
-                  </button>
-                </div>
-              )}
-            </div>
+              </span>
+            </p>
           )}
 
+          <p className="mt-3 text-sm text-ink/55">
+            Un véhicule manque ? Ajoutez-le dans l’application <PayByPhone /> : il apparaîtra ici.{' '}
+            {/* PayByPhone's own app link (as in the e-mails): the app when installed, else its store or site. */}
+            <a href="https://paybyphone.onelink.me/ZQkh/" target="_blank" rel="noreferrer" className={ui.link}>
+              Ouvrir <PayByPhone />
+            </a>
+          </p>
+        </section>
+
+        <dl className="mx-6 mt-6 divide-y divide-ink/10 border-y border-ink/10">
           <div className={row}>
             <dt className={label}>{cards.length > 1 ? 'Cartes bancaires' : 'Carte bancaire'}</dt>
             <dd className="flex flex-col items-end gap-1 text-right font-medium text-ink">
@@ -229,20 +180,13 @@ function AccountDialog({
             </dd>
           </div>
 
-          {!demo && (
+          {/* With an offer, it is managed from the vehicles' header. */}
+          {!demo && !account?.plan && (
             <div className={row}>
               <dt className={label}>Abonnement</dt>
               <dd className="text-right">
                 {account === undefined ? (
                   <Loader2 className="ml-auto size-4 animate-spin text-ink/40" />
-                ) : account?.plan ? (
-                  <span className="flex items-center gap-3">
-                    <span className="font-medium text-ink">{account.plan === 'yearly' ? 'Annuel' : 'Mensuel'}</span>
-                    <button onClick={manage} disabled={opening} className={cn('inline-flex items-center gap-1.5 text-sm', ui.link)}>
-                      {opening && <Loader2 className="size-3.5 animate-spin" />}
-                      Gérer
-                    </button>
-                  </span>
                 ) : (
                   <span className="flex flex-col items-end gap-1">
                     {account?.trialEnd && (
@@ -271,17 +215,6 @@ function AccountDialog({
           </div>
 
         </dl>
-
-        <p className="px-6 pt-4 text-sm text-ink/50">
-          Vos véhicules sont synchronisés avec votre compte <PayByPhone />. Pour en ajouter ou en modifier un,
-          rendez-vous dans l'application <PayByPhone />.
-        </p>
-        <div className="px-6 pt-3">
-          {/* PayByPhone's own app link (as in the e-mails): the app when installed, else its store or site. */}
-          <a href="https://paybyphone.onelink.me/ZQkh/" target="_blank" rel="noreferrer" className={cn(ui.pillBlue, 'gap-1')}>
-            Ouvrir <PayByPhone />
-          </a>
-        </div>
 
         <div className={cn('px-6 pb-7', demo ? 'pt-2' : 'pt-6')}>
           {!demo && (

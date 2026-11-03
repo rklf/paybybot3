@@ -1,4 +1,3 @@
-import { CoverageHost } from '@/components/Coverage'
 import { Loading } from '@/components/Loading'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
@@ -343,7 +342,6 @@ export default function App() {
   return (
     <Suspense fallback={<Loading />}>
       <Toaster />
-      <CoverageHost />
       {interrupted && me && route !== 'admin' && <ServiceBanner />}
       {/* Opened through a valid private link: « sur parrainage » first, then the screen lifts on the site. */}
       {inviteOnly && !me && invited === 'yes' && openedFromLink() && <InviteCurtain />}
