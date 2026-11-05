@@ -584,6 +584,14 @@ export function DailyWizard({
   // Today at an hour already gone: no ticket would ever be taken.
   const parisTime = parisNow()
   const hourPast = !!period && count > 0 && period.to === parisTime.day && start <= parisTime.time
+  // Today is one of the chosen days (a Paris Sunday is free): the first ticket can be taken at once, to see it work.
+  const weekday = (new Date(`${parisTime.day}T12:00:00Z`).getUTCDay() + 6) % 7 // 0 = Monday
+  const today = !editing && !initialTicket && (period
+    ? period.from <= parisTime.day && parisTime.day <= period.to
+    : days.includes(weekday)) && !(isParis(zone) && weekday === 6)
+  // Taken at once by default when it is free (CMI-S); a paid ticket only if the user ticks it.
+  const [firstNow, setFirstNow] = useState<boolean | null>(null)
+  const takeNow = today && (firstNow ?? kind === 'cmis')
   // Today at an hour already gone: moved to the next hour, after a moment so that typing « 18 » can pass through « 1 ».
   useEffect(() => {
     if (!hourPast) return
@@ -814,6 +822,7 @@ export function DailyWizard({
     ...(period ? { dateFrom: period.from, dateTo: period.to } : {}),
     ...(handi(effective!) ? { cmis: true } : {}),
     ...(handiZones.length > 1 ? { locations: handiZones } : {}),
+    ...(takeNow ? { now: true } : {}),
   })
 
   async function activate() {
@@ -1251,6 +1260,16 @@ export function DailyWizard({
                   </div>
                 ))}
               </dl>
+              {today && (
+                // The first ticket now, not at the next window: the user sees at once that it works.
+                <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-ink/[0.03] px-4 py-3 text-sm leading-relaxed text-ink/80">
+                  <input type="checkbox" checked={takeNow} onChange={(e) => setFirstNow(e.target.checked)} className="mt-1 size-4 shrink-0 accent-[#4e9aa0]" />
+                  <span>
+                    Prendre le premier ticket maintenant
+                    {effective && !handi(effective) && cost ? ` (${euros(cost)})` : ''}, pour vérifier tout de suite que ça marche.
+                  </span>
+                </label>
+              )}
               {!cards.length ? (
                 <NoPayment compact onRefresh={async () => onDone()} />
               ) : (

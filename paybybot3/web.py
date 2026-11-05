@@ -1435,16 +1435,17 @@ def extend_and_confirm(session, ticket, row, card, attempts=10, delay=3):
     raise Unconfirmed(UNCONFIRMED)
 
 
-def run_autopilot(session, ap, now=None):
-    """Pay for the configured parking if no session is active right now (and, for precise days, if it is time)."""
+def run_autopilot(session, ap, now=None, first_now=False):
+    """Pay for the configured parking if no session is active right now (and, for precise days, if it is time;
+    first_now: at once, the first ticket asked for when programming it)."""
     now = now or datetime.now(timezone.utc)
     rule = rule_of(ap)
-    if rule:
+    if rule and not first_now:
         due, _ = schedule.decide(rule, now, ap.get("pausedFrom"), ap.get("pausedUntil"), ap.get("lastPayment"))
         ap["lastCheck"] = now.isoformat()
         if not due:
             return
-    elif paused_now(ap.get("pausedFrom"), ap.get("pausedUntil")):
+    elif not rule and paused_now(ap.get("pausedFrom"), ap.get("pausedUntil")):
         ap["lastCheck"] = now.isoformat()
         return
     if len(ap.get("locations") or []) > 1:
@@ -1890,9 +1891,10 @@ def keep_early_stops(session, row):
         log.warning("early stops not checked: %s", str(e)[:200])
 
 
-def process_renewal(row, refresh_token=None, activating=False, refused=False, validating=False):
+def process_renewal(row, refresh_token=None, activating=False, refused=False, validating=False, first_now=False):
     """Check one stored renewal and pay for it if no session is active. Never raises.
-    validating: the card holder just asked to validate a payment their bank wants confirmed, so it is paid now."""
+    validating: the card holder just asked to validate a payment their bank wants confirmed, so it is paid now.
+    first_now: a ticket on chosen days just programmed, its first ticket asked for at once (outside its window)."""
     now = datetime.now(timezone.utc)
     patch = {}
     try:
@@ -1904,7 +1906,7 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
     previous_error = row.get("last_error")
     refused = refused or bool(previous_error)  # the last try failed: another card of the account goes first
     rule = rule_of(row)
-    if rule:
+    if rule and not first_now:
         # Precise days: no PayByPhone login at all outside the ticket windows.
         due, next_check = schedule.decide(rule, now, row.get("paused_from"), row.get("paused_until"),
                                           row.get("last_payment"))
@@ -1912,7 +1914,7 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
             store("renewal_update", p_id=row["id"],
                   p_patch={"next_check": utc_iso(next_check or now + timedelta(days=30))})
             return "paused" if paused_now(row.get("paused_from"), row.get("paused_until"), now) else "waiting"
-    elif paused_now(row.get("paused_from"), row.get("paused_until"), now):
+    elif not rule and paused_now(row.get("paused_from"), row.get("paused_until"), now):
         # Check again when the pause ends, without even logging in to PayByPhone meanwhile.
         resume = parse_dt(row.get("paused_until")) or now + timedelta(hours=12)
         store("renewal_update", p_id=row["id"], p_patch={"next_check": utc_iso(resume)})
@@ -2517,6 +2519,8 @@ class Autopilot(Parking):
     dateTo: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     # « Je suis titulaire de la carte CMI-S »: ticked for the Handi ticket, kept with the renewal as proof.
     cmis: bool = False
+    # Asked when programming it: the first ticket taken at once, to see it work, not at the next window.
+    now: bool = False
     # Handi in Paris: the arrondissements covered at the same time (all 20 by default), one free ticket in each.
     locations: list[Annotated[str, Field(pattern=r"^75(0(0[1-9]|1\d|20)|116)$")]] | None = Field(default=None, max_length=21)
 
@@ -3706,7 +3710,8 @@ def add_autopilot(body: Autopilot, pbb_session: str = Cookie(None)):
             row = {**row, "owner": owner_id(s.username)}  # its stored login is the fallback if this one is stale
             details = {**with_details(row)}
             before = running_for(s, body.plate)
-            outcome = process_renewal(row, refresh_token=refresh, activating=True)  # pay now if it is due
+            # Pay now if it is due, or at once when the first ticket is asked for now.
+            outcome = process_renewal(row, refresh_token=refresh, activating=True, first_now=body.now and bool(days))
             stored = next((r for r in store("renewal_list", p_owner=owner_id(s.username)) if r["id"] == row["id"]), row)
             message = None
             if outcome in ("paid", "active", "waiting", "partial"):
@@ -3736,10 +3741,11 @@ def add_autopilot(body: Autopilot, pbb_session: str = Cookie(None)):
     ap = {**body.model_dump(), "duration": fmt_qty(body.duration), "id": uuid.uuid4().hex[:8], "enabled": True,
           "lastCheck": None, "lastPayment": None, "lastError": None, "days": days, "start": start, "locations": zones}
     s.autopilots[ap["id"]] = ap
+    first_now = body.now and bool(days)
     if HOSTED:  # demo on a serverless host: no background thread, run it now
-        run_autopilot(s, ap)
+        run_autopilot(s, ap, first_now=first_now)
     else:
-        threading.Thread(target=lambda: guarded(lambda: run_autopilot(s, ap)), daemon=True).start()
+        threading.Thread(target=lambda: guarded(lambda: run_autopilot(s, ap, first_now=first_now)), daemon=True).start()
     return ap
 
 

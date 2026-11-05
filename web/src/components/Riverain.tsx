@@ -25,6 +25,7 @@ export type PendingRenewal = Parking & {
   start?: string
   cmis?: boolean
   locations?: string[]
+  now?: boolean
   tz?: string
   /** Chosen on the calendar: the first and last day (ISO), equal for a single day. */
   dateFrom?: string

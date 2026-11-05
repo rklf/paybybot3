@@ -22,6 +22,9 @@ class FakeSession:
                         for z in running]
         self.refuse, self.paid, self.attempts, self.unconfirmed = set(refuse), [], [], {}
 
+    def log(self, kind, message):
+        pass
+
     def call(self, name, *args, **kw):
         if name == "get_parking_sessions":
             return self.tickets
@@ -124,3 +127,30 @@ class ParisOnly(unittest.TestCase):
 
     def test_the_cmis_ticket_is_taken_in_paris(self):
         web.check_cmis_zone(self.body("75016"))
+
+
+class FirstTicketNow(unittest.TestCase):
+    """Programmed at 3 h for 5 h: nothing before 5 h, unless the first ticket is asked for at once."""
+
+    def ap(self):
+        return {"plate": "GJ-124-CQ", "location": "75016", "rate": "h75016", "duration": "1", "unit": "Days",
+                "paymentAccountId": "card", "days": [0, 1, 2, 3, 4, 5, 6], "start": "05:00", "lastPayment": None}
+
+    def at_3am(self):
+        return datetime(2026, 11, 10, 2, 0, tzinfo=timezone.utc)  # a Tuesday, 3 h in Paris
+
+    def test_waits_for_its_window(self):
+        s, ap = FakeSession(), self.ap()
+        web.run_autopilot(s, ap, now=self.at_3am())
+        self.assertEqual(s.paid, [])
+
+    def test_taken_at_once_when_asked(self):
+        s, ap = FakeSession(), self.ap()
+        web.run_autopilot(s, ap, now=self.at_3am(), first_now=True)
+        self.assertEqual(s.paid, [("75016", "h75016")])
+        self.assertIsNone(ap["lastError"])
+
+    def test_never_over_a_running_ticket(self):
+        s, ap = FakeSession(running=["75016"]), self.ap()
+        web.run_autopilot(s, ap, now=self.at_3am(), first_now=True)
+        self.assertEqual(s.paid, [])
