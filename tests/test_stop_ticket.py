@@ -33,6 +33,14 @@ class StopTicket(unittest.TestCase):
     def test_a_handi_ticket_can_be_stopped(self):
         self.cmis("75016")
         a, b = self.take("105"), self.take("105")
+
+    def test_a_handi_ticket_taken_in_the_app_too(self):
+        a = self.take("105")  # no CMI-S ticket programmed on PayByBot
+        self.assertEqual(web.stop_tickets(web.StopTickets(ids=[a]))["stopped"], 1)
+
+    def test_handi_two(self):
+        self.cmis("75016")
+        a, b = self.take("105"), self.take("105")
         self.assertTrue(self.shown()[a]["stoppable"])
         self.assertEqual(web.stop_tickets(web.StopTickets(ids=[a, b]))["stopped"], 2)
         self.assertEqual(self.shown(), {})

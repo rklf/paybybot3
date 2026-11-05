@@ -743,6 +743,7 @@ export function DailyWizard({
     setDays(paris ? [0, 1, 2, 3, 4, 5] : [0, 1, 2, 3, 4, 5, 6]) // renewed every day (Paris: Sundays are free)
     if (!same) return void (preset.current = null) // its rate not offered here: chosen at step 2 (start still its end)
     setKind(handi(same) ? 'cmis' : heavy(same) ? 'heavy' : 'light')
+    if (handi(same)) setZones((z) => (z.length ? z : [zone])) // its arrondissement ticked, the others to add
     if (rateId !== same.ratePolicyId) return setRateId(same.ratePolicyId)
     if (!effective) return
     const begin = new Date(t.start)

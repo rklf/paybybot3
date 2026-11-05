@@ -3072,7 +3072,7 @@ def overview(pbb_session: str = Cookie(None)):
         others = [x for x in sessions if not x["resident"]]
         for x in others:
             if (plate_key(x["plate"] or ""), str(x["location"])) in cmis:
-                x["kind"] = "Carte mobilité CMI-S"
+                x["kind"] = CMIS_KIND
         others = [x for x in others if "kind" not in x]
         if others:
             with ThreadPoolExecutor(max_workers=min(8, len(others))) as pool:
@@ -3080,6 +3080,14 @@ def overview(pbb_session: str = Cookie(None)):
                     ticket_kind, s, x["location"], x["plate"], x["rate"]), others))
             for x, kind in zip(others, kinds):
                 x["kind"] = kind
+        raw = {x.get("parkingSessionId"): x for x in got["sessions"]}
+        for x in sessions:  # only a CMI-S ticket is stopped from PayByBot
+            if x.get("kind") != CMIS_KIND:
+                x["stoppable"] = False
+            elif not x["stoppable"]:  # what PayByPhone says of it, without anything personal
+                r = raw.get(x["id"]) or {}
+                log.info("CMI-S ticket not stoppable: isStoppable=%s jobId=%s segments=%s", r.get("isStoppable"),
+                         bool(r.get("jobId")), len(r.get("segments") or []))
         return {
             "vehicles": [{"plate": v["licensePlate"], "country": v.get("country"), "type": v.get("type"),
                           "zone": (kept.get(plate_key(v["licensePlate"])) or {}).get("z")} for v in vehicles],
@@ -3093,6 +3101,7 @@ def overview(pbb_session: str = Cookie(None)):
 
 
 RATE_NAMES = {}  # (zone, rate id) -> PayByPhone's rate name: a ticket only gives its rate's id
+CMIS_KIND = "Carte mobilité CMI-S"
 
 
 def ticket_kind(s, zone, plate, rate):
@@ -3109,7 +3118,7 @@ def ticket_kind(s, zone, plate, rate):
         RATE_NAMES.setdefault(key, "")  # not among this car's rates: not asked again
     name = RATE_NAMES[key]
     if HANDI_RATE.search(name):
-        return "Carte mobilité CMI-S"
+        return CMIS_KIND
     if re.search(r"lourd", name, re.I):
         return "Véhicule lourd"
     if re.search(r"l[ée]ger", name, re.I):
@@ -3591,14 +3600,17 @@ def fmt_qty(value):
 @app.post("/api/sessions/stop")
 def stop_tickets(body: StopTickets, pbb_session: str = Cookie(None)):
     """Stops running tickets now (a CMI-S ticket in several arrondissements: all of them), as « Arrêter » in the
-    PayByPhone app; only CMI-S tickets programmed on PayByBot, and only those PayByPhone says can be stopped."""
+    PayByPhone app; only CMI-S tickets, and only those PayByPhone says can be stopped."""
     s = current(pbb_session)
     running = {x.get("parkingSessionId"): x for x in guarded(lambda: s.call("get_parking_sessions")) or []}
     tickets = [running.get(i) for i in body.ids]
     handi = guarded(lambda: cmis_zones(s))
-    if not all(tickets) or not all(serialize_session(x)["stoppable"] and
-                                   (plate_key((x.get("vehicle") or {}).get("licensePlate") or ""),
-                                    str(x.get("locationId"))) in handi for x in tickets):
+
+    def cmis(x):  # one of a CMI-S ticket programmed here, else a CMI-S ticket taken in the PayByPhone app
+        plate = (x.get("vehicle") or {}).get("licensePlate") or ""
+        return (plate_key(plate), str(x.get("locationId"))) in handi or ticket_kind(
+            s, x.get("locationId"), plate, (x.get("ratePolicy") or {}).get("ratePolicyId")) == CMIS_KIND
+    if not all(tickets) or not all(serialize_session(x)["stoppable"] and cmis(x) for x in tickets):
         raise HTTPException(400, "PayByPhone ne permet pas d'arrêter ce ticket. Il reste valable jusqu'à sa fin.")
     stopped = 0
     for x in tickets:

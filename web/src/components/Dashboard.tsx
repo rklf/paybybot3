@@ -5,7 +5,7 @@ import { ChevronRight, Loader2, LogOut, Plus } from 'lucide-react'
 import { arrondissement, PayByPhone, Plate, vehicleType, withPayByPhone } from '@/components/signs'
 import { TopBar } from '@/components/TopBar'
 import { InviteButton } from '@/components/Invite'
-import { DailyTickets, isDaily, ruleState, when as whenAt } from '@/components/DailyTickets'
+import { DailyTickets, DailyWizard, isDaily, ruleState, when as whenAt } from '@/components/DailyTickets'
 import { AccountButton } from '@/components/Account'
 import { PlansDialog, TrialBanner } from '@/components/Pricing'
 import { ui } from '@/lib/styles'
@@ -62,6 +62,7 @@ function Ticket({
   pending = false,
   place,
   group = [session],
+  needsOffer = false,
 }: {
   session: Session
   now: number
@@ -80,13 +81,15 @@ function Ticket({
   place?: string
   /** The tickets this card stands for (all the arrondissements of a CMI-S ticket), stopped together. */
   group?: Session[]
+  /** No offer chosen yet: the ticket wizard shows the offer screen first. */
+  needsOffer?: boolean
 }) {
+  // A non-resident ticket with nothing after it: « Renouveler automatiquement » opens the ticket wizard from it.
+  const [renewing, setRenewing] = useState(false)
   // « Arrêter ce ticket »: asked once more before stopping (PayByPhone stops it at once, it cannot be undone).
   const [stopping, setStopping] = useState<'ask' | 'busy' | null>(null)
-  // Only a CMI-S ticket programmed on PayByBot, and only when PayByPhone lets it be stopped.
-  const cmis = (x: Session) =>
-    data.autopilots.some((ap) => ap.cmis && sameCar(ap.plate, x.plate) && (ap.locations ?? [ap.location]).includes(x.location))
-  const stoppable = group.every((x) => x.stoppable && cmis(x))
+  // A CMI-S ticket that PayByPhone lets stop (the server says it: stoppable is false for any other ticket).
+  const stoppable = group.every((x) => x.stoppable)
   async function stop() {
     setStopping('busy')
     try {
@@ -145,7 +148,26 @@ function Ticket({
         </p>
         {/* Nothing will follow this ticket (no renewal, no programmed ticket for the car): what that means, in red. */}
         {!renewal && !data.autopilots.some((ap) => ap.enabled && sameCar(ap.plate, session.plate)) && (
-          <p className="mt-1 text-sm font-semibold text-destructive">Sans renouvellement, risque de FPS après cette date.</p>
+          <>
+            <p className="mt-1 text-sm font-semibold text-destructive">Sans renouvellement, risque de FPS après cette date.</p>
+            {/* A non-resident ticket: the same ticket taken again, from when this one ends (a resident one has its switch). */}
+            {daily && (
+              <button onClick={() => setRenewing(true)} className={cn(ui.primary, 'mt-4 h-11 w-full text-[0.95rem]')}>
+                Renouveler automatiquement
+              </button>
+            )}
+          </>
+        )}
+        {renewing && (
+          <DailyWizard
+            data={data}
+            onClose={() => setRenewing(false)}
+            onDone={onRefresh}
+            needsOffer={needsOffer}
+            initialPlate={session.plate}
+            initialZone={session.location}
+            initialTicket={{ rate: session.rate, start: session.start, expire: session.expire }}
+          />
         )}
         {/* A CMI-S ticket that PayByPhone lets stop (a resident week, or a Paris day ticket, may run to its end). */}
         {stoppable &&
@@ -599,6 +621,7 @@ export function Dashboard({
                 pending={pricedResidents === null && s.resident !== false}
                 place={placeOf(s)}
                 group={groupOf(s)}
+                needsOffer={needsOffer}
               />
             ))}
           </div>
