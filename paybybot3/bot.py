@@ -481,7 +481,9 @@ class Bot:
                 "isoCurrencyCode": amount.get("currency") or "EUR",
             }
         request = {"lineItems": [line_item]}
-        if paymentAccountId:
+        # A free ticket (Handi, CMI-S) goes without a card: PayByPhone refuses one when nothing is to pay.
+        free = bool(amount) and not amount.get("amount")
+        if paymentAccountId and not free:
             request["paymentMethod"] = {
                 "paymentMethodType": "PaymentAccount",
                 "paymentDetails": {
