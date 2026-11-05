@@ -1,8 +1,8 @@
 import { Loading } from '@/components/Loading'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { ChevronRight } from 'lucide-react'
-import { arrondissement, PayByPhone, Plate, withPayByPhone } from '@/components/signs'
+import { ChevronRight, LogOut, Plus } from 'lucide-react'
+import { arrondissement, PayByPhone, Plate, vehicleType, withPayByPhone } from '@/components/signs'
 import { TopBar } from '@/components/TopBar'
 import { InviteButton } from '@/components/Invite'
 import { DailyTickets, isDaily, ruleState, when as whenAt } from '@/components/DailyTickets'
@@ -12,7 +12,7 @@ import { ui } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 import { HostedFooter } from '@/components/Footer'
 import { CheckoutDone } from '@/components/CheckoutDone'
-import { ActivateRenewal, CardGate, RenewalActions, RenewalNote, RenewalSwitch, pauseState, nextRenewal, when, ZoneTag, RiverainCard, WEEKLY_LABEL, renewalOf, runPendingRenewals } from '@/components/Riverain'
+import { ActivateRenewal, CardGate, OpeningSwitch, RenewalActions, RenewalNote, RenewalSwitch, pauseState, nextRenewal, when, ZoneTag, RiverainCard, WEEKLY_LABEL, renewalOf, runPendingRenewals } from '@/components/Riverain'
 import { api, type Account, type Me, type Overview, type Session } from '@/lib/api'
 
 function useNow(interval = 1000) {
@@ -112,9 +112,12 @@ function Ticket({
             </span>
           ))}
         </p>
+        <p className="mt-2.5 text-sm text-ink/50">
+          Jusqu’au <span className="text-ink">{when(end)}</span>
+        </p>
         {/* Nothing will follow this ticket (no renewal, no programmed ticket for the car): what that means, in red. */}
         {!renewal && !data.autopilots.some((ap) => ap.enabled && sameCar(ap.plate, session.plate)) && (
-          <p className="mt-2.5 text-sm font-semibold text-destructive">Sans renouvellement, risque d’amende à la fin du ticket.</p>
+          <p className="mt-1 text-sm font-semibold text-destructive">Sans renouvellement, risque de FPS après cette date.</p>
         )}
       </div>
 
@@ -178,6 +181,7 @@ const sameCar = (a: string, b: string) => a.replace(/[^0-9a-z]/gi, '').toUpperCa
 
 function IdleVehicles({ data, onChanged, hosted, demo, autoPlate, locked, onLogout }: { data: Overview; onChanged: () => void; hosted: boolean; demo?: boolean; autoPlate?: string | null; locked?: boolean; onLogout?: () => void }) {
   const key = (p: string) => p.replace(/[^0-9a-z]/gi, '').toUpperCase()
+  const [weeks, setWeeks] = useState<Record<string, number | null>>({})
   // The vehicles with the resident rate on PayByPhone (a zone in the pricing); null while looking.
   const [residents, setResidents] = useState<Set<string> | null>(null)
   useEffect(() => {
@@ -185,6 +189,7 @@ function IdleVehicles({ data, onChanged, hosted, demo, autoPlate, locked, onLogo
     api.pricing().then(
       (p) => {
         if (cancelled) return
+        setWeeks(Object.fromEntries((p.vehicles ?? []).map((v) => [key(v.plate), v.weekly ?? null])))
         setResidents(new Set((p.vehicles ?? []).filter((v) => v.zone).map((v) => key(v.plate))))
       },
       () => {},
@@ -200,19 +205,38 @@ function IdleVehicles({ data, onChanged, hosted, demo, autoPlate, locked, onLogo
   const isResident = (v: { plate: string; zone?: string | null }) => (residents ? residents.has(key(v.plate)) : !!v.zone)
   const cars = data.vehicles.filter((v) => isResident(v) && !renewed.has(key(v.plate)) && !parked.has(key(v.plate)))
   if (!cars.length) return null
+  const euros = (cents: number) => (cents / 100).toFixed(2).replace('.', ',') + ' €'
   return (
     <div className="mt-5 space-y-3">
       {cars.map((v) => {
+        const week = weeks[key(v.plate)]
         const place = v.zone ? arrondissement(v.zone) : null
         return (
           <div key={v.plate} data-renewal-card className="flex flex-col items-center rounded-2xl border border-border p-5 text-center">
             <Plate plate={v.plate} />
-            {/* Plate, where, button: the car's type and PayByPhone's weekly price are not needed to decide. */}
-            <span className="mt-3 rounded-full bg-[#4e9aa0]/12 px-2.5 py-1 text-xs font-medium text-[#3d7f84]">
-              Résident{v.zone ? ` · ${place ?? v.zone}` : ''}
-            </span>
+            <span className="mt-3 rounded-full bg-[#4e9aa0]/12 px-2.5 py-1 text-xs font-medium text-[#3d7f84]">Résident</span>
+            <dl className="mt-4 space-y-1 text-[0.95rem] text-ink/60">
+              {vehicleTypeLabel(v.type) && (
+                <div>
+                  <dt className="inline">Véhicule : </dt>
+                  <dd className="inline text-ink">{vehicleTypeLabel(v.type)}</dd>
+                </div>
+              )}
+              {v.zone && (
+                <div>
+                  <dt className="inline">Zone : </dt>
+                  <dd className="inline text-ink">{place ? `${place} (${v.zone})` : v.zone}</dd>
+                </div>
+              )}
+              {week != null && (
+                <div>
+                  <dt className="inline">Abonnement résident : </dt>
+                  <dd className="inline text-ink">{euros(week)} / semaine</dd>
+                </div>
+              )}
+            </dl>
             {/* « Renouvellement auto » switch, off: turning it on opens the renewal setup (same as the ticket card). */}
-            <div className="mt-5 w-full">
+            <div className="mt-4 w-full border-t border-ink/[0.06] pt-4 text-left">
               <ActivateRenewal
                 data={data}
                 onChanged={onChanged}
@@ -222,13 +246,9 @@ function IdleVehicles({ data, onChanged, hosted, demo, autoPlate, locked, onLogo
                 autoOpen={!!autoPlate && key(autoPlate) === key(v.plate)}
                 locked={!!locked && !!autoPlate && key(autoPlate) === key(v.plate)}
                 onLogout={onLogout}
-                // One button, no switch beside it doing the same thing.
-                trigger={(open) => (
-                  <button type="button" onClick={open} className={cn(ui.primary, 'px-3 text-[length:min(0.95rem,calc((100vw-96px)/18))] whitespace-nowrap sm:text-lg')}>
-                    Activer le renouvellement automatique
-                  </button>
-                )}
+                trigger={(open, isOpen) => <OpeningSwitch open={open} isOpen={isOpen} />}
               />
+              <ActivateButton />
             </div>
           </div>
         )
@@ -454,15 +474,22 @@ export function Dashboard({
             Démo
           </span>
         )}
-        {/* Two buttons only: inviting (word of mouth is the only way in) and the account (where the rest is). */}
+        {/* Inviting a friend: always offered to a signed-in account (word of mouth is the only way in). */}
+        {/* Programming a non-resident ticket: a sober button beside the invitation, no card in the page. */}
+        <button
+          onClick={() => setProgramAsked((n) => n + 1)}
+          disabled={!data}
+          aria-label="Programmer un ticket"
+          className={cn(ui.pillGray, 'gap-2')}
+        >
+          <Plus className="size-4" /> <span className="hidden sm:inline">Programmer un ticket</span>
+        </button>
         {!me.demo && <InviteButton disabled={!data} />}
-        <AccountButton
-          data={data}
-          onDeleted={onDeleted ?? onLogout}
-          onLogout={onLogout}
-          onProgram={() => setProgramAsked((n) => n + 1)}
-          demo={me.demo}
-        />
+        <AccountButton data={data} onDeleted={onDeleted ?? onLogout} demo={me.demo} />
+        <button onClick={onLogout} className={ui.navText} aria-label="Déconnexion">
+          <LogOut className="size-5 sm:hidden" />
+          <span className="hidden sm:inline">Déconnexion</span>
+        </button>
       </TopBar>
 
       <main className="mx-auto w-full max-w-[34rem] flex-1 px-6 pt-4 pb-6">
@@ -537,4 +564,10 @@ export function Dashboard({
       <HostedFooter className="px-6 pb-5" hosted={!!me.hosted} />
     </div>
   )
+}
+
+/** PayByPhone's vehicle type, in French (unknown: as given). */
+function vehicleTypeLabel(type?: string) {
+  if (!type) return null
+  return vehicleType(type) ?? type
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Loader2, UserRound } from 'lucide-react'
+import { Loader2, UserRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { PlansDialog } from '@/components/Pricing'
@@ -15,36 +15,21 @@ const euros = (cents: number) => (cents / 100).toLocaleString('fr-FR', { style: 
 export function AccountButton({
   data,
   onDeleted,
-  onLogout,
-  onProgram,
   demo = false,
 }: {
   data: Overview | null
   onDeleted: () => void
-  onLogout: () => void
-  /** « Programmer un ticket » (non-resident days), kept here: the top bar holds only « Inviter » and this. */
-  onProgram: () => void
   demo?: boolean
 }) {
   const [open, setOpen] = useState(false)
   return (
     <>
-      <button onClick={() => setOpen(true)} disabled={!data} className={cn(ui.pillGray, 'gap-2')}>
-        <UserRound className="hidden size-4 sm:block" /> Mon compte
+      {/* On a phone, the icon alone (the top bar must fit 375 px). */}
+      <button onClick={() => setOpen(true)} disabled={!data} className={ui.navText} aria-label="Mon compte">
+        <UserRound className="size-5 sm:hidden" />
+        <span className="hidden sm:inline">Mon compte</span>
       </button>
-      {open && data && (
-        <AccountDialog
-          data={data}
-          onClose={() => setOpen(false)}
-          onDeleted={onDeleted}
-          onLogout={onLogout}
-          onProgram={() => {
-            setOpen(false)
-            onProgram()
-          }}
-          demo={demo}
-        />
-      )}
+      {open && data && <AccountDialog data={data} onClose={() => setOpen(false)} onDeleted={onDeleted} demo={demo} />}
     </>
   )
 }
@@ -53,15 +38,11 @@ function AccountDialog({
   data,
   onClose,
   onDeleted,
-  onLogout,
-  onProgram,
   demo,
 }: {
   data: Overview
   onClose: () => void
   onDeleted: () => void
-  onLogout: () => void
-  onProgram: () => void
   demo: boolean
 }) {
   const [email, setEmail] = useState<string | undefined>(undefined)
@@ -75,7 +56,7 @@ function AccountDialog({
     api.pricing().then(
       (p) => {
         setPricing(p)
-        setVehicles((p.vehicles ?? []).filter((v) => v.zone)) // PayByBot renews resident tickets only
+        setVehicles(p.vehicles ?? [])
       },
       () => setVehicles([]),
     )
@@ -118,19 +99,10 @@ function AccountDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      {/* A full page, not a bubble over a blurred one: the account reads like any other screen. */}
-      <DialogContent
-        showCloseButton={false}
-        className="inset-0 top-0 left-0 block h-dvh w-full max-w-none translate-x-0 translate-y-0 overflow-y-auto rounded-none bg-background p-0 ring-0 sm:max-w-none"
-      >
-        <div className="mx-auto w-full max-w-[34rem]">
-        <div className="px-6 pt-4">
-          <button onClick={onClose} className={cn(ui.navText, '-ml-3 gap-1.5')}>
-            <ArrowLeft className="size-4" /> Retour
-          </button>
-          <DialogTitle className={cn(ui.dialogTitle, 'mt-4')}>Mon compte</DialogTitle>
-          {/* For screen readers only: the page itself needs no subtitle. */}
-          <DialogDescription className="sr-only">
+      <DialogContent className={ui.dialog}>
+        <div className="px-6 pt-7">
+          <DialogTitle className={ui.dialogTitle}>Mon compte</DialogTitle>
+          <DialogDescription className="mt-1 text-ink/60">
             Ce que <PayByBot /> lit dans votre compte <PayByPhone />.
           </DialogDescription>
         </div>
@@ -159,7 +131,7 @@ function AccountDialog({
                   <li key={v.plate} className="flex items-center gap-3 px-3 py-3">
                     <Plate plate={v.plate} size="sm" />
                     <span className="min-w-0 flex-1 text-[0.95rem] font-semibold text-ink">
-                      {zone ?? <ZonePlate zone={v.zone!} />}
+                      {zone ?? (v.zone ? <ZonePlate zone={v.zone} /> : <span className="font-normal text-ink/60">Sans tarif résident</span>)}
                     </span>
                   </li>
                 )
@@ -182,10 +154,13 @@ function AccountDialog({
             </p>
           )}
 
-          {/* PayByPhone's own app link (as in the e-mails): the app when installed, else its store or site. */}
-          <a href="https://paybyphone.onelink.me/ZQkh/" target="_blank" rel="noreferrer" className={cn('mt-3 inline-block text-sm', ui.link)}>
-            Ajouter un véhicule dans <PayByPhone />
-          </a>
+          <p className="mt-3 text-sm text-ink/55">
+            Un véhicule manque ? Ajoutez-le dans l’application <PayByPhone /> : il apparaîtra ici.{' '}
+            {/* PayByPhone's own app link (as in the e-mails): the app when installed, else its store or site. */}
+            <a href="https://paybyphone.onelink.me/ZQkh/" target="_blank" rel="noreferrer" className={ui.link}>
+              Ouvrir <PayByPhone />
+            </a>
+          </p>
         </section>
 
         <dl className="mx-6 mt-6 divide-y divide-ink/10 border-y border-ink/10">
@@ -241,22 +216,15 @@ function AccountDialog({
 
         </dl>
 
-        <div className="space-y-3 px-6 pt-6">
-          <button onClick={onProgram} className={ui.primaryGray}>
-            Programmer un ticket
-          </button>
-          <button onClick={onLogout} className={ui.primaryGray}>
-            Se déconnecter
-          </button>
-        </div>
-
-        <div className="px-6 pt-6 pb-7">
+        <div className={cn('px-6 pb-7', demo ? 'pt-2' : 'pt-6')}>
           {!demo && (
-            <button onClick={() => setDeleting(true)} className="text-sm font-semibold text-destructive/80 underline underline-offset-[3px] hover:text-destructive">
+            <button
+              onClick={() => setDeleting(true)}
+              className="inline-flex h-10 items-center rounded-[10px] border border-destructive/30 px-4 text-sm font-semibold text-destructive transition hover:bg-destructive/5"
+            >
               Supprimer mon compte
             </button>
           )}
-        </div>
         </div>
       </DialogContent>
       {plans && <PlansDialog onClose={() => setPlans(false)} />}
