@@ -5,11 +5,11 @@ import { toast } from 'sonner'
 import { Dialog, DialogClose, DialogDescription, DialogPortal, DialogTitle } from '@/components/ui/dialog'
 import { Horodateur } from '@/components/Horodateur'
 import { LoadingLine } from '@/components/Loading'
-import { PayByPhone, Wordmark } from '@/components/signs'
+import { PayByPhone, Plate, Wordmark } from '@/components/signs'
 import { HostedFooter } from '@/components/Footer'
 import { PublicTopBar } from '@/components/TopBar'
 import { clearPending } from '@/components/Riverain'
-import { api, type Pricing } from '@/lib/api'
+import { api, type PricedVehicle, type Pricing } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { TRY_LABEL, ui } from '@/lib/styles'
 
@@ -24,9 +24,9 @@ const PLANS: { id: Plan; name: string; popular?: boolean }[] = [
 const euros = (cents: number) => (cents % 100 ? (cents / 100).toFixed(2).replace('.', ',') : String(cents / 100)) + ' €'
 const yearOf = (monthly: number) => Math.round(monthly * 12 * 0.8)
 
-/** One price for all the account's vehicles, whatever their number, tickets and types (the server's MONTHLY_PRICE). */
+/** One price per vehicle, whatever its ticket and type (the server's MONTHLY_PRICE). */
 const MONTHLY = 950
-const GRID: [string, number][] = [['Tous vos véhicules', MONTHLY]]
+const GRID: [string, number][] = [['Par véhicule', MONTHLY]]
 
 /** The signed-in account's prices (null while loading). */
 function usePricing(enabled: boolean) {
@@ -62,6 +62,67 @@ function PriceGrid({ plan, className }: { plan: Plan; className?: string }) {
         ))}
       </tbody>
     </table>
+  )
+}
+
+const plateKey = (p: string) => p.replace(/[^0-9a-z]/gi, '').toUpperCase()
+
+/** The offer screen's vehicles: tick those to cover, the price follows their number. */
+function VehicleChoice({
+  plan,
+  vehicles,
+  chosen,
+  onToggle,
+  className,
+}: {
+  plan: Plan
+  vehicles: PricedVehicle[]
+  chosen: string[]
+  onToggle: (plate: string) => void
+  className?: string
+}) {
+  if (vehicles.length < 2) return null
+  const n = chosen.length
+  return (
+    <div className={className}>
+      <p className="mb-1 px-2 text-sm font-semibold text-ink">Véhicules couverts</p>
+      <ul className="space-y-0.5">
+        {vehicles.map((v) => {
+          const on = chosen.includes(plateKey(v.plate))
+          return (
+            <li key={v.plate}>
+              <button
+                type="button"
+                role="checkbox"
+                aria-checked={on}
+                onClick={() => onToggle(v.plate)}
+                className="flex w-full items-center gap-3 rounded-xl px-2 py-1 text-left text-sm transition hover:bg-ink/[0.04]"
+              >
+                <span
+                  className={cn(
+                    'grid size-5 shrink-0 place-items-center rounded-md border-2 transition',
+                    on ? 'border-eu bg-eu text-white' : 'border-ink/25 bg-white',
+                  )}
+                >
+                  {on && <Check className="size-3.5" strokeWidth={3} />}
+                </span>
+                <Plate plate={v.plate} size="sm" />
+                {/* A ticked vehicle shows its price per month only; the others none, they are not counted. */}
+                {on && (
+                  <span className="ml-auto text-right whitespace-nowrap text-ink tabular-nums">
+                    {plan === 'monthly' ? euros(v.monthly) : euros(Math.round(v.yearly / 12))} / mois
+                  </span>
+                )}
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+      <p className="mt-1 px-2 text-xs leading-relaxed text-ink/50">
+        {n > 1 ? `${n} véhicules couverts : le prix ci-dessus est leur total.` : '1 véhicule couvert.'} Un véhicule
+        automatisé plus tard s’ajoute à l’abonnement.
+      </p>
+    </div>
   )
 }
 
@@ -125,7 +186,7 @@ export function PlanCards({ signedIn }: { signedIn: boolean }) {
         ))}
       </div>
       <p className="mx-auto mt-6 max-w-3xl text-center text-sm text-ink/45">
-        Tous vos véhicules pour ce prix : voiture, deux-roues ou utilitaire · ticket résident, visiteur ou carte mobilité CMI-S.
+        Par véhicule : voiture, deux-roues ou utilitaire · ticket résident, visiteur ou carte mobilité CMI-S.
       </p>
     </>
   )
@@ -141,7 +202,7 @@ export function PricingPage({ hosted, signedIn = false }: { hosted: boolean; sig
           Tarifs
         </h1>
         <p className="mx-auto mt-4 max-w-[32rem] text-center text-[1.05rem] text-ink/60 sm:text-lg">
-          Un prix unique pour tous vos véhicules, quel que soit le ticket.
+          Un prix unique par véhicule, quel que soit le ticket.
         </p>
         <div className="mt-8 lg:mt-10">
           <PlanCards signedIn={signedIn} />
@@ -229,15 +290,38 @@ export function PlansDialog({
   onClose,
   text,
   onPay,
+  plates,
 }: {
   onClose: () => void
   text?: string
   onPay?: () => void
+  /** The vehicles being activated: ticked first among the account's vehicles. */
+  plates?: string[]
 }) {
   const [plan, setPlan] = useState<Plan>('yearly')
   const [busy, setBusy] = useState(false)
   const [loaded] = usePricing(true)
-  const pricing = loaded // one price, whatever the number of vehicles
+  // The vehicles the subscription is for: those being activated, else those already billed, else the first one.
+  const [chosen, setChosen] = useState<string[] | null>(null)
+  useEffect(() => {
+    const vehicles = loaded?.vehicles ?? []
+    if (!vehicles.length || chosen) return
+    const all = vehicles.map((v) => plateKey(v.plate))
+    const wanted = [...(plates ?? []), ...(loaded?.billed ?? [])].map(plateKey).filter((k) => all.includes(k))
+    setChosen(wanted.length ? [...new Set(wanted)] : all.slice(0, 1))
+  }, [loaded]) // eslint-disable-line react-hooks/exhaustive-deps
+  // The prices shown are those of the chosen vehicles (the price per vehicle times their number).
+  const picked = (loaded?.vehicles ?? []).filter((v) => chosen?.includes(plateKey(v.plate)))
+  const pricing: Pricing | null =
+    loaded && picked.length
+      ? { ...loaded, monthly: picked.reduce((t, v) => t + v.monthly, 0), yearly: picked.reduce((t, v) => t + v.yearly, 0) }
+      : loaded
+  const toggle = (plate: string) =>
+    setChosen((list) => {
+      const k = plateKey(plate)
+      const next = list?.includes(k) ? list.filter((x) => x !== k) : [...(list ?? []), k]
+      return next.length ? next : list // at least one vehicle
+    })
   const locked = false // no resident rate needed any more
   // Still in the free month: nothing is charged before its end (Stripe starts billing then).
   const [trialEnd, setTrialEnd] = useState<Date | null>(null)
@@ -257,7 +341,7 @@ export function PlansDialog({
   async function pay() {
     setBusy(true)
     try {
-      const { url } = await api.checkout(plan)
+      const { url } = await api.checkout(plan, chosen ?? [])
       if (onPay) onPay()
       else clearPending() // from the banner: a choice left unpaid earlier is not activated by this payment
       window.location.assign(url)
@@ -353,6 +437,13 @@ export function PlansDialog({
                 {locked && <PriceGrid plan={plan} className="rounded-2xl border border-ink/10 p-4" />}
               </div>
 
+              <VehicleChoice
+                plan={plan}
+                vehicles={loaded?.vehicles ?? []}
+                chosen={chosen ?? []}
+                onToggle={toggle}
+                className="mt-4 rounded-2xl bg-ink/[0.03] px-3 py-3"
+              />
               <ul className="mt-4 grid gap-1.5 text-sm text-ink/70 sm:grid-cols-2">
                 {INCLUDED.map((x) => (
                   <li key={x} className="flex items-start gap-2">

@@ -1,3 +1,4 @@
+import { askCoverage } from '@/lib/coverage'
 
 export type Money = { amount: number; currency: string }
 
@@ -160,6 +161,34 @@ const post = <T>(path: string, body?: unknown) =>
 let pricingCall: { at: number; p: Promise<Pricing> } | null = null
 
 /** « Mon compte »: what changing the covered vehicles costs (confirm false), or the change itself (amounts in cents). */
+export type CoveredChange = {
+  plan: string
+  added: string[]
+  removed: string[]
+  /** Removed vehicles whose renewal stops. */
+  stops: string[]
+  chargeCents: number
+  creditCents: number
+  months: number
+  total: number
+  nextBilling: string | null
+}
+
+/** A vehicle the subscription does not cover yet (renewal, programmed ticket, ticket): the paywall offers to add it
+ *  (the month started charged at once), then the action is tried again. */
+async function covering<T>(call: () => Promise<T>): Promise<T> {
+  try {
+    return await call()
+  } catch (e) {
+    if (!(e instanceof ApiError) || e.status !== 402 || e.data.code !== 'not_covered') throw e
+    pricingCall = null
+    const billed = (await api.pricing()).billed ?? []
+    if (!(await askCoverage([...billed, String(e.data.plate)]))) throw e
+    pricingCall = null
+    return call()
+  }
+}
+
 export const api = {
   config: () =>
     request<{ hosted: boolean; turnstileSiteKey?: string | null; build?: string | null; inviteOnly?: boolean; interrupted?: boolean }>('/api/config'),
@@ -195,7 +224,7 @@ export const api = {
   updateAccount: (patch: Partial<Account>) =>
     request<Account>('/api/account', { method: 'PUT', body: JSON.stringify(patch) }),
   logout: () => post('/api/logout'),
-  checkout: (plan: 'monthly' | 'yearly') => post<{ url: string }>('/api/billing/checkout', { plan }),
+  checkout: (plan: 'monthly' | 'yearly', plates: string[] = []) => post<{ url: string }>('/api/billing/checkout', { plan, plates }),
   contact: (p: { email: string; message: string; website: string }) => post<{ ok: true }>('/api/contact', p),
   confirmCheckout: (session_id: string) => post<{ plan: string }>('/api/billing/confirm', { session_id }),
   billingPortal: () => post<{ url: string }>('/api/billing/portal'),
@@ -245,9 +274,13 @@ export const api = {
   quote: (p: Parking & { sessionId?: string; renewal?: boolean }) =>
     post<{ cost: Money; start: string; expire: string; afterCurrent?: boolean; currentExpire?: string | null; priceSource?: 'history' | 'paris' | null }>('/api/quote', p),
   extend: (p: Parking & { sessionId: string }) => post<{ ok: true; expire: string; cost: Money }>('/api/extend', p),
-  pay: (p: Parking) => post<{ ok: true; expire: string; cost: Money }>('/api/pay', p),
+  pay: (p: Parking) => covering(() => post<{ ok: true; expire: string; cost: Money }>('/api/pay', p)),
   addAutopilot: (p: Parking & { label: string; email?: string }) =>
-    post<Autopilot & { activation?: Activation }>('/api/autopilots', p),
+    covering(() => post<Autopilot & { activation?: Activation }>('/api/autopilots', p)),
+  coveredVehicles: (plates: string[], confirm: boolean) => {
+    pricingCall = null
+    return post<CoveredChange>('/api/account/vehicles', { plates, confirm })
+  },
   pauseAutopilot: (id: string, start: string, end: string | null) =>
     post<Autopilot>(`/api/autopilots/${id}/pause`, { start, end }),
   lastCard: () => request<{ paymentAccountId: string | null }>('/api/last-card'),

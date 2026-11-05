@@ -8,6 +8,7 @@ import { isoDay, periodDays, periodText, RangeCalendar } from '@/components/Rang
 import { clearPending, pauseState, RenewalActions, savePending, type PendingRenewal } from '@/components/Riverain'
 import { arrondissement, PayByPhone, Plate, withPayByPhone } from '@/components/signs'
 import { api, ApiError, unitLabel, type Autopilot, type Money, type Overview, type Rate, type Unit } from '@/lib/api'
+import { askCoverage } from '@/lib/coverage'
 import { ui } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 
@@ -767,6 +768,11 @@ export function DailyWizard({
     if (editing) return save()
     setSaving(true)
     try {
+      // Vehicles the subscription does not cover yet: its paywall first (nothing is programmed if it is cancelled).
+      const prices = await api.pricing(0)
+      const billed = prices.billed ?? []
+      const uncovered = prices.billing ? picked.filter((p) => !billed.some((b) => keyOf(b) === keyOf(p))) : []
+      if (uncovered.length && !(await askCoverage([...billed, ...uncovered]))) return
       for (const p of picked) await api.addAutopilot(rule(p) as Parameters<typeof api.addAutopilot>[0])
       const first = nextTicket(ruleDays, start, chainFrom, period)
       toast.success(chainFrom ? 'Renouvellement activé.' : picked.length > 1 ? `${picked.length} tickets programmés.` : 'Ticket programmé.', {
@@ -1211,6 +1217,7 @@ export function DailyWizard({
       </DialogContent>
       {paywall && (
         <PlansDialog
+          plates={picked}
           // A change is not replayed after Stripe (the ticket already exists): it is saved again from its card.
           onPay={() => !editing && savePending(picked.map((p) => rule(p)))}
           onClose={() => {

@@ -174,31 +174,57 @@ test('mon compte : la carte bancaire et sa date de fin', async ({ page }) => {
   await expect(app).toHaveAttribute('href', 'https://paybyphone.onelink.me/ZQkh/')
 })
 
-test('mon compte : un seul prix pour tous les véhicules, sans choix à faire', async ({ page }) => {
+test('mon compte : cocher plusieurs véhicules puis un seul paywall, le dernier reste coché', async ({ page }) => {
   const vehicle = (plate: string) => ({ plate, zone: '75105', monthly: 950, yearly: 9120, renewed: false })
+  const sent: unknown[] = []
   await page.route('**/api/account', (route) =>
     route.fulfill({ json: { email: 'a@b.fr', zone: '75105', plan: 'yearly', subscribed: true } }),
   )
   await page.route('**/api/pricing', (route) =>
-    route.fulfill({ json: { zone: '75105', monthly: 950, yearly: 9120, billing: true, billed: ['AB-123-CD', 'GH-456-JK', 'LM-789-NP'],
+    route.fulfill({ json: { zone: '75105', monthly: 950, yearly: 9120, billing: true, billed: ['AB-123-CD'],
       vehicles: [vehicle('AB-123-CD'), vehicle('GH-456-JK'), vehicle('LM-789-NP')] } }),
   )
+  await page.route('**/api/account/vehicles', (route) => {
+    sent.push(route.request().postDataJSON())
+    return route.fulfill({
+      json: { plan: 'yearly', added: ['GH456JK', 'LM789NP'], removed: [], stops: [], chargeCents: 1520, creditCents: 0, months: 1, total: 27360, nextBilling: '2026-11-25T00:00:00+00:00' },
+    })
+  })
   await demo(page)
   await page.getByRole('button', { name: 'Mon compte' }).first().click()
   const dialog = page.getByRole('dialog')
-  await expect(dialog.getByText('Tous vos véhicules sont inclus.')).toBeVisible()
-  await expect(dialog.getByText(/91,20\s€\/an/)).toBeVisible()
-  await expect(dialog.getByRole('switch')).toHaveCount(0)
-  await expect(dialog.getByRole('checkbox')).toHaveCount(0)
+  await expect(dialog.getByText(/Abonnement annuel · 1 véhicule/)).toBeVisible()
+  await expect(dialog.getByRole('checkbox', { name: /AB-123-CD/ })).toBeDisabled()
+  await dialog.getByRole('checkbox', { name: /GH-456-JK/ }).click()
+  await expect(dialog.getByText(/Abonnement annuel · 2 véhicules couverts · 182,40/)).toBeVisible()
+  await dialog.getByRole('checkbox', { name: /LM-789-NP/ }).click()
+  await expect(dialog.getByText(/Abonnement annuel · 3 véhicules couverts · 273,60/)).toBeVisible()
+  expect(sent).toEqual([]) // nothing asked while ticking
+  await dialog.getByRole('button', { name: 'Mettre à jour mon abonnement' }).click()
+  await page.getByRole('button', { name: 'Payer 15,20 € et continuer' }).click()
+  await expect.poll(() => sent.length).toBe(2)
+  expect(sent).toEqual([
+    { plates: ['AB123CD', 'GH456JK', 'LM789NP'], confirm: false },
+    { plates: ['AB123CD', 'GH456JK', 'LM789NP'], confirm: true },
+  ])
 })
 
-test('programmer un ticket : deux véhicules, les deux tickets sans paiement en plus', async ({ page }) => {
-  const programmed: string[] = []
+/** « Programmer un ticket » for AB-123-CD and GH-456-JK (only AB-123-CD covered), up to « Activer ». */
+async function twoVehicleTicket(page: Page, confirmReply: { status: number; json: unknown }) {
   const vehicle = (plate: string) => ({ plate, zone: null, monthly: 950, yearly: 9120, renewed: false })
+  const covered: unknown[] = []
+  const programmed: string[] = []
   await page.route('**/api/pricing', (route) =>
-    route.fulfill({ json: { zone: null, monthly: 950, yearly: 9120, billing: true, billed: ['AB-123-CD', 'GH-456-JK', 'LM-789-NP'],
+    route.fulfill({ json: { zone: null, monthly: 950, yearly: 9120, billing: true, billed: ['AB-123-CD'],
       vehicles: [vehicle('AB-123-CD'), vehicle('GH-456-JK'), vehicle('LM-789-NP')] } }),
   )
+  await page.route('**/api/account/vehicles', (route) => {
+    const body = route.request().postDataJSON()
+    covered.push(body)
+    if (body.confirm) return route.fulfill(confirmReply)
+    return route.fulfill({ json: { plan: 'monthly', added: ['GH456JK'], removed: [], stops: [], chargeCents: 950,
+      creditCents: 0, months: 1, total: 1900, nextBilling: '2026-11-25T00:00:00+00:00' } })
+  })
   page.on('request', (r) => r.method() === 'POST' && r.url().endsWith('/api/autopilots') && programmed.push(r.postDataJSON().plate))
   await demo(page)
   await wizardButton(page).click()
@@ -215,9 +241,37 @@ test('programmer un ticket : deux véhicules, les deux tickets sans paiement en 
   await page.locator('input[type=time]').fill('23:59')
   await page.getByRole('button', { name: 'Suivant', exact: true }).click()
   await page.getByRole('button', { name: 'Activer' }).click()
+  await expect(page.getByText('Votre abonnement', { exact: true })).toBeVisible()
+  return { covered, programmed }
+}
+
+test('programmer un ticket : deux véhicules, le paywall du véhicule non couvert puis les deux tickets', async ({ page }) => {
+  const { covered, programmed } = await twoVehicleTicket(page, { status: 200, json: { added: ['GH456JK'] } })
+  await expect(page.getByText(/Nouvel abonnement/)).toBeVisible()
+  await page.getByRole('button', { name: 'Payer 9,50 € et continuer' }).click()
   await expect.poll(() => programmed.length).toBe(2)
-  expect(programmed.map((p) => p.replace(/[^0-9A-Z]/gi, '')).sort()).toEqual(['AB123CD', 'GH456JK'])
+  const keys = (plates: string[]) => plates.map((p) => p.replace(/[^0-9A-Z]/gi, '')).sort()
+  expect(keys(programmed)).toEqual(['AB123CD', 'GH456JK'])
+  expect(covered.map((c) => ({ ...(c as { plates: string[]; confirm: boolean }), plates: keys((c as { plates: string[] }).plates) }))).toEqual([
+    { plates: ['AB123CD', 'GH456JK'], confirm: false },
+    { plates: ['AB123CD', 'GH456JK'], confirm: true },
+  ])
+})
+
+test('programmer un ticket : paywall annulé, rien n’est programmé', async ({ page }) => {
+  const { programmed } = await twoVehicleTicket(page, { status: 200, json: {} })
+  await page.getByRole('button', { name: 'Annuler', exact: true }).click()
   await expect(page.getByText('Votre abonnement', { exact: true })).toBeHidden()
+  await page.waitForTimeout(500)
+  expect(programmed).toEqual([])
+})
+
+test('programmer un ticket : carte refusée au paywall, rien n’est programmé', async ({ page }) => {
+  const refused = 'Votre carte a été refusée : le véhicule n’a pas été ajouté.'
+  const { programmed } = await twoVehicleTicket(page, { status: 402, json: { detail: refused } })
+  await page.getByRole('button', { name: 'Payer 9,50 € et continuer' }).click()
+  await expect(page.getByText(refused)).toBeVisible()
+  expect(programmed).toEqual([])
 })
 
 test('admin : les dates de fin des cartes des clients', async ({ page }) => {
