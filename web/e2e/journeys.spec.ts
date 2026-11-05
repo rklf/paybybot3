@@ -60,6 +60,7 @@ test('déconnexion après un lien : l’accueil, pas le rideau « parrainage »'
 test('programmer un ticket : véhicule choisi, zone de France reconnue', async ({ page }) => {
   await demo(page)
   await wizardButton(page).click()
+  await page.getByRole('button', { name: 'Suivant' }).click() // the type (light by default), then the zone
   const zone = page.getByRole('combobox')
   await zone.fill('690')
   await page.getByRole('option', { name: /69000/ }).click()
@@ -67,15 +68,31 @@ test('programmer un ticket : véhicule choisi, zone de France reconnue', async (
   await expect(page.getByText('zone PayByPhone reconnue', { exact: false })).toBeVisible()
 })
 
-test('programmer un ticket : les tarifs visiteur sont proposés', async ({ page }) => {
+test('programmer un ticket : le type de véhicule choisit le tarif visiteur', async ({ page }) => {
   await demo(page)
   await wizardButton(page).click()
-  const zone = page.getByRole('combobox')
-  await zone.fill('690')
-  await page.getByRole('option', { name: /69000/ }).click()
+  await page.getByRole('button', { name: /Véhicule lourd/ }).click()
   await page.getByRole('button', { name: 'Suivant' }).click()
-  await expect(page.getByText('Quel ticket prendre ?')).toBeVisible()
-  await expect(page.getByRole('button', { name: /Visiteur/ }).first()).toBeVisible()
+  const zone = page.getByRole('combobox')
+  await zone.fill('750')
+  await page.getByRole('option', { name: /Paris/ }).first().click()
+  await page.getByRole('button', { name: 'Suivant' }).click()
+  // Straight to the days: the heavy visitor rate, 6 hours in Paris at three times the light price.
+  await expect(page.getByText('Prix d’un ticket')).toBeVisible()
+  await expect(page.getByText('72,00 €').first()).toBeVisible()
+})
+
+test('programmer un ticket : carte mobilité CMI-S, tout Paris coché par défaut', async ({ page }) => {
+  await demo(page)
+  await wizardButton(page).click()
+  await page.getByRole('button', { name: /Carte mobilité CMI-S/ }).click()
+  await page.getByRole('button', { name: 'Suivant' }).click()
+  await expect(page.getByText('Arrondissements couverts · tout Paris')).toBeVisible()
+  await expect(page.getByRole('combobox')).toHaveCount(0) // no zone asked
+  await expect(page.getByRole('button', { name: 'Suivant' })).toBeDisabled() // the card attestation first
+  await page.getByRole('checkbox').check()
+  await page.getByRole('button', { name: 'Suivant' }).click()
+  await expect(page.getByText(/ticket carte mobilité CMI-S d’une journée/)).toBeVisible()
 })
 
 test('programmer un ticket : un tarif sans durées ni nom ne fait pas planter', async ({ page }) => {
@@ -86,6 +103,7 @@ test('programmer un ticket : un tarif sans durées ni nom ne fait pas planter', 
   ] }))
   await demo(page)
   await wizardButton(page).click()
+  await page.getByRole('button', { name: 'Suivant' }).click() // the type (light by default), then the zone
   const zone = page.getByRole('combobox')
   await zone.fill('923')
   await page.getByRole('option', { name: '92300' }).click()
@@ -101,11 +119,10 @@ test('programmer un ticket : à Paris, les dimanches ne se choisissent pas', asy
   const sunday = new Date(firstOfNext.getFullYear(), firstOfNext.getMonth(), 1 + ((7 - firstOfNext.getDay()) % 7))
   const pick = async (typed: string, option: RegExp) => {
     await wizardButton(page).click()
+    await page.getByRole('button', { name: 'Suivant' }).click() // the type (light by default), then the zone
     const zone = page.getByRole('combobox')
     await zone.fill(typed)
     await page.getByRole('option', { name: option }).first().click()
-    await page.getByRole('button', { name: 'Suivant' }).click()
-    await page.getByRole('button', { name: /Visiteur/ }).first().click()
     await page.getByRole('button', { name: 'Suivant' }).click()
     await page.getByRole('button', { name: 'Date spécifique' }).click()
     await page.getByRole('button', { name: 'Mois suivant' }).click()
@@ -121,11 +138,10 @@ test('programmer un ticket : à Paris, les dimanches ne se choisissent pas', asy
 test('programmer un ticket : une heure déjà passée est refusée', async ({ page }) => {
   await demo(page)
   await wizardButton(page).click()
+  await page.getByRole('button', { name: 'Suivant' }).click() // the type (light by default), then the zone
   const zone = page.getByRole('combobox')
   await zone.fill('690')
   await page.getByRole('option', { name: /69000/ }).click()
-  await page.getByRole('button', { name: 'Suivant' }).click()
-  await page.getByRole('button', { name: /Visiteur/ }).first().click()
   await page.getByRole('button', { name: 'Suivant' }).click()
   await page.getByRole('button', { name: 'Date spécifique' }).click()
   const label = (d: Date) => d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -230,11 +246,10 @@ async function twoVehicleTicket(page: Page, confirmReply: { status: number; json
   await wizardButton(page).click()
   await page.getByRole('button', { name: /GH-456-JK/ }).click()
   await expect(page.getByRole('button', { name: /GH-456-JK/ })).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: 'Suivant' }).click() // the type (light by default), then the zone
   const zone = page.getByRole('combobox')
   await zone.fill('690')
   await page.getByRole('option', { name: /69000/ }).click()
-  await page.getByRole('button', { name: 'Suivant' }).click()
-  await page.getByRole('button', { name: /Visiteur/ }).first().click()
   await page.getByRole('button', { name: 'Suivant' }).click()
   await page.getByRole('button', { name: 'Date spécifique' }).click()
   await page.getByRole('button', { name: new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }), exact: true }).click()

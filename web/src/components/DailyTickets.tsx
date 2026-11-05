@@ -543,8 +543,9 @@ export function DailyWizard({
   // CMI-S, in Paris only for now: the arrondissements covered, all of them unless the user unticks some.
   const [zones, setZones] = useState<string[]>(editing?.cmis ? (editing.locations ?? [editing.location]) : PARIS_ZONES)
   const handiZones = kind === 'cmis' ? [...zones].sort() : []
-  // Step 2 (the rate) skipped: the type said which one; « Précédent » from step 3 goes back to step 1.
-  const [chosen, setChosen] = useState(false)
+  // The rates found for this zone and vehicle, when the type did not say which one: asked at step 2, under the zone.
+  const [ratesKey, setRatesKey] = useState<string | null>(null)
+  const lookKey = `${kind === 'cmis' ? handiZones[0] : zoneTyped}|${plate}`
   const defaultZone = useRef(zoneTyped)
   useEffect(() => {
     // Another vehicle picked: its own zone, unless the user typed one.
@@ -612,6 +613,7 @@ export function DailyWizard({
   // The CMI-S ticket is chosen with the vehicle's type (Paris only, for now): not among the visitor rates.
   const handiRate = null as Rate | null
   const effective = usable.find((r) => r.ratePolicyId === rateId) ?? null
+  const showRates = kind !== 'cmis' && !!rates && ratesKey === lookKey
   // One question, every answer with its price: the CMI-S card first, then the visitor rates by weight.
   const options = [...(handiRate ? [handiRate] : []), ...usable.filter((r) => !handi(r)).sort((a, b) => Number(heavy(a)) - Number(heavy(b)))]
   // PayByPhone gives no maximum stay with its rates: a day when the rate sells days; for visitors, Paris' 6 hours,
@@ -686,7 +688,7 @@ export function DailyWizard({
         return
       }
       setRateId((kept || byKind || visitors[0] || first[0])?.ratePolicyId ?? null)
-      setChosen(!!byKind)
+      setRatesKey(byKind ? null : key)
       setStep(byKind && !preset.current ? 3 : 2)
     } catch (e) {
       setError((e as Error).message)
@@ -860,7 +862,7 @@ export function DailyWizard({
     }
   }
 
-  const steps = [editing ? 'Type et zone' : 'Véhicule et zone', 'Votre ticket', initialTicket ? 'Horaires' : 'Horaires et jours', editing ? 'Vérifier et enregistrer' : 'Vérifier et activer']
+  const steps = [editing ? 'Type de véhicule' : 'Véhicule et type', kind === 'cmis' ? 'Arrondissements' : 'Zone', initialTicket ? 'Horaires' : 'Horaires et jours', editing ? 'Vérifier et enregistrer' : 'Vérifier et activer']
 
   return (
     <Dialog open onOpenChange={(o) => !o && !saving && !locked && onClose()}>
@@ -928,6 +930,11 @@ export function DailyWizard({
                   ))}
                 </div>
               </div>
+            </>
+          )}
+
+          {step === 2 && (
+            <>
               {kind === 'cmis' ? (
                 <>
                   {/* One free Handi ticket in each arrondissement ticked: all of Paris by default. */}
@@ -972,12 +979,8 @@ export function DailyWizard({
                   <ZoneInput value={zoneTyped} onChange={setZoneTyped} hint={withPayByPhone('Le numéro de zone PayByPhone, indiqué sur le panneau ou l’horodateur.')} />
                 </div>
               )}
-              {error && <p className={ui.error}>{error}</p>}
-            </>
-          )}
-
-          {step === 2 && (
-            <>
+              {/* The type did not say the rate (a zone selling several visitor rates): asked here. */}
+              {showRates && (
               <div>
                 <p className={ui.label}>Quel ticket prendre ?</p>
                 <div className="space-y-2">
@@ -1013,9 +1016,8 @@ export function DailyWizard({
                   </p>
                 )}
               </div>
-              {effective && handi(effective) && (
-                <CmisAttest checked={cmis} onChange={setCmis} />
               )}
+              {error && <p className={ui.error}>{error}</p>}
             </>
           )}
 
@@ -1282,22 +1284,22 @@ export function DailyWizard({
 
           <div className="flex gap-3 pt-1">
             {step > 1 && (
-              <button onClick={() => setStep(step === 3 && chosen ? 1 : step - 1)} className={cn(ui.primaryGray, 'w-auto flex-1')}>
+              <button onClick={() => setStep(step - 1)} className={cn(ui.primaryGray, 'w-auto flex-1')}>
                 Précédent
               </button>
             )}
             {step === 1 && (
-              <button
-                onClick={findRates}
-                disabled={!plate || looking || (kind === 'cmis' ? !cmis || !handiZones.length : !zoneTyped)}
-                className={cn(ui.primary, 'flex-[2]')}
-              >
-                {looking ? <Loader2 className="size-5 animate-spin" /> : 'Suivant'}
+              <button onClick={() => setStep(2)} disabled={!plate} className={cn(ui.primary, 'flex-[2]')}>
+                Suivant
               </button>
             )}
             {step === 2 && (
-              <button onClick={() => setStep(3)} disabled={!effective || (handi(effective) && !cmis)} className={cn(ui.primary, 'flex-[2]')}>
-                Suivant
+              <button
+                onClick={showRates ? () => setStep(3) : findRates}
+                disabled={looking || (kind === 'cmis' ? !cmis || !handiZones.length : !zoneTyped) || (showRates && !effective)}
+                className={cn(ui.primary, 'flex-[2]')}
+              >
+                {looking ? <Loader2 className="size-5 animate-spin" /> : 'Suivant'}
               </button>
             )}
             {step === 3 && (
