@@ -130,7 +130,24 @@ class Bot:
             "getVehiclesV3"
         ]
 
+    # What stopping a ticket needs (the web app's fields): asked with the tickets, dropped if PayByPhone refuses them.
+    _STOP_FIELDS = """
+    isStoppable
+    jobId
+    segments {
+      jobLineItemId
+    }"""
+
     def _get_parking_sessions(self, periodType="CURRENT", limit=50):
+        try:
+            return self._read_sessions(periodType, limit, self._STOP_FIELDS)
+        except RuntimeError as e:
+            if "GraphQL error" not in str(e):
+                raise
+            # The list without them still works (no stop button then).
+            return self._read_sessions(periodType, limit, "")
+
+    def _read_sessions(self, periodType, limit, extra):
         query = """query GetParkingSessionsV1($input: GetParkingSessionsInput!) {
   getParkingSessionsV1(input: $input) {
     parkingSessionId
@@ -154,9 +171,9 @@ class Bot:
     totalCost {
       amount
       currency
-    }
+    }%s
   }
-}"""
+}""" % extra
         sessions = self._graphql(
             query, {"input": {"periodType": periodType, "offset": 0, "limit": limit}}
         )["getParkingSessionsV1"]
@@ -444,6 +461,21 @@ class Bot:
         return self._graphql(query, variables)["extendParkingSessionV1"][
             "parkingSessionResponse"
         ]
+
+    def stop(self, parkingSessionId, jobId, jobLineItemId):
+        """Stops a running ticket now, as « Arrêter » in the PayByPhone app (only when it says isStoppable)."""
+        query = """mutation StopParkingSessionV1($input: StopParkingSessionV1Input!) {
+  stopParkingSessionV1(input: $input) {
+    stopParkingSessionResponse {
+      parkingSessionId
+      stopDateTime
+      newExpiryTime
+    }
+  }
+}"""
+        variables = {"input": {"request": {"parkingSessionId": parkingSessionId, "jobLineItemId": jobLineItemId,
+                                           "jobId": jobId}}}
+        return self._graphql(query, variables)["stopParkingSessionV1"]["stopParkingSessionResponse"]
 
     def _create_job(
         self,

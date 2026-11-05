@@ -186,10 +186,17 @@ class DemoBot:
             "ratePolicy": {"ratePolicyId": str(ratePolicyId)},
             "totalCost": {"amount": cost, "currency": "EUR"},
             "isRenewable": True,
+            # Like PayByPhone: a resident week runs to its end, a visitor or Handi ticket can be stopped.
+            "isStoppable": str(ratePolicyId) != "101", "jobId": str(uuid.uuid4()),
+            "segments": [{"jobLineItemId": str(uuid.uuid4())}],
         }
         self.sessions.append(session)
         return {"parkingSessionId": session["parkingSessionId"], "cost": session["totalCost"],
                 "expireTime": session["expireTime"].isoformat()}
+
+    def stop(self, parkingSessionId, jobId, jobLineItemId):
+        self.sessions = [x for x in self.sessions if x["parkingSessionId"] != parkingSessionId]
+        return {"parkingSessionId": parkingSessionId}
 
     def extend(self, parkingSessionId, durationQuantity, durationTimeUnit, licensePlate, locationId, ratePolicyId,
                paymentAccountId):
@@ -512,7 +519,14 @@ def serialize_session(s):
         "resident": (bool(RESIDENT_RATE.search((s.get("ratePolicy") or {}).get("type") or ""))
                      if (s.get("ratePolicy") or {}).get("type") else None),
         "cost": s.get("totalCost"),
+        # PayByPhone lets it be stopped now (« Arrêter » in its app): PayByBot can stop it too.
+        "stoppable": bool(s.get("isStoppable") and s.get("jobId") and stop_line(s)),
     }
+
+
+def stop_line(s):
+    """The payment line PayByPhone's stop needs: the last segment's (the one running now)."""
+    return next((x.get("jobLineItemId") for x in reversed(s.get("segments") or []) if x.get("jobLineItemId")), None)
 
 
 def card_valid_until(card):
@@ -2540,6 +2554,10 @@ def zones_of(body, days):
     return zones if body.cmis and days and len(zones) > 1 else None
 
 
+class StopTickets(BaseModel):
+    ids: list[Annotated[str, Field(max_length=80)]] = Field(min_length=1, max_length=25)
+
+
 class Pause(BaseModel):
     start: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")  # first paused day (Paris)
     end: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")  # last paused day; None = no end yet
@@ -3512,6 +3530,29 @@ def monthlies_from(metadata):
 
 def fmt_qty(value):
     return int(value) if float(value).is_integer() else value
+
+
+@app.post("/api/sessions/stop")
+def stop_tickets(body: StopTickets, pbb_session: str = Cookie(None)):
+    """Stops running tickets now (a CMI-S ticket in several arrondissements: all of them), as « Arrêter » in the
+    PayByPhone app; only those PayByPhone says can be stopped."""
+    s = current(pbb_session)
+    running = {x.get("parkingSessionId"): x for x in guarded(lambda: s.call("get_parking_sessions")) or []}
+    tickets = [running.get(i) for i in body.ids]
+    if not all(tickets) or not all(serialize_session(x)["stoppable"] for x in tickets):
+        raise HTTPException(400, "PayByPhone ne permet pas d'arrêter ce ticket. Il reste valable jusqu'à sa fin.")
+    stopped = 0
+    for x in tickets:
+        try:
+            s.call("stop", x["parkingSessionId"], x["jobId"], stop_line(x))
+            stopped += 1
+        except Exception as e:
+            log.warning("stop refused: %s", str(e)[:400])
+    log.info("tickets stopped: %s of %s", stopped, len(tickets))
+    if not stopped:
+        raise HTTPException(502, "PayByPhone n'a pas arrêté le ticket. Réessayez, ou arrêtez-le dans l'application PayByPhone.")
+    record_activity("Ticket arrêté", s, ["%s ticket(s)." % stopped])
+    return {"stopped": stopped, "asked": len(tickets)}
 
 
 @app.post("/api/pay")

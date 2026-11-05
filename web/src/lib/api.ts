@@ -13,6 +13,8 @@ export type Session = {
   /** A resident ticket (the weekly renewal is only for these); null when PayByPhone does not say. */
   resident?: boolean | null
   cost?: Money
+  /** PayByPhone lets it be stopped now (« Arrêter » in its app). */
+  stoppable?: boolean
 }
 export type Unit = 'Days' | 'Hours' | 'Minutes'
 export type Rate = {
@@ -232,6 +234,7 @@ export const api = {
   verifySignup: (code: string) => post<Me>('/api/signup/verify', { code }),
   resendSignupCode: () => post<SignupPending>('/api/signup/resend'),
   deleteData: () => request('/api/me/data', { method: 'DELETE' }),
+  stopTickets: (ids: string[]) => post<{ stopped: number; asked: number }>('/api/sessions/stop', { ids }),
   overview: () => request<Overview>('/api/overview'),
   /** The weeks already paid, from PayByPhone, newest first. */
   history: () => request<Session[]>('/api/history'),
