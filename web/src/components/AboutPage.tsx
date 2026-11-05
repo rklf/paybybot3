@@ -39,15 +39,7 @@ const initials = (name: string) =>
     .map((w) => w[0])
     .join('')
 
-const FACTS = [
-  ['Société', `${PUBLISHER.name}, ${PUBLISHER.form}`],
-  ['Adresse', PUBLISHER.address],
-  ['SIREN', PUBLISHER.siren],
-  ['Président', PUBLISHER.director.replace(/, Président$/, '')],
-  ['Contact', PUBLISHER.email],
-] as const
-
-/** « Qui sommes-nous », in the top bar: who runs PayByBot, what it never asks for, and how to reach us. Text only. */
+/** « Qui sommes-nous », in the top bar: who runs PayByBot and what it never asks for. Text only. */
 export function AboutPage({ hosted, signedIn = false }: { hosted: boolean; signedIn?: boolean }) {
   return (
     <div className="flex min-h-dvh flex-col bg-background text-ink">
@@ -100,28 +92,6 @@ export function AboutPage({ hosted, signedIn = false }: { hosted: boolean; signe
             </li>
           ))}
         </ul>
-
-        <h2 className="mt-12 font-heading text-[1.2rem] leading-snug font-semibold tracking-[-0.01em]">Qui est derrière</h2>
-        <dl className="mt-4 divide-y divide-ink/10 border-y border-ink/10">
-          {FACTS.map(([term, value]) => (
-            <div key={term} className="flex flex-wrap justify-between gap-x-6 gap-y-0.5 py-3">
-              <dt className="text-ink/55">{term}</dt>
-              <dd className="ml-auto text-right text-ink">
-                {term === 'Société' ? (
-                  <a href={STUDIO_URL} target="_blank" rel="noopener noreferrer" className={ui.link}>
-                    {value}
-                  </a>
-                ) : term === 'Contact' ? (
-                  <a href={`mailto:${value}`} className={ui.link}>
-                    {value}
-                  </a>
-                ) : (
-                  value
-                )}
-              </dd>
-            </div>
-          ))}
-        </dl>
 
         {!signedIn && (
           <a href="#/inscription" className={cn(ui.primary, 'mt-14 h-12 w-full text-base sm:w-fit sm:px-8')}>
