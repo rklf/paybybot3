@@ -120,9 +120,11 @@ function Ticket({
   return (
     <article data-renewal-card className="rise overflow-hidden rounded-2xl border border-ink/10 bg-white">
       {/* The car and where: the plate on the left, the zone on the right, on one line. */}
-      <div className="flex items-center justify-between gap-4 px-5 py-4">
-        <Plate plate={session.plate} size="sm" />
-        <ZoneTag zone={place ?? session.location} resident={!daily} />
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-4">
+        <span className="shrink-0">
+          <Plate plate={session.plate} size="sm" />
+        </span>
+        <ZoneTag zone={place ?? session.location} resident={!daily} kind={session.kind} />
       </div>
 
       {/* The ticket: when it ends (renewal on) or the time left, large, with the end beside it. */}
@@ -424,7 +426,7 @@ export function Dashboard({
     const zones = zonesOf(s)
     if (!zones) return undefined
     const n = running.filter((x) => sameCar(x.plate, s.plate) && zones.includes(x.location)).length
-    return n >= 20 ? 'Tout Paris' : `${n} arrondissement${n > 1 ? 's' : ''}`
+    return n >= 20 ? 'Tout Paris' : `${n} arr.`
   }
   // The programmed-ticket cards shown below (as DailyTickets lists them: a finished one-off ticket is not).
   const shownDaily = (data?.autopilots ?? []).filter((ap) => {

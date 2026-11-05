@@ -15,6 +15,8 @@ export type Session = {
   cost?: Money
   /** PayByPhone lets it be stopped now (« Arrêter » in its app). */
   stoppable?: boolean
+  /** A non-resident ticket's kind: « Véhicule léger », « Véhicule lourd » or « Carte mobilité CMI-S ». */
+  kind?: string | null
 }
 export type Unit = 'Days' | 'Hours' | 'Minutes'
 export type Rate = {

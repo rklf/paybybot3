@@ -69,3 +69,14 @@ class StopFieldsRefused(unittest.TestCase):
         with patch.object(Bot, "_graphql", side_effect=graphql):
             sessions = Bot.__new__(Bot)._get_parking_sessions()
         self.assertEqual((asked, [x["parkingSessionId"] for x in sessions]), ([True, False], ["x"]))
+
+
+class TicketKind(unittest.TestCase):
+    def test_the_rate_name_says_the_kind(self):
+        s = demo_session()
+        web.RATE_NAMES.clear()
+        self.assertEqual(web.ticket_kind(s, "75016", "GH456JK", "105"), "Carte mobilité CMI-S")
+        self.assertEqual(web.ticket_kind(s, "75016", "GH456JK", "104"), "Véhicule lourd")
+        self.assertEqual(web.ticket_kind(s, "75016", "GH456JK", "102"), "Véhicule léger")
+        with patch.object(s, "call", side_effect=AssertionError("asked again")):
+            self.assertEqual(web.ticket_kind(s, "75016", "GH456JK", "102"), "Véhicule léger")  # kept

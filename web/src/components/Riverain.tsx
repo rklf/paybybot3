@@ -512,10 +512,19 @@ export function RiverainCard({
 }
 
 /** The kind of ticket and the zone, as one quiet two-part tag: « Résident | 75001 ». */
-export function ZoneTag({ zone, resident = true }: { zone: string; resident?: boolean }) {
+export function ZoneTag({ zone, resident = true, kind }: { zone: string; resident?: boolean; kind?: string | null }) {
+  // The ticket's kind in front of the zone: « Résident », or for another ticket its vehicle type (or CMI-S card).
+  const badge = resident ? 'Résident' : kind
+  // On a phone, the short word (« Léger », « Lourd », « CMI-S »): the plate and the zone must fit beside it.
+  const short = badge?.replace(/^Véhicule (\S)/, (_, c: string) => c.toUpperCase()).replace(/^Carte mobilité /, '')
   return (
     <span className="inline-flex shrink-0 items-center overflow-hidden rounded-full border border-ink/10 text-[0.875rem] leading-none">
-      {resident && <span className="bg-[#4e9aa0]/10 px-2.5 py-1.5 font-medium text-[#3d7f84]">Résident</span>}
+      {badge && (
+        <span className="bg-[#4e9aa0]/10 px-2.5 py-1.5 font-medium text-[#3d7f84]">
+          <span className="sm:hidden">{short}</span>
+          <span className="hidden sm:inline">{badge}</span>
+        </span>
+      )}
       <span className="px-2.5 py-1.5 text-ink/70 tabular-nums">{zone}</span>
     </span>
   )

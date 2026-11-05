@@ -3064,16 +3064,57 @@ def overview(pbb_session: str = Cookie(None)):
             log.info("no usable payment method; PayByPhone returned %s",
                      {k: len(v) if isinstance(v, list) else type(v).__name__ for k, v in accounts.items()})
         kept = got["kept"]
+        sessions = [serialize_session(x) for x in got["sessions"]]
+        # A non-resident ticket says its kind: light or heavy vehicle, or the CMI-S card (known without asking when
+        # it is one of a CMI-S ticket programmed here; the others' rate names asked together).
+        cmis = {(plate_key(a["plate"]), str(z)) for a in got["renewals"] if a.get("cmis")
+                for z in (a.get("locations") or [a["location"]])}
+        others = [x for x in sessions if not x["resident"]]
+        for x in others:
+            if (plate_key(x["plate"] or ""), str(x["location"])) in cmis:
+                x["kind"] = "Carte mobilité CMI-S"
+        others = [x for x in others if "kind" not in x]
+        if others:
+            with ThreadPoolExecutor(max_workers=min(8, len(others))) as pool:
+                kinds = list(pool.map(lambda x: contextvars.copy_context().run(
+                    ticket_kind, s, x["location"], x["plate"], x["rate"]), others))
+            for x, kind in zip(others, kinds):
+                x["kind"] = kind
         return {
             "vehicles": [{"plate": v["licensePlate"], "country": v.get("country"), "type": v.get("type"),
                           "zone": (kept.get(plate_key(v["licensePlate"])) or {}).get("z")} for v in vehicles],
             "payments": payments,
-            "sessions": [serialize_session(x) for x in got["sessions"]],
+            "sessions": sessions,
             "autopilots": got["renewals"],
             "history": s.history[:10],
         }
 
     return guarded(load)
+
+
+RATE_NAMES = {}  # (zone, rate id) -> PayByPhone's rate name: a ticket only gives its rate's id
+
+
+def ticket_kind(s, zone, plate, rate):
+    """« Véhicule léger », « Véhicule lourd » or « Carte mobilité CMI-S » for a running non-resident ticket, from its
+    rate's name in that zone (asked once per zone and kept); None when PayByPhone does not say."""
+    key = (str(zone), str(rate))
+    if key not in RATE_NAMES:
+        try:
+            for r in s.call("get_rate_options", zone, plate) or []:
+                RATE_NAMES[(str(zone), str(r.get("ratePolicyId")))] = r.get("name") or ""
+        except Exception as e:
+            log.info("rate names of zone %s unread: %s", zone, str(e)[:200])
+            return None
+        RATE_NAMES.setdefault(key, "")  # not among this car's rates: not asked again
+    name = RATE_NAMES[key]
+    if HANDI_RATE.search(name):
+        return "Carte mobilité CMI-S"
+    if re.search(r"lourd", name, re.I):
+        return "Véhicule lourd"
+    if re.search(r"l[ée]ger", name, re.I):
+        return "Véhicule léger"
+    return re.split(r"\s+-\s+", name)[0] or None
 
 
 def french_zone(s, number):
