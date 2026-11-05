@@ -156,7 +156,7 @@ export function InviteButton({
         </button>
       ) : (
         <button onClick={() => setOpen(true)} disabled={disabled} className={cn(ui.pillGray, 'gap-2')}>
-          <UserPlus className="size-4" /> <span className="hidden sm:inline">Inviter un proche</span>
+          <UserPlus className="hidden size-4 sm:block" /> Inviter<span className="hidden sm:inline">&nbsp;un proche</span>
         </button>
       )}
       {open && (
