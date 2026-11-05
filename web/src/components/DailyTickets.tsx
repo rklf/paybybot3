@@ -540,8 +540,8 @@ export function DailyWizard({
   const [zone, setZone] = useState(editing?.location ?? initialZone ?? zoneFor(plate))
   // The first question, the vehicle's type: it picks the rate (light or heavy visitor, or the free CMI-S ticket).
   const [kind, setKind] = useState<'light' | 'heavy' | 'cmis'>(editing?.cmis ? 'cmis' : 'light')
-  // CMI-S, in Paris only for now: the arrondissements covered, all of them unless the user unticks some.
-  const [zones, setZones] = useState<string[]>(editing?.cmis ? (editing.locations ?? [editing.location]) : PARIS_ZONES)
+  // CMI-S, in Paris only for now: the arrondissements covered, none until the user ticks some (or « Tous »).
+  const [zones, setZones] = useState<string[]>(editing?.cmis ? (editing.locations ?? [editing.location]) : [])
   const handiZones = kind === 'cmis' ? [...zones].sort() : []
   // The rates found for this zone and vehicle, when the type did not say which one: asked at step 2, under the zone.
   const [ratesKey, setRatesKey] = useState<string | null>(null)
@@ -941,13 +941,18 @@ export function DailyWizard({
                   <div>
                     <div className="flex items-baseline justify-between gap-3">
                       <p className={ui.label}>
-                        Arrondissements couverts · {handiZones.length >= 20 ? 'tout Paris' : handiZones.length}
+                        Arrondissements couverts
+                        {handiZones.length > 0 && ` · ${handiZones.length >= 20 ? 'tout Paris' : handiZones.length}`}
                       </p>
-                      {handiZones.length < 20 && (
-                        <button type="button" onClick={() => setZones(PARIS_ZONES)} className={cn('text-sm', ui.link)}>
-                          Tout Paris
-                        </button>
-                      )}
+                      <label className="flex cursor-pointer items-center gap-2 text-sm text-ink/80">
+                        <input
+                          type="checkbox"
+                          checked={handiZones.length >= 20}
+                          onChange={(e) => setZones(e.target.checked ? PARIS_ZONES : [])}
+                          className="size-4 accent-[#4e9aa0]"
+                        />
+                        Tous
+                      </label>
                     </div>
                     <div className="grid grid-cols-5 gap-1.5">
                       {PARIS_ZONES.map((z, i) => {
@@ -957,11 +962,11 @@ export function DailyWizard({
                             key={z}
                             type="button"
                             aria-pressed={on}
-                            // At least one arrondissement.
-                            onClick={() => setZones(on ? (handiZones.length > 1 ? handiZones.filter((x) => x !== z) : handiZones) : [...handiZones, z])}
+                            onClick={() => setZones(on ? handiZones.filter((x) => x !== z) : [...handiZones, z])}
+                            // Grey cells; a ticked one keeps its grey with a green border.
                             className={cn(
-                              'h-10 rounded-lg border text-sm tabular-nums transition',
-                              on ? 'border-[#4e9aa0] bg-[#4e9aa0]/10 font-semibold text-ink' : 'border-ink/12 text-ink/45 hover:border-ink/25',
+                              'h-10 rounded-lg border-2 bg-ink/[0.05] text-sm tabular-nums transition',
+                              on ? 'border-[#4e9aa0] font-semibold text-ink' : 'border-transparent text-ink/55 hover:bg-ink/[0.08]',
                             )}
                           >
                             {i === 0 ? '1er' : `${i + 1}e`}

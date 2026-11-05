@@ -82,15 +82,17 @@ test('programmer un ticket : le type de véhicule choisit le tarif visiteur', as
   await expect(page.getByText('72,00 €').first()).toBeVisible()
 })
 
-test('programmer un ticket : carte mobilité CMI-S, tout Paris coché par défaut', async ({ page }) => {
+test('programmer un ticket : carte mobilité CMI-S, « Tous » coche tout Paris', async ({ page }) => {
   await demo(page)
   await wizardButton(page).click()
   await page.getByRole('button', { name: /Carte mobilité CMI-S/ }).click()
   await page.getByRole('button', { name: 'Suivant' }).click()
-  await expect(page.getByText('Arrondissements couverts · tout Paris')).toBeVisible()
   await expect(page.getByRole('combobox')).toHaveCount(0) // no zone asked
+  await expect(page.getByRole('button', { name: '5e', exact: true })).toHaveAttribute('aria-pressed', 'false') // none by default
+  await page.getByRole('checkbox', { name: 'Tous' }).check()
+  await expect(page.getByText('Arrondissements couverts · tout Paris')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Suivant' })).toBeDisabled() // the card attestation first
-  await page.getByRole('checkbox').check()
+  await page.getByRole('checkbox', { name: /titulaire/ }).check()
   await page.getByRole('button', { name: 'Suivant' }).click()
   await expect(page.getByText(/ticket carte mobilité CMI-S d’une journée/)).toBeVisible()
 })
