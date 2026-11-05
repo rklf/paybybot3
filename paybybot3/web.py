@@ -1834,7 +1834,7 @@ def stored_to_autopilot(row):
         "email": row.get("email") or "", "pausedFrom": row.get("paused_from"), "pausedUntil": row.get("paused_until"),
         "days": row.get("days") or None, "start": row.get("start") or None,
         "dateFrom": row.get("date_from") or None, "dateTo": row.get("date_to") or None,
-        "locations": row.get("locations") or None,
+        "locations": row.get("locations") or None, "cmis": bool(row.get("cmis_attested_at")),
         "validate": validate_token(row["owner"], row["id"]) if row.get("last_error") == BANK_WAIT else None,
     }
 

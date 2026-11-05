@@ -61,6 +61,26 @@ const heavy = (r: Rate) => /lourd/i.test(r.name)
 const light = (r: Rate) => /l[ée]ger/i.test(r.name)
 const handi = (r: Rate) => /handi/i.test(`${r.name} ${r.type}`)
 
+/** The first question: the vehicle's type, which says the rate. */
+const KINDS: ['light' | 'heavy' | 'cmis', string, string][] = [
+  ['light', 'Véhicule léger', 'Moins de 1,6 t (2 t électrique)'],
+  ['heavy', 'Véhicule lourd', 'Plus de 1,6 t (2 t électrique)'],
+  ['cmis', 'Carte mobilité CMI-S', 'Tout Paris, un ticket gratuit par arrondissement'],
+]
+
+/** PayByPhone does not check the card: the holder states it, kept with the ticket. */
+function CmisAttest({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-ink/[0.03] px-4 py-3 text-sm leading-relaxed text-ink/80">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-1 size-4 shrink-0 accent-[#4e9aa0]" />
+      <span>
+        Je suis titulaire d’une carte mobilité inclusion mention stationnement (CMI-S) et je la place derrière le
+        pare-brise. Sans elle, ce ticket gratuit ne me couvre pas.
+      </span>
+    </label>
+  )
+}
+
 /** The 20 Paris arrondissements: a Handi ticket in Paris covers all of them by default, one free ticket in each. */
 const PARIS_ZONES = Array.from({ length: 20 }, (_, i) => `750${String(i + 1).padStart(2, '0')}`)
 /** Where a programmed ticket is taken: « Tout Paris », « 3 arrondissements » or its one zone. */
@@ -515,16 +535,23 @@ export function DailyWizard({
     data.vehicles.find((v) => keyOf(v.plate) === keyOf(p))?.zone ??
     data.sessions.find((x) => keyOf(x.plate) === keyOf(p) && new Date(x.expire).getTime() > Date.now())?.location ??
     ''
+  // The zone typed (visitor), and the zone in use: the one typed, or for CMI-S the first arrondissement ticked.
+  const [zoneTyped, setZoneTyped] = useState(editing && !editing.cmis ? editing.location : (initialZone ?? zoneFor(plate)))
   const [zone, setZone] = useState(editing?.location ?? initialZone ?? zoneFor(plate))
-  // Handi in Paris: the arrondissements covered, all of them unless the user unticks some (the zone typed always is).
-  const [zones, setZones] = useState<string[]>(editing ? (editing.locations ?? [editing.location]) : PARIS_ZONES)
-  const defaultZone = useRef(zone)
+  // The first question, the vehicle's type: it picks the rate (light or heavy visitor, or the free CMI-S ticket).
+  const [kind, setKind] = useState<'light' | 'heavy' | 'cmis'>(editing?.cmis ? 'cmis' : 'light')
+  // CMI-S, in Paris only for now: the arrondissements covered, all of them unless the user unticks some.
+  const [zones, setZones] = useState<string[]>(editing?.cmis ? (editing.locations ?? [editing.location]) : PARIS_ZONES)
+  const handiZones = kind === 'cmis' ? [...zones].sort() : []
+  // Step 2 (the rate) skipped: the type said which one; « Précédent » from step 3 goes back to step 1.
+  const [chosen, setChosen] = useState(false)
+  const defaultZone = useRef(zoneTyped)
   useEffect(() => {
     // Another vehicle picked: its own zone, unless the user typed one.
-    if (zone && zone !== defaultZone.current) return
+    if (zoneTyped && zoneTyped !== defaultZone.current) return
     const z = zoneFor(plate)
     defaultZone.current = z
-    setZone(z)
+    setZoneTyped(z)
   }, [plate]) // eslint-disable-line react-hooks/exhaustive-deps
   const [rates, setRates] = useState<Rate[] | null>(null)
   const [looking, setLooking] = useState(false)
@@ -582,12 +609,9 @@ export function DailyWizard({
   // The visitor rate comes as « léger » and « lourd »: PayByPhone does not know the weight, so one question instead.
   const usable = useMemo(() => (rates ?? []).filter((r) => !r.parkingNotAllowedReason && !resident(r)), [rates])
   const hasWeight = usable.some(light) && usable.some(heavy)
-  // The CMI-S ticket is offered in Paris only, for now.
-  const handiRate = paris ? (usable.find(handi) ?? null) : null
+  // The CMI-S ticket is chosen with the vehicle's type (Paris only, for now): not among the visitor rates.
+  const handiRate = null as Rate | null
   const effective = usable.find((r) => r.ratePolicyId === rateId) ?? null
-  // The zones a Handi ticket covers: in Paris the arrondissements ticked (the zone typed included), else its zone.
-  const parisZone = PARIS_ZONES.find((z) => arrondissement(z) === place) ?? zone
-  const handiZones = effective && handi(effective) && paris ? [...new Set([parisZone, ...zones])].sort() : []
   // One question, every answer with its price: the CMI-S card first, then the visitor rates by weight.
   const options = [...(handiRate ? [handiRate] : []), ...usable.filter((r) => !handi(r)).sort((a, b) => Number(heavy(a)) - Number(heavy(b)))]
   // PayByPhone gives no maximum stay with its rates: a day when the rate sells days; for visitors, Paris' 6 hours,
@@ -617,15 +641,19 @@ export function DailyWizard({
       api.rates(z, pl).then((r) => r, (e) => e as Error),
     ])
   useEffect(() => {
-    if (!plate || !/^[0-9A-Za-z]{5,12}$/.test(zone)) return // a whole number (5 characters at least): no call per keystroke
-    const key = `${zone}|${plate}`
+    const z = kind === 'cmis' ? handiZones[0] : zoneTyped
+    if (!plate || !z || !/^[0-9A-Za-z]{5,12}$/.test(z)) return // a whole number (5 characters at least): no call per keystroke
+    const key = `${z}|${plate}`
     const t = setTimeout(() => {
-      if (ahead.current?.key !== key) ahead.current = { key, p: lookUp(zone, plate) }
+      if (ahead.current?.key !== key) ahead.current = { key, p: lookUp(z, plate) }
     }, 350)
     return () => clearTimeout(t)
-  }, [zone, plate]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [zoneTyped, plate, kind, handiZones[0]]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function findRates() {
+    // CMI-S: the rates of the first arrondissement ticked (each zone's own Handi rate is found by the server).
+    const zone = kind === 'cmis' ? handiZones[0] : zoneTyped
+    setZone(zone)
     setLooking(true)
     setError(null)
     try {
@@ -646,8 +674,20 @@ export function DailyWizard({
       setRates(list)
       const first = list.filter((r) => !r.parkingNotAllowedReason && !resident(r))
       const kept = edit.current && first.find((r) => r.ratePolicyId === String(edit.current!.rate))
-      setRateId((kept || (isParis(zone) && first.find(handi)) || first.find((r) => !handi(r)) || first[0])?.ratePolicyId ?? null)
-      setStep(2)
+      const visitors = first.filter((r) => !handi(r))
+      const weighed = visitors.some(light) && visitors.some(heavy)
+      // The type says the rate: CMI-S, or light / heavy when PayByPhone sells both; else asked at step 2.
+      const byKind =
+        kind === 'cmis'
+          ? first.find(handi)
+          : weighed ? visitors.find(kind === 'heavy' ? heavy : light) : visitors.length === 1 ? visitors[0] : undefined
+      if (kind === 'cmis' && !byKind) {
+        setError('PayByPhone ne propose pas le ticket carte mobilité CMI-S pour ce véhicule.')
+        return
+      }
+      setRateId((kept || byKind || visitors[0] || first[0])?.ratePolicyId ?? null)
+      setChosen(!!byKind)
+      setStep(byKind && !preset.current ? 3 : 2)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -693,6 +733,7 @@ export function DailyWizard({
     const same = usable.find((r) => r.ratePolicyId === String(t.rate))
     setDays(paris ? [0, 1, 2, 3, 4, 5] : [0, 1, 2, 3, 4, 5, 6]) // renewed every day (Paris: Sundays are free)
     if (!same) return void (preset.current = null) // its rate not offered here: chosen at step 2 (start still its end)
+    setKind(handi(same) ? 'cmis' : heavy(same) ? 'heavy' : 'light')
     if (rateId !== same.ratePolicyId) return setRateId(same.ratePolicyId)
     if (!effective) return
     const begin = new Date(t.start)
@@ -819,7 +860,7 @@ export function DailyWizard({
     }
   }
 
-  const steps = [editing ? 'Zone' : 'Véhicule et zone', 'Votre ticket', initialTicket ? 'Horaires' : 'Horaires et jours', editing ? 'Vérifier et enregistrer' : 'Vérifier et activer']
+  const steps = [editing ? 'Type et zone' : 'Véhicule et zone', 'Votre ticket', initialTicket ? 'Horaires' : 'Horaires et jours', editing ? 'Vérifier et enregistrer' : 'Vérifier et activer']
 
   return (
     <Dialog open onOpenChange={(o) => !o && !saving && !locked && onClose()}>
@@ -866,9 +907,71 @@ export function DailyWizard({
                 </div>
               </div>
               <div>
-                <p className={ui.label}>Où vous garez-vous ?</p>
-                <ZoneInput value={zone} onChange={setZone} hint={withPayByPhone('Le numéro de zone PayByPhone, indiqué sur le panneau ou l’horodateur.')} />
+                <p className={ui.label}>Type de véhicule</p>
+                <div className="space-y-2">
+                  {KINDS.map(([k, title, hint]) => (
+                    <button
+                      key={k}
+                      onClick={() => setKind(k)}
+                      aria-pressed={kind === k}
+                      className={cn(
+                        'flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition',
+                        kind === k ? 'border-[#4e9aa0] bg-[#4e9aa0]/[0.06]' : 'border-ink/15 hover:border-ink/30',
+                      )}
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-medium text-ink">{title}</span>
+                        <span className="block text-sm text-ink/50">{hint}</span>
+                      </span>
+                      {k === 'cmis' && <span className="shrink-0 text-sm font-medium text-ink">Gratuit</span>}
+                    </button>
+                  ))}
+                </div>
               </div>
+              {kind === 'cmis' ? (
+                <>
+                  {/* One free Handi ticket in each arrondissement ticked: all of Paris by default. */}
+                  <div>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <p className={ui.label}>
+                        Arrondissements couverts · {handiZones.length >= 20 ? 'tout Paris' : handiZones.length}
+                      </p>
+                      {handiZones.length < 20 && (
+                        <button type="button" onClick={() => setZones(PARIS_ZONES)} className={cn('text-sm', ui.link)}>
+                          Tout Paris
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {PARIS_ZONES.map((z, i) => {
+                        const on = handiZones.includes(z)
+                        return (
+                          <button
+                            key={z}
+                            type="button"
+                            aria-pressed={on}
+                            // At least one arrondissement.
+                            onClick={() => setZones(on ? (handiZones.length > 1 ? handiZones.filter((x) => x !== z) : handiZones) : [...handiZones, z])}
+                            className={cn(
+                              'h-10 rounded-lg border text-sm tabular-nums transition',
+                              on ? 'border-[#4e9aa0] bg-[#4e9aa0]/10 font-semibold text-ink' : 'border-ink/12 text-ink/45 hover:border-ink/25',
+                            )}
+                          >
+                            {i === 0 ? '1er' : `${i + 1}e`}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <p className="mt-2 text-xs text-ink/45">Un ticket gratuit est pris dans chaque arrondissement coché.</p>
+                  </div>
+                  <CmisAttest checked={cmis} onChange={setCmis} />
+                </>
+              ) : (
+                <div>
+                  <p className={ui.label}>Où vous garez-vous ?</p>
+                  <ZoneInput value={zoneTyped} onChange={setZoneTyped} hint={withPayByPhone('Le numéro de zone PayByPhone, indiqué sur le panneau ou l’horodateur.')} />
+                </div>
+              )}
               {error && <p className={ui.error}>{error}</p>}
             </>
           )}
@@ -903,20 +1006,6 @@ export function DailyWizard({
                       </button>
                     )
                   })}
-                  {!handiRate && (
-                    // No Handi rate offered here by PayByPhone: shown greyed, with the reason.
-                    <div className="flex w-full items-center gap-3 rounded-xl border border-dashed border-ink/15 px-4 py-3 text-left">
-                      <span className="min-w-0 flex-1">
-                        <span className="block font-medium text-ink/45">Carte mobilité CMI-S</span>
-                        <span className="block text-sm text-ink/45">
-                          {paris
-                            ? withPayByPhone('PayByPhone ne le propose pas pour ce véhicule dans cette zone.')
-                            : 'Proposé à Paris seulement, pour l’instant.'}
-                        </span>
-                      </span>
-                      <span className="shrink-0 text-sm text-ink/45">Gratuit</span>
-                    </div>
-                  )}
                 </div>
                 {hasWeight && (
                   <p className="mt-2 text-xs text-ink/45">
@@ -925,51 +1014,7 @@ export function DailyWizard({
                 )}
               </div>
               {effective && handi(effective) && (
-                // PayByPhone does not check the card: the user states it, kept with the ticket.
-                <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-ink/[0.03] px-4 py-3 text-sm leading-relaxed text-ink/80">
-                  <input type="checkbox" checked={cmis} onChange={(e) => setCmis(e.target.checked)} className="mt-1 size-4 shrink-0 accent-[#4e9aa0]" />
-                  <span>
-                    Je suis titulaire d’une carte mobilité inclusion mention stationnement (CMI-S) et je la place derrière le
-                    pare-brise. Sans elle, ce ticket gratuit ne me couvre pas.
-                  </span>
-                </label>
-              )}
-              {effective && handi(effective) && paris && (
-                // One free Handi ticket in each arrondissement ticked: all of Paris by default.
-                <div>
-                  <div className="flex items-baseline justify-between gap-3">
-                    <p className={ui.label}>
-                      Arrondissements couverts · {handiZones.length >= 20 ? 'tout Paris' : handiZones.length}
-                    </p>
-                    {handiZones.length < 20 && (
-                      <button type="button" onClick={() => setZones(PARIS_ZONES)} className={cn('text-sm', ui.link)}>
-                        Tout Paris
-                      </button>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-5 gap-1.5">
-                    {PARIS_ZONES.map((z, i) => {
-                      const on = handiZones.includes(z)
-                      const fixed = z === parisZone // the zone typed: always covered
-                      return (
-                        <button
-                          key={z}
-                          type="button"
-                          aria-pressed={on}
-                          disabled={fixed}
-                          onClick={() => setZones(on ? handiZones.filter((x) => x !== z) : [...handiZones, z])}
-                          className={cn(
-                            'h-10 rounded-lg border text-sm tabular-nums transition',
-                            on ? 'border-[#4e9aa0] bg-[#4e9aa0]/10 font-semibold text-ink' : 'border-ink/12 text-ink/45 hover:border-ink/25',
-                          )}
-                        >
-                          {i === 0 ? '1er' : `${i + 1}e`}
-                        </button>
-                      )
-                    })}
-                  </div>
-                  <p className="mt-2 text-xs text-ink/45">Un ticket gratuit est pris dans chaque arrondissement coché.</p>
-                </div>
+                <CmisAttest checked={cmis} onChange={setCmis} />
               )}
             </>
           )}
@@ -1237,12 +1282,16 @@ export function DailyWizard({
 
           <div className="flex gap-3 pt-1">
             {step > 1 && (
-              <button onClick={() => setStep(step - 1)} className={cn(ui.primaryGray, 'w-auto flex-1')}>
+              <button onClick={() => setStep(step === 3 && chosen ? 1 : step - 1)} className={cn(ui.primaryGray, 'w-auto flex-1')}>
                 Précédent
               </button>
             )}
             {step === 1 && (
-              <button onClick={findRates} disabled={!plate || !zone || looking} className={cn(ui.primary, 'flex-[2]')}>
+              <button
+                onClick={findRates}
+                disabled={!plate || looking || (kind === 'cmis' ? !cmis || !handiZones.length : !zoneTyped)}
+                className={cn(ui.primary, 'flex-[2]')}
+              >
                 {looking ? <Loader2 className="size-5 animate-spin" /> : 'Suivant'}
               </button>
             )}

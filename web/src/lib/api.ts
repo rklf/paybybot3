@@ -51,6 +51,8 @@ export type Autopilot = Parking & {
   pausedUntil?: string | null
   /** Handi in Paris: the arrondissements covered at the same time, one free ticket in each. */
   locations?: string[] | null
+  /** A CMI-S (Handi) ticket: the holder ticked the card attestation. */
+  cmis?: boolean
 }
 export type HistoryItem = { at: string; kind: 'success' | 'error'; message: string }
 export type Overview = {
