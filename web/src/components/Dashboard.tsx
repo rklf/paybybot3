@@ -83,7 +83,10 @@ function Ticket({
 }) {
   // « Arrêter ce ticket »: asked once more before stopping (PayByPhone stops it at once, it cannot be undone).
   const [stopping, setStopping] = useState<'ask' | 'busy' | null>(null)
-  const stoppable = group.every((x) => x.stoppable)
+  // Only a CMI-S ticket programmed on PayByBot, and only when PayByPhone lets it be stopped.
+  const cmis = (x: Session) =>
+    data.autopilots.some((ap) => ap.cmis && sameCar(ap.plate, x.plate) && (ap.locations ?? [ap.location]).includes(x.location))
+  const stoppable = group.every((x) => x.stoppable && cmis(x))
   async function stop() {
     setStopping('busy')
     try {
@@ -142,7 +145,7 @@ function Ticket({
         {!renewal && !data.autopilots.some((ap) => ap.enabled && sameCar(ap.plate, session.plate)) && (
           <p className="mt-1 text-sm font-semibold text-destructive">Sans renouvellement, risque de FPS après cette date.</p>
         )}
-        {/* Only when PayByPhone allows it (a resident week, or a Paris day ticket, may run to its end). */}
+        {/* A CMI-S ticket that PayByPhone lets stop (a resident week, or a Paris day ticket, may run to its end). */}
         {stoppable &&
           (stopping ? (
             <div className="mt-4 flex flex-wrap items-center gap-3">

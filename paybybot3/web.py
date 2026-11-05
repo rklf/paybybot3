@@ -3408,6 +3408,21 @@ def rule_over(details, now=None):
     return not (last and last + length * float(rule.get("duration") or 1) > now)
 
 
+def cmis_zones(s):
+    """(plate, zone) of the account's CMI-S (Handi) programmed tickets: the only tickets PayByBot stops."""
+    if HOSTED and not s.demo:
+        aps = []
+        for row in store("renewal_list", p_owner=owner_id(s.username)) or []:
+            try:
+                aps.append(with_details(row))
+            except Exception as e:
+                log.warning("renewal %s: unreadable details: %s", row.get("id"), e)
+        aps = [a for a in aps if a.get("cmis_attested_at")]
+    else:
+        aps = [a for a in s.autopilots.values() if a.get("cmis")]
+    return {(plate_key(a["plate"]), str(z)) for a in aps for z in (a.get("locations") or [a["location"]])}
+
+
 def renewed_plates(s):
     """Plates with an active resident renewal: the subscription is for these vehicles."""
     if HOSTED and not s.demo:
@@ -3535,11 +3550,14 @@ def fmt_qty(value):
 @app.post("/api/sessions/stop")
 def stop_tickets(body: StopTickets, pbb_session: str = Cookie(None)):
     """Stops running tickets now (a CMI-S ticket in several arrondissements: all of them), as « Arrêter » in the
-    PayByPhone app; only those PayByPhone says can be stopped."""
+    PayByPhone app; only CMI-S tickets programmed on PayByBot, and only those PayByPhone says can be stopped."""
     s = current(pbb_session)
     running = {x.get("parkingSessionId"): x for x in guarded(lambda: s.call("get_parking_sessions")) or []}
     tickets = [running.get(i) for i in body.ids]
-    if not all(tickets) or not all(serialize_session(x)["stoppable"] for x in tickets):
+    handi = guarded(lambda: cmis_zones(s))
+    if not all(tickets) or not all(serialize_session(x)["stoppable"] and
+                                   (plate_key((x.get("vehicle") or {}).get("licensePlate") or ""),
+                                    str(x.get("locationId"))) in handi for x in tickets):
         raise HTTPException(400, "PayByPhone ne permet pas d'arrêter ce ticket. Il reste valable jusqu'à sa fin.")
     stopped = 0
     for x in tickets:
