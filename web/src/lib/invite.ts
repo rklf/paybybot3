@@ -104,6 +104,7 @@ const SOURCES: Record<string, string> = {
   tg: 'Telegram',
   copy: 'Lien copié',
   share: 'Partage',
+  carte: 'Carte de visite',
   acces: 'Sans parrainage (lien demandé par e-mail)',
 }
 
@@ -122,10 +123,14 @@ export function linkSource(): string {
   ]
   for (const [re, name] of apps) if (re.test(ua)) return name
   try {
-    if (document.referrer) return new URL(document.referrer).hostname.replace(/^www\./, '')
+    // From paybybot.fr itself: says nothing of where the link came from.
+    const from = document.referrer ? new URL(document.referrer).hostname : ''
+    if (from && from !== window.location.hostname) return from.replace(/^www\./, '')
   } catch {
     // no readable referrer
   }
+  // The first printed cards' QR code opens ?i=<code> untagged; since 25/10 the site only shares /r/<code>.
+  if (new URL(window.location.href).searchParams.get('i')) return SOURCES.carte
   return 'Direct'
 }
 

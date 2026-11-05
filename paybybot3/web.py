@@ -4429,6 +4429,9 @@ def admin_clients(pbb_admin: str = Cookie(None)):
         clients.append({"owner": row.get("owner"), "name": name, "email": account.get("email"),
                         "created": row.get("created_at"), "plan": account.get("plan"),
                         "subscribed": bool(account.get("stripe_subscription")),
+                        # The free month's end: until then a subscriber has not paid anything yet.
+                        "trialEnd": (parse_dt(account["trial_start"]) + timedelta(days=TRIAL_DAYS)).isoformat()
+                        if account.get("trial_start") else None,
                         "price": plan_total(account_monthlies(account), plan) if account else None,
                         "renewals": row.get("renewals_active", 0), "origin": account.get("origin"),
                         "_zones": account.get("vehicle_zones") or {},

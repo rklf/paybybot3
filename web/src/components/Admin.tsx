@@ -124,6 +124,8 @@ export type AdminClient = {
   created: string
   plan: string | null
   subscribed: boolean
+  /** The end of the free month (null: never started); a subscriber pays from then on. */
+  trialEnd?: string | null
   /** The subscription in cents, per month (monthly) or per year (yearly). */
   price: number | null
   /** Each vehicle on PayByPhone with its running ticket's end (null: none); null if PayByPhone could not be read. */
@@ -211,6 +213,72 @@ function StepChart({ times, unit }: { times: string[]; unit: string }) {
         <span>maintenant</span>
       </div>
     </div>
+  )
+}
+
+/** What the page opens on: visitors → sign-ups → subscribers, this week's gain, and where visitors come from. */
+function Summary({ visitors, clients }: { visitors: AdminActivity[][]; clients: AdminClient[] }) {
+  const week = Date.now() - 7 * 86_400_000
+  const recent = (iso: string) => new Date(iso).getTime() > week
+  const gain = (n: number) => (n ? `+${n} en 7 j` : 'rien en 7 j')
+  const subscribers = clients.filter((c) => c.subscribed)
+  const inTrial = subscribers.filter((c) => c.trialEnd && new Date(c.trialEnd).getTime() > Date.now()).length
+  const steps: [string, number, string][] = [
+    ['Visiteurs', visitors.length, gain(visitors.filter((g) => recent(g[g.length - 1].at)).length)],
+    ['Inscrits', clients.length, gain(clients.filter((c) => recent(c.created)).length)],
+    ['Abonnés', subscribers.length, inTrial ? `dont ${inTrial} au mois offert` : ''],
+  ]
+  return (
+    <section className="mt-8 rounded-2xl border border-ink/10 bg-white p-6">
+      <div className="grid grid-cols-3 gap-4">
+        {steps.map(([label, n, note], i) => (
+          <div key={label} className={cn(i > 0 && 'border-l border-ink/10 pl-4')}>
+            <p className="text-sm text-ink/55">{label}</p>
+            <p className="mt-1 font-heading text-4xl font-semibold tabular-nums text-ink">{n}</p>
+            {note && <p className="mt-1 text-sm text-ink/45">{note}</p>}
+          </div>
+        ))}
+      </div>
+      <h3 className="mt-6 border-t border-ink/10 pt-5 text-sm text-ink/55">D’où viennent les visiteurs</h3>
+      <SourceSplit visitors={visitors} />
+    </section>
+  )
+}
+
+const DEVICES = ['iPhone', 'iPad', 'Android', 'Tablette Android', 'Ordinateur']
+/** A user's link sent from the « Partager » panel (or opened in a messaging app): one line in the summary. */
+const SHARED = ['WhatsApp', 'SMS', 'E-mail', 'Telegram', 'Lien copié', 'Partage', 'Facebook / Messenger']
+
+/** Visitors of the private link by where their first visit came from (the detail's first part). */
+function SourceSplit({ visitors }: { visitors: AdminActivity[][] }) {
+  const counts = new Map<string, number>()
+  for (const g of visitors) {
+    const first = (g[g.length - 1].detail ?? '').split(' · ')[0].trim()
+    const source =
+      !first || DEVICES.includes(first) ? 'Non renseigné' // rows from before sources were kept
+      : first === 'paybybot.fr' ? 'Direct' // older rows: from the site itself, now counted as « Direct »
+      : SHARED.includes(first) ? 'Partage de lien' // the way it was shared stays in « Activité »
+      : first
+    counts.set(source, (counts.get(source) ?? 0) + 1)
+  }
+  if (!counts.has('Carte de visite')) counts.set('Carte de visite', 0) // always shown: the business cards' QR code
+  const sorted = [...counts].sort((a, b) => b[1] - a[1] || (a[0] === 'Carte de visite' ? -1 : 1))
+  // The four biggest, the rest in one « Autres » line.
+  const rest = sorted.slice(4).reduce((n, [, c]) => n + c, 0)
+  const rows: [string, number][] = sorted.length > 5 ? [...sorted.slice(0, 4), ['Autres', rest]] : sorted
+  if (!rows.length) return null
+  return (
+    <ul className="mt-3 space-y-2 text-sm">
+      {rows.map(([source, n]) => (
+        <li key={source} className="flex items-center gap-3">
+          <span className="w-32 shrink-0 truncate text-ink/70 sm:w-44">{source}</span>
+          <span className="h-2 flex-1 overflow-hidden rounded-full bg-ink/[0.05]">
+            <span className="block h-full rounded-full bg-[var(--eu)]" style={{ width: `${(n / visitors.length) * 100}%` }} />
+          </span>
+          <span className="w-8 text-right font-semibold tabular-nums text-ink">{n}</span>
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -467,7 +535,9 @@ export function AdminPage(_: { signedIn?: boolean }) {
   // The owner's own visits of the private link (this device) are not shown.
   function setOwnActivity(rows: AdminActivity[]) {
     const mine = ownVisitor()
-    setActivity(mine ? rows.filter((r) => r.visitor !== mine) : rows)
+    // Nor the link opens tagged « Test » (a manual try, not a visitor).
+    const test = (r: AdminActivity) => r.event === LINK_OPENED && (r.detail ?? '').split(' · ')[0].trim() === 'Test'
+    setActivity(rows.filter((r) => !test(r) && (!mine || r.visitor !== mine)))
   }
 
   function load() {
@@ -538,40 +608,47 @@ export function AdminPage(_: { signedIn?: boolean }) {
           <>
             <ServicePanel />
 
+            {activity && clients ? (
+              <Summary visitors={byPerson(activity.filter((r) => r.event === LINK_OPENED))} clients={clients} />
+            ) : (
+              <div className="mt-8 h-72 animate-pulse rounded-2xl bg-ink/[0.04]" />
+            )}
+
             <h2 className="mt-12 text-sm font-semibold text-ink/55">Clients{clients ? ` (${clients.length})` : ''}</h2>
             {clients && clients.length === 0 && <p className="mt-3 text-ink/50">Aucun client pour l’instant.</p>}
             {clients && clients.length > 0 && <VehicleTable clients={clients} />}
 
-            <h2 className="mt-12 text-sm font-semibold text-ink/55">Liens privés ouverts</h2>
-            {activity ? (
-              <StepChart
-                times={byPerson(activity.filter((r) => r.event === LINK_OPENED)).map((g) => g[g.length - 1].at)}
-                unit="visiteurs uniques"
-              />
-            ) : (
-              <div className="mt-3 h-52 animate-pulse rounded-2xl bg-ink/[0.04]" />
-            )}
-
-            {/* Sign-ups from the accounts themselves (all of them), paid subscriptions from « Activité ». */}
-            <h2 className="mt-12 text-sm font-semibold text-ink/55">Inscriptions</h2>
-            {clients ? (
-              <StepChart times={clients.map((c) => c.created)} unit="inscriptions" />
-            ) : (
-              <div className="mt-3 h-52 animate-pulse rounded-2xl bg-ink/[0.04]" />
-            )}
-
-            <h2 className="mt-12 text-sm font-semibold text-ink/55">Abonnements payants</h2>
-            {activity ? (
-              <StepChart times={activity.filter((r) => r.event === 'Abonnement souscrit').map((r) => r.at)} unit="abonnements" />
-            ) : (
-              <div className="mt-3 h-52 animate-pulse rounded-2xl bg-ink/[0.04]" />
-            )}
-
-            <h2 className="mt-12 text-sm font-semibold text-ink/55">Activité{activity ? ` (${byPerson(activity).length})` : ''}</h2>
             {!activity ? (
-              <Loader2 className="mt-3 size-5 animate-spin text-ink/40" />
+              <>
+                <h2 className="mt-12 text-sm font-semibold text-ink/55">Activité</h2>
+                <Loader2 className="mt-3 size-5 animate-spin text-ink/40" />
+              </>
             ) : (
-              <ActivityList rows={activity} onDelete={removeActivity} />
+              <details className="group mt-12">
+                <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-ink/55">
+                  Activité ({byPerson(activity).length}) <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
+                </summary>
+                <ActivityList rows={activity} onDelete={removeActivity} />
+              </details>
+            )}
+
+            {/* The running totals, folded: the summary above already gives the numbers. */}
+            {activity && clients && (
+              <details className="group mt-12">
+                <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-ink/55">
+                  Courbes <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
+                </summary>
+                <h3 className="mt-6 text-sm text-ink/55">Liens privés ouverts</h3>
+                <StepChart
+                  times={byPerson(activity.filter((r) => r.event === LINK_OPENED)).map((g) => g[g.length - 1].at)}
+                  unit="visiteurs uniques"
+                />
+                {/* Sign-ups from the accounts themselves (all of them), paid subscriptions from « Activité ». */}
+                <h3 className="mt-8 text-sm text-ink/55">Inscriptions</h3>
+                <StepChart times={clients.map((c) => c.created)} unit="inscriptions" />
+                <h3 className="mt-8 text-sm text-ink/55">Abonnements payants</h3>
+                <StepChart times={activity.filter((r) => r.event === 'Abonnement souscrit').map((r) => r.at)} unit="abonnements" />
+              </details>
             )}
           </>
         )}
