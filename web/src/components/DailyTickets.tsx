@@ -60,6 +60,14 @@ const startOf = (ap: Autopilot) => (ap as Autopilot & { start?: string | null })
 const heavy = (r: Rate) => /lourd/i.test(r.name)
 const light = (r: Rate) => /l[ée]ger/i.test(r.name)
 const handi = (r: Rate) => /handi/i.test(`${r.name} ${r.type}`)
+
+/** The 20 Paris arrondissements: a Handi ticket in Paris covers all of them by default, one free ticket in each. */
+const PARIS_ZONES = Array.from({ length: 20 }, (_, i) => `750${String(i + 1).padStart(2, '0')}`)
+/** Where a programmed ticket is taken: « Tout Paris », « 3 arrondissements » or its one zone. */
+const placeOf = (ap: Autopilot) =>
+  (ap.locations?.length ?? 0) > 1
+    ? ap.locations!.length >= 20 ? 'Tout Paris' : `${ap.locations!.length} arrondissements de Paris`
+    : (arrondissement(ap.location) ?? `Zone ${ap.location}`)
 const resident = (r: Rate) => /r[ée]sident/i.test(`${r.name} ${r.type}`)
 
 /** « 6 h », « 1 jour », « 360 min ». */
@@ -197,7 +205,7 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
         </span>
         {/* The kind of ticket then the place, in grey, like the resident card's « Ticket résident · Paris 5e ». */}
         <span className="text-sm text-ink/50">
-          Non-résident · {arrondissement(ap.location) ?? `Zone ${ap.location}`}
+          Non-résident · {placeOf(ap)}
         </span>
       </div>
       {/* Same order as the resident card: the switch right under the header, then the details. */}
@@ -508,6 +516,8 @@ export function DailyWizard({
     data.sessions.find((x) => keyOf(x.plate) === keyOf(p) && new Date(x.expire).getTime() > Date.now())?.location ??
     ''
   const [zone, setZone] = useState(editing?.location ?? initialZone ?? zoneFor(plate))
+  // Handi in Paris: the arrondissements covered, all of them unless the user unticks some (the zone typed always is).
+  const [zones, setZones] = useState<string[]>(editing ? (editing.locations ?? [editing.location]) : PARIS_ZONES)
   const defaultZone = useRef(zone)
   useEffect(() => {
     // Another vehicle picked: its own zone, unless the user typed one.
@@ -574,6 +584,9 @@ export function DailyWizard({
   const hasWeight = usable.some(light) && usable.some(heavy)
   const handiRate = usable.find(handi) ?? null
   const effective = usable.find((r) => r.ratePolicyId === rateId) ?? null
+  // The zones a Handi ticket covers: in Paris the arrondissements ticked (the zone typed included), else its zone.
+  const parisZone = PARIS_ZONES.find((z) => arrondissement(z) === place) ?? zone
+  const handiZones = effective && handi(effective) && paris ? [...new Set([parisZone, ...zones])].sort() : []
   // One question, every answer with its price: the CMI-S card first, then the visitor rates by weight.
   const options = [...(handiRate ? [handiRate] : []), ...usable.filter((r) => !handi(r)).sort((a, b) => Number(heavy(a)) - Number(heavy(b)))]
   // PayByPhone gives no maximum stay with its rates: a day when the rate sells days; for visitors, Paris' 6 hours,
@@ -757,6 +770,7 @@ export function DailyWizard({
     start,
     ...(period ? { dateFrom: period.from, dateTo: period.to } : {}),
     ...(handi(effective!) ? { cmis: true } : {}),
+    ...(handiZones.length > 1 ? { locations: handiZones } : {}),
   })
 
   async function activate() {
@@ -916,6 +930,43 @@ export function DailyWizard({
                     pare-brise. Sans elle, ce ticket gratuit ne me couvre pas.
                   </span>
                 </label>
+              )}
+              {effective && handi(effective) && paris && (
+                // One free Handi ticket in each arrondissement ticked: all of Paris by default.
+                <div>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p className={ui.label}>
+                      Arrondissements couverts · {handiZones.length >= 20 ? 'tout Paris' : handiZones.length}
+                    </p>
+                    {handiZones.length < 20 && (
+                      <button type="button" onClick={() => setZones(PARIS_ZONES)} className={cn('text-sm', ui.link)}>
+                        Tout Paris
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {PARIS_ZONES.map((z, i) => {
+                      const on = handiZones.includes(z)
+                      const fixed = z === parisZone // the zone typed: always covered
+                      return (
+                        <button
+                          key={z}
+                          type="button"
+                          aria-pressed={on}
+                          disabled={fixed}
+                          onClick={() => setZones(on ? handiZones.filter((x) => x !== z) : [...handiZones, z])}
+                          className={cn(
+                            'h-10 rounded-lg border text-sm tabular-nums transition',
+                            on ? 'border-[#4e9aa0] bg-[#4e9aa0]/10 font-semibold text-ink' : 'border-ink/12 text-ink/45 hover:border-ink/25',
+                          )}
+                        >
+                          {i === 0 ? '1er' : `${i + 1}e`}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="mt-2 text-xs text-ink/45">Un ticket gratuit est pris dans chaque arrondissement coché.</p>
+                </div>
               )}
             </>
           )}
@@ -1121,7 +1172,7 @@ export function DailyWizard({
                       ))}
                     </span>,
                   ],
-                  ['Zone', place ?? `Zone ${zone}`],
+                  ['Zone', handiZones.length >= 20 ? 'Tout Paris' : handiZones.length > 1 ? `${handiZones.length} arrondissements de Paris` : (place ?? `Zone ${zone}`)],
                   ['Ticket', optionText(effective)[0]],
                   [
                     calendar && period && period.to === period.from ? 'Jour' : 'Jours',

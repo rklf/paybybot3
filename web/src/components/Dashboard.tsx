@@ -60,6 +60,7 @@ function Ticket({
   onLogout,
   daily = false,
   pending = false,
+  place,
 }: {
   session: Session
   now: number
@@ -74,6 +75,8 @@ function Ticket({
   daily?: boolean
   /** Not known yet whether the car is resident (PayByPhone still answering): the switch's line is kept, greyed. */
   pending?: boolean
+  /** Several tickets shown as one (Handi in several arrondissements): where they cover, instead of the zone. */
+  place?: string
 }) {
   const renewal = renewalOf(data, session)
   // The weekly renewal is for resident tickets only: a non-resident ticket (visitor, Handi…) shows no switch, unless
@@ -96,7 +99,7 @@ function Ticket({
       {/* The car and where: the plate on the left, the zone on the right, on one line. */}
       <div className="flex items-center justify-between gap-4 px-5 py-4">
         <Plate plate={session.plate} size="sm" />
-        <ZoneTag zone={session.location} resident={!daily} />
+        <ZoneTag zone={place ?? session.location} resident={!daily} />
       </div>
 
       {/* The ticket: when it ends (renewal on) or the time left, large, with the end beside it. */}
@@ -358,7 +361,20 @@ export function Dashboard({
       () => {},
     )
   }, [me.hosted, me.demo, data?.vehicles.length])
-  const sessions = data?.sessions.filter((s) => new Date(s.expire).getTime() > now) ?? []
+  const running = data?.sessions.filter((s) => new Date(s.expire).getTime() > now) ?? []
+  // A Handi ticket in several arrondissements: its tickets (one per zone) shown as one card, the first one.
+  const zonesOf = (s: Session) =>
+    data?.autopilots.find((ap) => (ap.locations?.length ?? 0) > 1 && sameCar(ap.plate, s.plate) && ap.locations!.includes(s.location))
+      ?.locations
+  const sessions = running.filter(
+    (s) => !zonesOf(s) || running.find((x) => sameCar(x.plate, s.plate) && zonesOf(x) === zonesOf(s)) === s,
+  )
+  const placeOf = (s: Session) => {
+    const zones = zonesOf(s)
+    if (!zones) return undefined
+    const n = running.filter((x) => sameCar(x.plate, s.plate) && zones.includes(x.location)).length
+    return n >= 20 ? 'Tout Paris' : `${n} arrondissement${n > 1 ? 's' : ''}`
+  }
   // The programmed-ticket cards shown below (as DailyTickets lists them: a finished one-off ticket is not).
   const shownDaily = (data?.autopilots ?? []).filter((ap) => {
     if (!isDaily(ap)) return false
@@ -528,6 +544,7 @@ export function Dashboard({
                 // the server with PayByPhone). Anything else is a non-resident ticket, whatever its length.
                 daily={!(s.resident === true || !!residentPlates?.has(plateKey(s.plate)))}
                 pending={pricedResidents === null && s.resident !== false}
+                place={placeOf(s)}
               />
             ))}
           </div>

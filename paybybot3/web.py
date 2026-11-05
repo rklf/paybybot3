@@ -617,6 +617,62 @@ def check_payable(session, location, rate, plate, payment_account_id, avoid=Fals
     return payment_account_id if payment_account_id in valid else valid[0]
 
 
+HANDI_RATE = re.compile(r"handi", re.I)
+ZONES_BUDGET = 60  # seconds of payments per call: the zones left are taken at the scheduler's next call
+
+
+def arrondissement_text(zone):
+    """« 16e » for 75016 (and 75116), « 1er » for 75001; any other zone as it is."""
+    m = re.match(r"^75(?:0(\d\d)|(116))$", str(zone))
+    if not m:
+        return str(zone)
+    n = 16 if m.group(2) else int(m.group(1))
+    return "1er" if n == 1 else "%se" % n
+
+
+def zones_text(details):
+    """Where a renewal takes its tickets: « tout Paris », « 3 arrondissements de Paris » or its zone."""
+    zones = details.get("locations") or []
+    if len(zones) > 1:
+        return "tout Paris" if len(zones) >= 20 else "%s arrondissements de Paris" % len(zones)
+    return "zone %s" % details.get("location")
+
+
+def handi_rate(session, zone, plate):
+    """The zone's own Handi (CMI-S) rate: PayByPhone gives it another id in each zone."""
+    for r in session.call("get_rate_options", zone, plate) or []:
+        if HANDI_RATE.search("%s %s" % (r.get("name") or "", r.get("type") or "")) and not r.get("parkingNotAllowedReason"):
+            return r["ratePolicyId"]
+    raise NotPayable("PayByPhone ne propose pas le ticket carte mobilité CMI-S dans le %s." % arrondissement_text(zone))
+
+
+def take_zones(session, row, card, budget=None):
+    """The Handi ticket in several Paris arrondissements (all of them by default): PayByPhone takes a free Handi
+    ticket in each zone at the same time, so every zone not covered yet gets its own, one after the other.
+    Returns (end of the last ticket taken, [(zone, error)], zones left when the time was up)."""
+    covered = {str(x.get("locationId")) for x in running_for(session, row["plate"])}
+    todo = [z for z in row["locations"] if str(z) not in covered]
+    started, expire, failed = time.monotonic(), None, []
+    budget = ZONES_BUDGET if budget is None else budget
+    for i, zone in enumerate(todo):
+        if time.monotonic() - started > budget:
+            return expire, failed, todo[i:]
+        try:
+            rate = row["rate"] if str(zone) == str(row["location"]) else handi_rate(session, zone, row["plate"])
+            _, found = pay_and_confirm(session, zone, rate, fmt_qty(row["duration"]), row["unit"], row["plate"], card)
+            expire = covered_until(found) or expire
+        except Exception as e:
+            failed.append((zone, e))
+    return expire, failed, []
+
+
+def zones_error(failed):
+    """What to tell when some arrondissements were not covered: which ones, and PayByPhone's reason for the first."""
+    e = failed[0][1]
+    return "Ticket non pris dans le %s : %s" % (", ".join(arrondissement_text(z) for z, _ in failed),
+                                                str(e) if isinstance(e, NotPayable) else friendly_error(e))
+
+
 def pay_and_confirm(session, location, rate, duration, unit, plate, paymentAccountId, attempts=10, delay=3):
     """Pay, then poll the current sessions like the CLI does: success only once PayByPhone lists it."""
     log.info("pay: zone=%s rate=%s %s %s plate=%s demo=%s", location, rate, duration, unit, plate[:2] + "***",
@@ -1149,7 +1205,7 @@ def notify(details, event, **info):
     to = (details or {}).get("email")
     if not to:
         return
-    car = "%s, zone %s" % (plate_text(details.get("plate")), details.get("location"))
+    car = "%s, %s" % (plate_text(details.get("plate")), zones_text(details))
     open_app = ("Ouvrir PayByBot", APP_URL)
     rule = rule_of(details)
     if event == "activated" and rule:
@@ -1390,6 +1446,16 @@ def run_autopilot(session, ap, now=None):
             return
     elif paused_now(ap.get("pausedFrom"), ap.get("pausedUntil")):
         ap["lastCheck"] = now.isoformat()
+        return
+    if len(ap.get("locations") or []) > 1:
+        ap["lastCheck"] = datetime.now(timezone.utc).isoformat()
+        try:
+            _, failed, _ = take_zones(session, ap, ap["paymentAccountId"], budget=float("inf"))
+        except Exception as e:
+            failed = [(ap["location"], e)]
+        ap["lastError"] = zones_error(failed) if failed else None
+        if not failed:
+            ap["lastPayment"] = now.isoformat()
         return
     active = running_for(session, ap["plate"])
     ap["lastCheck"] = datetime.now(timezone.utc).isoformat()
@@ -1768,6 +1834,7 @@ def stored_to_autopilot(row):
         "email": row.get("email") or "", "pausedFrom": row.get("paused_from"), "pausedUntil": row.get("paused_until"),
         "days": row.get("days") or None, "start": row.get("start") or None,
         "dateFrom": row.get("date_from") or None, "dateTo": row.get("date_to") or None,
+        "locations": row.get("locations") or None,
         "validate": validate_token(row["owner"], row["id"]) if row.get("last_error") == BANK_WAIT else None,
     }
 
@@ -1880,6 +1947,8 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
     elif sealed_with_old(row.get("credential"), "credential"):
         patch["credential"] = encrypt_credential(refresh)
     session = UserSession.for_bot(bot)
+    if len(row.get("locations") or []) > 1:
+        return renew_zones(session, row, rule, now, patch, previous_error)
     outcome = "error"
     result, expire = None, None
     used_card, bank_asked = row.get("payment_account_id"), False
@@ -2002,6 +2071,34 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
     elif patch.get("last_error") and patch["last_error"] != previous_error:
         notify(row, "problem", message=patch["last_error"], suspended=patch.get("enabled") is False,
                ends=running_end(session, row))
+    return outcome
+
+
+def renew_zones(session, row, rule, now, patch, previous_error):
+    """A Handi ticket in several arrondissements: each zone not covered yet is taken; the day counts as paid once
+    every zone is covered (a zone refused is tried again in 30 minutes, the zones already covered are left alone)."""
+    try:
+        expire, failed, left = take_zones(session, row, row["payment_account_id"])
+    except Exception as e:  # PayByPhone not answering the list of tickets: nothing taken
+        expire, failed, left = None, [(row["location"], e)], []
+    if left:
+        patch.update(next_check=utc_iso(now + timedelta(minutes=1)))
+        outcome = "partial"
+    elif failed:
+        patch.update(last_error=zones_error(failed), next_check=utc_iso(now + timedelta(minutes=30)))
+        outcome = "error"
+    else:
+        later = schedule.next_slot(rule, now) if rule else None
+        patch.update(last_payment=utc_iso(now), last_error=None, next_check=utc_iso(later or now + timedelta(days=1)))
+        outcome = "paid" if expire else "active"
+    log.info("renewal %s zones=%s plate=%s: %s (%s refused, %s left)", row["id"], len(row["locations"]),
+             row["plate"][:2] + "***", outcome, len(failed), len(left))
+    store("renewal_update", p_id=row["id"], p_patch=patch)
+    if outcome == "paid":
+        notify(row, "paid", expire=expire,
+               next=schedule.next_ticket(rule, now, row.get("paused_from"), row.get("paused_until")) if rule else None)
+    elif patch.get("last_error") and patch["last_error"] != previous_error:
+        notify(row, "problem", message=patch["last_error"])
     return outcome
 
 
@@ -2420,6 +2517,14 @@ class Autopilot(Parking):
     dateTo: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     # « Je suis titulaire de la carte CMI-S »: ticked for the Handi ticket, kept with the renewal as proof.
     cmis: bool = False
+    # Handi in Paris: the arrondissements covered at the same time (all 20 by default), one free ticket in each.
+    locations: list[Annotated[str, Field(pattern=r"^75(0(0[1-9]|1\d|20)|116)$")]] | None = Field(default=None, max_length=21)
+
+
+def zones_of(body, days):
+    """The arrondissements of a Handi ticket on chosen days, when there are several; else None (its one zone)."""
+    zones = sorted(set(body.locations or []))
+    return zones if body.cmis and days and len(zones) > 1 else None
 
 
 class Pause(BaseModel):
@@ -3577,6 +3682,7 @@ def add_autopilot(body: Autopilot, pbb_session: str = Cookie(None)):
         except Exception as e:
             log.warning("account e-mail unreadable: %s", e)
     days, start = checked_days(body)
+    zones = zones_of(body, days)
     # Only the account's own vehicles (they are what the subscription bills).
     own = {plate_key(v.get("licensePlate") or "") for v in guarded(lambda: s.call("get_vehicles")) or []
            if not v.get("archived")}
@@ -3602,7 +3708,8 @@ def add_autopilot(body: Autopilot, pbb_session: str = Cookie(None)):
                                          "email": body.email.strip(), "days": days, "start": start,
                                          **({"tz": body.tz} if days and body.tz else {}),
                                          **({"date_from": body.dateFrom, "date_to": body.dateTo} if days and body.dateFrom else {}),
-                                         **({"cmis_attested_at": utc_iso(datetime.now(timezone.utc))} if body.cmis else {})})})
+                                         **({"cmis_attested_at": utc_iso(datetime.now(timezone.utc))} if body.cmis else {}),
+                                         **({"locations": zones} if zones else {})})})
             # Paid below, in this request: the scheduler keeps off the new row meanwhile (never two payments at once).
             store("renewal_update", p_id=row["id"],
                   p_patch={"next_check": utc_iso(datetime.now(timezone.utc) + timedelta(minutes=10))})
@@ -3612,7 +3719,7 @@ def add_autopilot(body: Autopilot, pbb_session: str = Cookie(None)):
             outcome = process_renewal(row, refresh_token=refresh, activating=True)  # pay now if it is due
             stored = next((r for r in store("renewal_list", p_owner=owner_id(s.username)) if r["id"] == row["id"]), row)
             message = None
-            if outcome in ("paid", "active", "waiting"):
+            if outcome in ("paid", "active", "waiting", "partial"):
                 active = running_for(s, body.plate)
                 rule = rule_of(details)
                 case, expire, next_payment = (None, None, None) if rule else activation_case(outcome, before, active,
@@ -3637,7 +3744,7 @@ def add_autopilot(body: Autopilot, pbb_session: str = Cookie(None)):
 
         return guarded(save)
     ap = {**body.model_dump(), "duration": fmt_qty(body.duration), "id": uuid.uuid4().hex[:8], "enabled": True,
-          "lastCheck": None, "lastPayment": None, "lastError": None, "days": days, "start": start}
+          "lastCheck": None, "lastPayment": None, "lastError": None, "days": days, "start": start, "locations": zones}
     s.autopilots[ap["id"]] = ap
     if HOSTED:  # demo on a serverless host: no background thread, run it now
         run_autopilot(s, ap)
@@ -4970,7 +5077,7 @@ def edit_autopilot(ap_id: str, body: Autopilot, pbb_session: str = Cookie(None))
                    "unit": body.unit, "payment_account_id": body.paymentAccountId, "days": days, "start": start,
                    "tz": body.tz or old.get("tz") or "", "date_from": body.dateFrom or "", "date_to": body.dateTo or "",
                    "cmis_attested_at": (old.get("cmis_attested_at") or utc_iso(datetime.now(timezone.utc)))
-                   if body.cmis else ""}
+                   if body.cmis else "", "locations": zones_of(body, days)}
         ap = update_own_renewal(s, ap_id, {"data": encrypt_details(details), "last_error": None,
                                            "next_check": utc_iso(datetime.now(timezone.utc))})
         log.info("renewal %s edited", ap_id)
@@ -4983,7 +5090,7 @@ def edit_autopilot(ap_id: str, body: Autopilot, pbb_session: str = Cookie(None))
     check_card(s, body.paymentAccountId)
     ap.update(location=body.location, rate=body.rate, duration=fmt_qty(body.duration), unit=body.unit,
               paymentAccountId=body.paymentAccountId, days=days, start=start, dateFrom=body.dateFrom,
-              dateTo=body.dateTo, cmis=body.cmis, lastError=None)
+              dateTo=body.dateTo, cmis=body.cmis, locations=zones_of(body, days), lastError=None)
     return ap
 
 

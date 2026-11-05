@@ -49,6 +49,8 @@ export type Autopilot = Parking & {
   email?: string
   pausedFrom?: string | null
   pausedUntil?: string | null
+  /** Handi in Paris: the arrondissements covered at the same time, one free ticket in each. */
+  locations?: string[] | null
 }
 export type HistoryItem = { at: string; kind: 'success' | 'error'; message: string }
 export type Overview = {
