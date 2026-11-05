@@ -568,14 +568,9 @@ function Terms() {
             prestataire de paiement Stripe ; <PayByBot /> ne voit ni ne conserve votre numéro de carte.
           </li>
           <li>
-            <strong>Véhicules couverts :</strong> l’abonnement couvre les véhicules cochés dans « Mon compte ».
-            Aucun renouvellement, ticket programmé ou ticket ne peut être pris par <PayByBot /> pour un véhicule non
-            couvert. Le mois commencé est toujours dû en entier. Un véhicule ajouté est facturé tout de suite pour le
-            mois en cours (avec l’abonnement annuel : pour les mois restants jusqu’à l’échéance, au prix annuel) ; pendant
-            le mois offert, rien n’est prélevé. Un véhicule retiré reste dû pour le mois en cours, son renouvellement
-            s’arrête, et avec l’abonnement annuel les mois entiers suivants sont crédités sur la prochaine facture. Le
-            nouveau prix de l’abonnement s’applique à la prochaine échéance. Vous pouvez résilier à tout moment depuis
-            « Mon compte ».
+            <strong>Véhicules :</strong> l’abonnement couvre tous les véhicules de votre compte <PayByPhone />, sans
+            supplément pour un véhicule ajouté ; pendant le mois offert, rien n’est prélevé. Le mois commencé est toujours
+            dû en entier. Vous pouvez résilier à tout moment depuis « Mon compte ».
           </li>
           <li>
             <strong>Changement de prix :</strong> si <PayByBot /> modifie ses prix, le nouveau prix ne s’applique qu’à partir du

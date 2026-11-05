@@ -111,7 +111,7 @@ function AccountDialog({
         <section className="mx-6 mt-6">
           <div className="flex items-baseline justify-between gap-4">
             <h3 className="font-heading text-lg font-bold text-ink">
-              {account?.subscribed ? 'Véhicules couverts' : vehicles && vehicles.length > 1 ? 'Vos véhicules' : 'Votre véhicule'}
+              {vehicles && vehicles.length > 1 ? 'Vos véhicules' : 'Votre véhicule'}
             </h3>
             {!demo && account?.plan && (
               <button onClick={manage} disabled={opening} className={cn('inline-flex items-center gap-1.5 text-sm', ui.link)}>
