@@ -17,7 +17,7 @@ export const PUBLISHER = {
 }
 
 export const LEGAL_UPDATED = '2 novembre 2026'
-export const REPO_URL = 'https://github.com/davidstudiopresto/paybybot3/tree/web-interface'
+export const REPO_URL = 'https://github.com/davidstudiopresto/PayByBot/tree/web-interface'
 
 import { type LegalPage } from '@/lib/legalPages'
 export { LEGAL_PAGES, legalPageFromHash, type LegalPage } from '@/lib/legalPages'
