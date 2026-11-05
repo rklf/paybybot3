@@ -563,8 +563,8 @@ function Terms() {
             compte <PayByPhone />, e-mail ou plaque). Il commence quand vous choisissez votre offre, et non à l’inscription.
           </li>
           <li>
-            <strong>Offres et prix :</strong> abonnement mensuel, ou annuel avec 20 % de remise, TTC : 9,50 € par véhicule et par mois, quel que soit le ticket (résident, visiteur, carte mobilité CMI-S) ou le type de véhicule,
-            ou 91,20 € par véhicule et par an. Le prix exact est affiché avant tout paiement. Le paiement se fait par carte bancaire, via notre
+            <strong>Offres et prix :</strong> abonnement mensuel, ou annuel avec 20 % de remise, TTC : 9,50 € par mois pour tous les véhicules du compte, quels que soient leur nombre, le ticket (résident, visiteur, carte mobilité CMI-S) ou le type de véhicule,
+            ou 91,20 € par an. Le prix exact est affiché avant tout paiement. Le paiement se fait par carte bancaire, via notre
             prestataire de paiement Stripe ; <PayByBot /> ne voit ni ne conserve votre numéro de carte.
           </li>
           <li>

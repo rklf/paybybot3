@@ -41,7 +41,7 @@ class Billing(unittest.TestCase):
         self.assertEqual(r["url"], "https://checkout.stripe.com/x")
         data = self.calls[0][2]
         self.assertEqual((data["line_items[0][price_data][unit_amount]"],
-                          data["line_items[0][price_data][recurring][interval]"]), (9504, "year"))
+                          data["line_items[0][price_data][recurring][interval]"]), (9120, "year"))  # one price: 9,50 € x 12, 20 % off
         self.assertNotIn("subscription_data[trial_end]", data)  # no Stripe trial: the free month already runs
         self.assertEqual((data["adaptive_pricing[enabled]"], data["payment_method_types[0]"]), ("false", "card"))
         self.assertEqual(data["subscription_data[proration_behavior]"], "none")
@@ -54,7 +54,7 @@ class Billing(unittest.TestCase):
         self.assertEqual(web.monthly_cents("Car", "75005", weekly=0), 950)  # nor PayByPhone's price
 
     def test_yearly_is_twelve_months_with_20_percent_off(self):
-        self.assertEqual(web.plan_total([1800], "yearly"), 17280)  # twelve months, 20 % off
+        self.assertEqual(web.plan_total([950], "yearly"), 9120)  # twelve months, 20 % off
 
     def test_no_zone_no_checkout(self):
         with patch.object(web, "account_pricing", return_value=None), \
@@ -105,22 +105,22 @@ class Billing(unittest.TestCase):
         self.assertEqual(calls[-1][2]["items[0][price_data][product]"], "prod_active")  # never the inactive one
         mail.assert_not_called()  # no e-mail on a zone change
         update = calls[-1][2]
-        self.assertEqual((update["items[0][price_data][unit_amount]"], update["proration_behavior"]), (690, "none"))
+        self.assertEqual((update["items[0][price_data][unit_amount]"], update["proration_behavior"]), (950, "none"))
         saved.assert_called_with("o", {"billed_monthlies": [690]})
 
-    def test_one_price_per_vehicle_and_the_subscription_for_the_renewed_ones(self):
-        self.assertEqual(web.plan_total([990, 490]), 1480)
+    def test_one_price_for_all_the_vehicles(self):
+        self.assertEqual(web.plan_total([990, 490]), 950)
         found = [({"licensePlate": "AB-123-CD", "type": "Car"}, "75006", {}),
                  ({"licensePlate": "EF-456-GH", "type": "Scooter"}, "75015", {})]
         with patch.object(web, "vehicle_zones", return_value=found), \
                 patch.object(web, "load_account", return_value={}), \
                 patch.object(web, "save_account", side_effect=lambda s, p: p), patch.object(web, "reprice"):
-            with patch.object(web, "renewed_plates", return_value=set()):  # none renewed yet: the first one
+            with patch.object(web, "renewed_plates", return_value=set()):  # none renewed yet: all covered anyway
                 p = web.account_pricing(self.s)
-                self.assertEqual((p["billed"], p["monthly"]), (["AB-123-CD"], 950))
+                self.assertEqual((p["billed"], p["monthly"]), ([v["plate"] for v in p["vehicles"]], 950))
             with patch.object(web, "renewed_plates", return_value={"AB123CD", "EF456GH"}):
                 p = web.account_pricing(self.s)
-                self.assertEqual((p["monthly"], {v["monthly"] for v in p["vehicles"]}), (1900, {950}))  # 9,50 € each
+                self.assertEqual((p["monthly"], {v["monthly"] for v in p["vehicles"]}), (950, {950}))  # 9,50 € for both
         with patch.object(web, "vehicle_zones", return_value=found), \
                 patch.object(web, "load_account", return_value={"suv_plates": ["AB123CD"]}), \
                 patch.object(web, "save_account", side_effect=lambda s, p: p), patch.object(web, "reprice"), \
@@ -279,5 +279,5 @@ class MixedAccount(unittest.TestCase):
                 patch.object(web, "save_account", side_effect=lambda s, p: p), patch.object(web, "reprice"), \
                 patch.object(web, "renewed_plates", return_value={"AB123CD", "EF456GH"}):
             p = web.account_pricing(s)
-        self.assertEqual((sorted(p["billed"]), p["monthly"]), (["AB-123-CD", "EF-456-GH"], 1900))
+        self.assertEqual((sorted(p["billed"]), p["monthly"]), (["AB-123-CD", "EF-456-GH"], 950))
         self.assertEqual([v["zone"] for v in p["vehicles"]], ["75006", None])
