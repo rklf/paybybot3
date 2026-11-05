@@ -110,3 +110,17 @@ class Texts(unittest.TestCase):
                              days=[0], start="05:00", cmis=True, locations=["75016", "75001", "75001"])
         self.assertEqual(web.zones_of(body, [0]), ["75001", "75016"])
         self.assertIsNone(web.zones_of(body.model_copy(update={"cmis": False}), [0]))
+
+
+class ParisOnly(unittest.TestCase):
+    def body(self, zone):
+        return web.Autopilot(location=zone, rate="h", duration=1, unit="Days", plate="X", paymentAccountId="c",
+                             days=[0], start="05:00", cmis=True)
+
+    def test_the_cmis_ticket_is_refused_outside_paris(self):
+        with self.assertRaises(web.HTTPException) as e:
+            web.check_cmis_zone(self.body("69001"))
+        self.assertIn("Paris seulement", e.exception.detail)
+
+    def test_the_cmis_ticket_is_taken_in_paris(self):
+        web.check_cmis_zone(self.body("75016"))

@@ -447,7 +447,7 @@ const QUESTIONS: Question[] = [
   [
     'Pour quels véhicules et quels stationnements ?',
     <>
-      Partout en France où <PayByPhone /> fonctionne, pour une voiture, un deux-roues ou un utilitaire : ticket résident renouvelé chaque semaine, ticket visiteur ou carte mobilité CMI-S pris les jours choisis. Le tarif professionnel n’est pas encore proposé.
+      Partout en France où <PayByPhone /> fonctionne, pour une voiture, un deux-roues ou un utilitaire : ticket résident renouvelé chaque semaine, ticket visiteur pris les jours choisis, et à Paris le ticket carte mobilité CMI-S. Le tarif professionnel n’est pas encore proposé.
     </>,
   ],
   [

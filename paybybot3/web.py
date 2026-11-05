@@ -2521,6 +2521,15 @@ class Autopilot(Parking):
     locations: list[Annotated[str, Field(pattern=r"^75(0(0[1-9]|1\d|20)|116)$")]] | None = Field(default=None, max_length=21)
 
 
+PARIS_ZONE = re.compile(r"^75(0(0[1-9]|1\d|20)|116)$")
+
+
+def check_cmis_zone(body):
+    """The CMI-S ticket is offered in Paris only, for now."""
+    if body.cmis and not PARIS_ZONE.match(body.location.strip()):
+        raise HTTPException(400, "Le ticket carte mobilité CMI-S est proposé à Paris seulement, pour l'instant.")
+
+
 def zones_of(body, days):
     """The arrondissements of a Handi ticket on chosen days, when there are several; else None (its one zone)."""
     zones = sorted(set(body.locations or []))
@@ -3682,6 +3691,7 @@ def add_autopilot(body: Autopilot, pbb_session: str = Cookie(None)):
         except Exception as e:
             log.warning("account e-mail unreadable: %s", e)
     days, start = checked_days(body)
+    check_cmis_zone(body)
     zones = zones_of(body, days)
     # Only the account's own vehicles (they are what the subscription bills).
     own = {plate_key(v.get("licensePlate") or "") for v in guarded(lambda: s.call("get_vehicles")) or []
@@ -5062,6 +5072,7 @@ def edit_autopilot(ap_id: str, body: Autopilot, pbb_session: str = Cookie(None))
     days, start = checked_days(body)
     if not days:
         raise HTTPException(400, "Seuls les tickets programmés se modifient.")
+    check_cmis_zone(body)
     same_car = "Le véhicule ne se change pas : arrêtez ce ticket et programmez-en un pour l'autre véhicule."
     if HOSTED and not s.demo:
         row = next((r for r in guarded(lambda: store("renewal_list", p_owner=owner_id(s.username))) if r["id"] == ap_id),

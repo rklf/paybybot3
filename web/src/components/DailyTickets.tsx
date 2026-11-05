@@ -582,7 +582,8 @@ export function DailyWizard({
   // The visitor rate comes as « léger » and « lourd »: PayByPhone does not know the weight, so one question instead.
   const usable = useMemo(() => (rates ?? []).filter((r) => !r.parkingNotAllowedReason && !resident(r)), [rates])
   const hasWeight = usable.some(light) && usable.some(heavy)
-  const handiRate = usable.find(handi) ?? null
+  // The CMI-S ticket is offered in Paris only, for now.
+  const handiRate = paris ? (usable.find(handi) ?? null) : null
   const effective = usable.find((r) => r.ratePolicyId === rateId) ?? null
   // The zones a Handi ticket covers: in Paris the arrondissements ticked (the zone typed included), else its zone.
   const parisZone = PARIS_ZONES.find((z) => arrondissement(z) === place) ?? zone
@@ -645,7 +646,7 @@ export function DailyWizard({
       setRates(list)
       const first = list.filter((r) => !r.parkingNotAllowedReason && !resident(r))
       const kept = edit.current && first.find((r) => r.ratePolicyId === String(edit.current!.rate))
-      setRateId((kept || first.find(handi) || first[0])?.ratePolicyId ?? null)
+      setRateId((kept || (isParis(zone) && first.find(handi)) || first.find((r) => !handi(r)) || first[0])?.ratePolicyId ?? null)
       setStep(2)
     } catch (e) {
       setError((e as Error).message)
@@ -908,7 +909,9 @@ export function DailyWizard({
                       <span className="min-w-0 flex-1">
                         <span className="block font-medium text-ink/45">Carte mobilité CMI-S</span>
                         <span className="block text-sm text-ink/45">
-                          {withPayByPhone('PayByPhone ne le propose pas pour ce véhicule dans cette zone.')}
+                          {paris
+                            ? withPayByPhone('PayByPhone ne le propose pas pour ce véhicule dans cette zone.')
+                            : 'Proposé à Paris seulement, pour l’instant.'}
                         </span>
                       </span>
                       <span className="shrink-0 text-sm text-ink/45">Gratuit</span>
