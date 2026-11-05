@@ -3086,8 +3086,9 @@ def overview(pbb_session: str = Cookie(None)):
                 x["stoppable"] = False
             elif not x["stoppable"]:  # what PayByPhone says of it, without anything personal
                 r = raw.get(x["id"]) or {}
-                log.info("CMI-S ticket not stoppable: isStoppable=%s jobId=%s segments=%s", r.get("isStoppable"),
-                         bool(r.get("jobId")), len(r.get("segments") or []))
+                log.info("CMI-S ticket not stoppable: isStoppable=%s jobId=%s segments=%s status=%s stopTime=%s",
+                         r.get("isStoppable"), bool(r.get("jobId")), len(r.get("segments") or []), r.get("status"),
+                         r.get("stopTime"))
         return {
             "vehicles": [{"plate": v["licensePlate"], "country": v.get("country"), "type": v.get("type"),
                           "zone": (kept.get(plate_key(v["licensePlate"])) or {}).get("z")} for v in vehicles],
@@ -3615,7 +3616,8 @@ def stop_tickets(body: StopTickets, pbb_session: str = Cookie(None)):
     stopped = 0
     for x in tickets:
         try:
-            s.call("stop", x["parkingSessionId"], x["jobId"], stop_line(x))
+            answer = s.call("stop", x["parkingSessionId"], x["jobId"], stop_line(x)) or {}
+            log.info("stop: stopDateTime=%s newExpiryTime=%s", answer.get("stopDateTime"), answer.get("newExpiryTime"))
             stopped += 1
         except Exception as e:
             log.warning("stop refused: %s", str(e)[:400])
