@@ -5,8 +5,8 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { NoPayment } from '@/components/NoPayment'
 import { PlansDialog } from '@/components/Pricing'
 import { isoDay, periodDays, periodText, RangeCalendar } from '@/components/RangeCalendar'
-import { clearPending, pauseState, RenewalActions, savePending, type PendingRenewal } from '@/components/Riverain'
-import { arrondissement, PayByPhone, Plate, withPayByPhone } from '@/components/signs'
+import { clearPending, pauseState, RenewalActions, savePending, ZoneTag, type PendingRenewal } from '@/components/Riverain'
+import { arrondissement, Plate, withPayByPhone } from '@/components/signs'
 import { api, ApiError, unitLabel, type Autopilot, type Money, type Overview, type Rate, type Unit } from '@/lib/api'
 import { ui } from '@/lib/styles'
 import { cn } from '@/lib/utils'
@@ -82,11 +82,9 @@ function CmisAttest({ checked, onChange }: { checked: boolean; onChange: (v: boo
 
 /** The 20 Paris arrondissements: a Handi ticket in Paris covers all of them by default, one free ticket in each. */
 const PARIS_ZONES = Array.from({ length: 20 }, (_, i) => `750${String(i + 1).padStart(2, '0')}`)
-/** Where a programmed ticket is taken: « Tout Paris », « 3 arrondissements » or its one zone. */
-const placeOf = (ap: Autopilot) =>
-  (ap.locations?.length ?? 0) > 1
-    ? ap.locations!.length >= 20 ? 'Tout Paris' : `${ap.locations!.length} arrondissements de Paris`
-    : (arrondissement(ap.location) ?? `Zone ${ap.location}`)
+/** Its zone in the pill, as on the running-ticket card: « 75001 », « Tout Paris » or « 3 arr. ». */
+const zoneOf = (ap: Autopilot) =>
+  (ap.locations?.length ?? 0) > 1 ? (ap.locations!.length >= 20 ? 'Tout Paris' : `${ap.locations!.length} arr.`) : ap.location
 const resident = (r: Rate) => /r[ée]sident/i.test(`${r.name} ${r.type}`)
 
 /** « 6 h », « 1 jour », « 360 min ». */
@@ -215,17 +213,12 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
 
   return (
     <article className={cn('rise overflow-hidden rounded-2xl border border-ink/10 bg-white', finished && 'opacity-80')}>
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-5 pt-5 pb-4">
-        <span className="flex items-center gap-3">
-          <span className="text-[1.05rem] font-medium text-ink">
-            <PayByPhone />
-          </span>
+      {/* The same header as the running-ticket card: the plate, then the kind of ticket and its zone in one pill. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-4">
+        <span className="shrink-0">
           <Plate plate={ap.plate} size="sm" />
         </span>
-        {/* The kind of ticket then the place, in grey, like the resident card's « Ticket résident · Paris 5e ». */}
-        <span className="text-sm text-ink/50">
-          Non-résident · {placeOf(ap)}
-        </span>
+        <ZoneTag zone={zoneOf(ap)} resident={false} kind={ap.cmis ? 'Carte mobilité CMI-S' : 'Non-résident'} />
       </div>
       {/* Same order as the resident card: the switch right under the header, then the details. */}
       <div className="border-t border-ink/[0.06] px-5 py-4">
