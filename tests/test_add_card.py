@@ -38,3 +38,4 @@ class AddCard(unittest.TestCase):
             with self.assertRaises(HTTPException):
                 web.add_card(dict(CARD))
         self.assertNotIn("4970", " ".join(logs.output))
+        self.assertNotRegex(" ".join(logs.output), r"\d{3}")

@@ -3712,7 +3712,9 @@ def add_card(body: dict = Body(...), pbb_session: str = Cookie(None)):
     try:
         s.call("add_card", number, cvv, month, year, name)
     except Exception as e:
-        log.warning("card not added: %s", type(e).__name__)  # never PayByPhone's answer: it could quote the card
+        # PayByPhone's reason, without any run of digits nor the name (nothing of the card can be read in it).
+        reason = re.sub(r"\d[\d\s./-]*", "#", str(e)).replace(name, "<nom>")[:800]
+        log.warning("card not added: %s: %s", type(e).__name__, reason)
         raise HTTPException(400, "PayByPhone n'a pas accepté cette carte. Vérifiez-la, ou ajoutez-la dans l'application "
                                  "PayByPhone.")
     finally:
