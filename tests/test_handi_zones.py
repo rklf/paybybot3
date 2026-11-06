@@ -195,3 +195,14 @@ class TakeWithoutCredential(unittest.TestCase):
                 patch.object(web, "is_outage", return_value=False):
             web.process_renewal(row, first_now=True)
         self.assertEqual(logins, [(None, "o")])
+
+
+class SlowDown(unittest.TestCase):
+    def test_a_zone_refused_with_429_is_taken_again_never_told(self):
+        class Busy(FakeSession):
+            def call(self, name, *args, **kw):
+                if name == "pay" and kw["locationId"] == "75002":
+                    raise RuntimeError("429 Client Error: Too Many Requests")
+                return super().call(name, *args, **kw)
+        _, failed, left = web.take_zones(Busy(), ROW, "card")
+        self.assertEqual((failed, left), ([], ["75002"]))

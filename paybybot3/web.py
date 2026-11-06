@@ -677,24 +677,30 @@ def take_zones(session, row, card, wave=None):
             return covered_until(found), None
         except Exception as e:
             return None, e
-    expire, failed = None, []
+    expire, failed, again = None, [], []
     if now:
         with ThreadPoolExecutor(max_workers=len(now)) as pool:
             results = list(pool.map(lambda z: contextvars.copy_context().run(take, z), now))
         for zone, (end, e) in zip(now, results):
-            if e is not None:
+            if e is not None and passing(e):
+                again.append(zone)  # PayByPhone asked to slow down: taken again in the next wave, never told
+            elif e is not None:
                 failed.append((zone, e))
             elif end:
                 expire = max(expire, end) if expire else end
-    return expire, failed, later
+    return expire, failed, again + later
+
+
+def passing(e):
+    """A refusal that goes away by itself (PayByPhone asking to slow down, or not answering for a moment)."""
+    text = str(e)
+    return "429" in text or "Too Many Requests" in text or is_outage(e)
 
 
 def zone_reason(e):
     """Why PayByPhone did not take the ticket in one arrondissement, in a few words."""
     if "VehicleAlreadyParked" in str(e):
         return "un ticket y est encore en cours chez PayByPhone"
-    if "429" in str(e):
-        return "PayByPhone a demandé de ralentir, réessayé tout de suite après"
     return str(e) if isinstance(e, NotPayable) else friendly_error(e)
 
 

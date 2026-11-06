@@ -84,24 +84,25 @@ function useTaking(id: string) {
 async function takeTickets(ap: Autopilot, onChanged: () => void) {
   const total = ap.locations?.length || 1
   setTaking(ap.id, { covered: 0, total, busy: true })
-  let last: Taking = { covered: 0, total, busy: false }
-  try {
-    for (let i = 0; i < 6; i++) {
+  let last: Taking = { covered: 0, total, busy: true }
+  // While loading the user sees only the progress: a wave that takes nothing (PayByPhone slowing down) is tried
+  // again after a pause, silently, a few times; what is left after that is taken by the scheduler.
+  for (let i = 0, idle = 0; i < 12 && idle < 3; i++) {
+    try {
       const r = await api.takeNow(ap.id)
-      const gained = r.covered > last.covered
-      last = { covered: r.covered, total: r.total, busy: r.more && gained, error: r.error }
+      idle = r.covered > last.covered ? 0 : idle + 1
+      last = { covered: r.covered, total: r.total, busy: true, error: r.error }
       setTaking(ap.id, last)
       onChanged()
-      if (!r.more || !gained) break // nothing new taken: PayByPhone refuses the rest, said on the card
+      if (!r.more) break
+    } catch {
+      idle++ // a failed call: tried again, never shown
     }
-  } catch (e) {
-    last = { ...last, error: (e as Error).message }
+    if (idle) await new Promise((done) => setTimeout(done, 4000))
   }
   setTaking(ap.id, { ...last, busy: false })
-  const all = last.covered >= last.total
-  const text = last.total > 1 ? `${last.covered} arrondissements couverts sur ${last.total}` : all ? 'Ticket pris.' : 'Ticket non pris.'
-  if (all) toast.success(last.total > 1 ? `Tickets pris : ${text}.` : text)
-  else toast.error(last.total > 1 ? `${text}.` : text, { description: last.error ?? undefined })
+  // Only good news pops up; anything left to say stays on the card, in plain words.
+  if (last.covered >= last.total) toast.success(last.total > 1 ? `Tickets pris : ${last.total} arrondissements couverts.` : 'Ticket pris.')
 }
 
 /** The first question: the vehicle's type, which says the rate. */
