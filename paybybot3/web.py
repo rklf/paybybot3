@@ -1774,7 +1774,25 @@ def bot_from_refresh(refresh, owner=None):
         if bot.refresh_token and bot.refresh_token != token:
             share_refresh(owner, bot.refresh_token)
         return bot
+    # Several requests of one page found the access token expired at once: one of them got the new tokens and stores
+    # them a moment later. Its token, once there, instead of « connexion expirée » for the others.
+    if owner and error is not None:
+        time.sleep(REFRESH_RACE_WAIT)
+        token = stored_refresh(owner)
+        if token and token not in tried:
+            try:
+                bot = Bot.from_refresh_token(token)
+            except requests.HTTPError as e:
+                log.warning("PayByPhone refresh token refused after waiting: %s", refusal(e))
+                raise
+            if bot.refresh_token and bot.refresh_token != token:
+                share_refresh(owner, bot.refresh_token)
+            log.info("PayByPhone token taken from a request refreshed at the same time")
+            return bot
     raise error or ValueError("no PayByPhone refresh token")
+
+
+REFRESH_RACE_WAIT = 1.5  # seconds: long enough for the request that refreshed to store its new token
 
 
 RENEWAL_FIELDS = ("label", "plate", "location", "rate", "duration", "unit", "payment_account_id", "email", "days",

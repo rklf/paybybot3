@@ -2,6 +2,8 @@ import json
 import time
 import os
 import unittest
+
+import requests
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -159,3 +161,30 @@ class LogoutRevokes(unittest.TestCase):
                                                 "iat": 0})
             fresh.issued_at = int(time.time()) + 1  # a new login: a later time
             self.assertEqual(web.current(web.seal(fresh)).username, "+33612345678")
+
+
+class RefreshRace(unittest.TestCase):
+    """Two requests of one page refresh at once: the one refused takes the token the other just stored."""
+
+    def test_the_token_stored_meanwhile_is_used(self):
+        refused = requests.HTTPError(response=SimpleNamespace(status_code=400, json=lambda: {"error": "invalid_grant"}))
+        stored = iter(["old", "new"])  # before the wait: the old one; after: the one the other request stored
+
+        def login(token):
+            if token != "new":
+                raise refused
+            return SimpleNamespace(refresh_token="newer")
+
+        with patch.object(web, "REFRESH_RACE_WAIT", 0), patch.object(web, "stored_refresh", side_effect=lambda o: next(stored)), \
+                patch.object(web.Bot, "from_refresh_token", side_effect=login), \
+                patch.object(web, "share_refresh") as share:
+            bot = web.bot_from_refresh("old", "owner")
+        self.assertEqual(bot.refresh_token, "newer")
+        share.assert_called_once_with("owner", "newer")
+
+    def test_still_refused_when_nothing_new_was_stored(self):
+        refused = requests.HTTPError(response=SimpleNamespace(status_code=400, json=lambda: {"error": "invalid_grant"}))
+        with patch.object(web, "REFRESH_RACE_WAIT", 0), patch.object(web, "stored_refresh", return_value="old"), \
+                patch.object(web.Bot, "from_refresh_token", side_effect=refused):
+            with self.assertRaises(requests.HTTPError):
+                web.bot_from_refresh("old", "owner")
