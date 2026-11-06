@@ -109,27 +109,22 @@ function AccountDialog({
 
         {/* The vehicles, one row each (plate and zone); one price covers them all. */}
         <section className="mx-6 mt-6">
-          <div className="flex items-baseline justify-between gap-4">
-            <h3 className="font-heading text-lg font-bold text-ink">
-              {vehicles && vehicles.length > 1 ? 'Vos véhicules' : 'Votre véhicule'}
-            </h3>
-            {!demo && account?.plan && (
-              <button onClick={manage} disabled={opening} className={cn('inline-flex items-center gap-1.5 text-sm', ui.link)}>
-                {opening && <Loader2 className="size-3.5 animate-spin" />}
-                Gérer l’abonnement
-              </button>
-            )}
-          </div>
+          <h3 className="font-heading text-lg font-bold text-ink">
+            {vehicles && vehicles.length > 1 ? 'Vos véhicules' : 'Votre véhicule'}
+          </h3>
 
           <ul className="mt-3 divide-y divide-ink/10 rounded-xl border border-ink/12 bg-white">
             {vehicles === undefined ? (
-              <LoadingLine className="px-3 py-4" />
+              <LoadingLine className="px-4 py-4" />
             ) : vehicles.length ? (
               vehicles.map((v) => {
                 const zone = arrondissement(v.zone)
                 return (
-                  <li key={v.plate} className="flex items-center gap-3 px-3 py-3">
-                    <Plate plate={v.plate} size="sm" />
+                  // The plates in a column of one width, so every zone starts at the same place.
+                  <li key={v.plate} className="flex items-center gap-4 px-4 py-3">
+                    <span className="w-[7.75rem] shrink-0">
+                      <Plate plate={v.plate} size="sm" />
+                    </span>
                     <span className="min-w-0 flex-1 text-[0.95rem] font-semibold text-ink">
                       {zone ?? (v.zone ? <ZonePlate zone={v.zone} /> : <span className="font-normal text-ink/60">Sans tarif résident</span>)}
                     </span>
@@ -137,24 +132,32 @@ function AccountDialog({
                 )
               })
             ) : (
-              <li className="px-3 py-3 text-ink/60">{data.vehicles.length ? 'Aucun véhicule au tarif résident' : 'Aucun véhicule'}</li>
+              <li className="px-4 py-3 text-ink/60">{data.vehicles.length ? 'Aucun véhicule au tarif résident' : 'Aucun véhicule'}</li>
             )}
           </ul>
 
           {account?.subscribed && pricing?.monthly != null && !!vehicles?.length && (
-            <p className="mt-3 flex items-baseline justify-between gap-3 rounded-xl bg-ink/[0.04] px-4 py-3 text-ink">
-              <span>
-                Abonnement {yearly ? 'annuel' : 'mensuel'}
-                {vehicles.length > 1 && <span className="block text-sm text-ink/60">Tous vos véhicules sont inclus.</span>}
-              </span>
-              <span className="font-bold whitespace-nowrap">
+            // The offer and its « Gérer l'abonnement » together: the name and what it covers on the left, the price and
+            // the link on the right, each line on the same baseline.
+            <div className="mt-3 grid grid-cols-[1fr_auto] items-baseline gap-x-4 gap-y-1 rounded-xl bg-ink/[0.04] px-4 py-3 text-ink">
+              <span>Abonnement {yearly ? 'annuel' : 'mensuel'}</span>
+              <span className="text-right font-bold whitespace-nowrap">
                 {euros((yearly ? pricing.yearly : pricing.monthly) ?? 0)}
                 {yearly ? '/an' : '/mois'}
               </span>
-            </p>
+              <span className="text-sm text-ink/60">{vehicles.length > 1 ? 'Tous vos véhicules sont inclus.' : ''}</span>
+              {!demo && account?.plan ? (
+                <button onClick={manage} disabled={opening} className={cn('inline-flex items-center justify-end gap-1.5 text-sm', ui.link)}>
+                  {opening && <Loader2 className="size-3.5 animate-spin" />}
+                  Gérer l’abonnement
+                </button>
+              ) : (
+                <span />
+              )}
+            </div>
           )}
 
-          <p className="mt-3 text-sm text-ink/55">
+          <p className="mt-3 px-4 text-sm text-ink/55">
             Un véhicule manque ? Ajoutez-le dans{' '}
             {/* PayByPhone's own app link (as in the e-mails): on an iPhone it opens the app when installed (a universal
                 link), else its App Store page. */}
