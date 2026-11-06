@@ -235,6 +235,25 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
   const single = !!period && period.from === period.to
   const [removing, setRemoving] = useState(false)
   const [editing, setEditing] = useState(false)
+  // One card per car: the tickets running now in its zones are shown here, not in a card of their own.
+  const zones = ap.locations?.length ? ap.locations : [ap.location]
+  const live = data.sessions.filter(
+    (x) => keyOf(x.plate) === keyOf(ap.plate) && zones.includes(x.location) && new Date(x.expire).getTime() > Date.now(),
+  )
+  const liveEnd = live.length ? new Date(Math.max(...live.map((x) => new Date(x.expire).getTime()))) : null
+  const [stopping, setStopping] = useState<'ask' | 'busy' | null>(null)
+  async function stop() {
+    setStopping('busy')
+    try {
+      const r = await api.stopTickets(live.map((x) => x.id))
+      toast.success(r.stopped > 1 ? `${r.stopped} tickets arrêtés.` : 'Ticket arrêté.')
+      onChanged()
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setStopping(null)
+    }
+  }
 
   async function remove() {
     setRemoving(true)
@@ -263,6 +282,39 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
         </span>
         <ZoneTag zone={zoneOf(ap)} resident={false} kind={ap.cmis ? 'Carte mobilité CMI-S' : 'Non-résident'} />
       </div>
+      {/* The tickets running now: how many arrondissements, until when, and « Arrêter » for a CMI-S one. */}
+      {liveEnd && (
+        <div className="border-t border-ink/[0.06] px-5 py-4">
+          <p className="font-medium text-ink">Ticket en cours</p>
+          <p className="mt-1 text-sm text-ink/60">
+            {zones.length > 1 && `${live.length} / ${zones.length} arrondissements couverts · `}
+            jusqu’au <span className="text-ink">{when(liveEnd)}</span>
+          </p>
+          {live.every((x) => x.stoppable) &&
+            (stopping ? (
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <span className="text-sm text-ink/70">
+                  {live.length > 1 ? `Arrêter les ${live.length} tickets maintenant ?` : 'Arrêter ce ticket maintenant ?'}
+                </span>
+                <button
+                  onClick={stop}
+                  disabled={stopping === 'busy'}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-[10px] border border-destructive/30 px-3 text-sm font-semibold text-destructive transition hover:bg-destructive/5 disabled:opacity-60"
+                >
+                  {stopping === 'busy' && <Loader2 className="size-3.5 animate-spin" />}
+                  Oui, arrêter
+                </button>
+                <button onClick={() => setStopping(null)} disabled={stopping === 'busy'} className={cn('text-sm', ui.link)}>
+                  Non
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => setStopping('ask')} className={cn('mt-3 block text-sm', ui.link)}>
+                {live.length > 1 ? 'Arrêter ces tickets' : 'Arrêter ce ticket'}
+              </button>
+            ))}
+        </div>
+      )}
       {/* Same order as the resident card: the switch right under the header, then the details. */}
       <div className="border-t border-ink/[0.06] px-5 py-4">
         {finished ? (

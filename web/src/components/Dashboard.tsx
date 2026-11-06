@@ -437,8 +437,13 @@ export function Dashboard({
   const zonesOf = (s: Session) =>
     data?.autopilots.find((ap) => (ap.locations?.length ?? 0) > 1 && sameCar(ap.plate, s.plate) && ap.locations!.includes(s.location))
       ?.locations
+  // One card per car: a ticket running in the zones of a programmed ticket of the car shows on that card.
+  const programmed = (s: Session) =>
+    data?.autopilots.some(
+      (ap) => isDaily(ap) && ap.enabled && sameCar(ap.plate, s.plate) && (ap.locations?.length ? ap.locations : [ap.location]).includes(s.location),
+    )
   const sessions = running.filter(
-    (s) => !zonesOf(s) || running.find((x) => sameCar(x.plate, s.plate) && zonesOf(x) === zonesOf(s)) === s,
+    (s) => !programmed(s) && (!zonesOf(s) || running.find((x) => sameCar(x.plate, s.plate) && zonesOf(x) === zonesOf(s)) === s),
   )
   const groupOf = (s: Session) => {
     const zones = zonesOf(s)
@@ -591,7 +596,7 @@ export function Dashboard({
             : !data.autopilots.some((ap) => ap.enabled && !ruleState(ap).finished)
               ? // Nothing automated (a finished one-off ticket does not count): say it plainly.
                 "Votre stationnement n'est pas encore automatisé."
-            : sessions.length
+            : running.length
               ? // One card: « Votre ticket en cours », several (running or programmed): « Vos tickets ».
                 sessions.length + shownDaily > 1
                 ? 'Vos tickets :'
