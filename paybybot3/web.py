@@ -3084,7 +3084,7 @@ def overview(pbb_session: str = Cookie(None)):
         for x in sessions:  # only a CMI-S ticket is stopped from PayByBot
             if x.get("kind") != CMIS_KIND:
                 x["stoppable"] = False
-            elif not x["stoppable"]:  # what PayByPhone says of it, without anything personal
+            elif not x["stoppable"] and (parse_dt(x["expire"]) or now_utc()) > now_utc():  # what PayByPhone says
                 r = raw.get(x["id"]) or {}
                 log.info("CMI-S ticket not stoppable: isStoppable=%s jobId=%s segments=%s status=%s stopTime=%s",
                          r.get("isStoppable"), bool(r.get("jobId")), len(r.get("segments") or []), r.get("status"),
@@ -5017,6 +5017,13 @@ def edit_autopilot(ap_id: str, body: Autopilot, pbb_session: str = Cookie(None))
         ap = update_own_renewal(s, ap_id, {"data": encrypt_details(details), "last_error": None,
                                            "next_check": utc_iso(datetime.now(timezone.utc))})
         log.info("renewal %s edited", ap_id)
+        if body.now:  # its next ticket asked for at once (never over a ticket running for the car)
+            row = next((r for r in store("renewal_list", p_owner=owner_id(s.username)) if r["id"] == ap_id), None)
+            if row:
+                process_renewal({**row, "owner": owner_id(s.username)}, refresh_token=getattr(s.bot, "refresh_token", None),
+                                activating=True, first_now=True)
+                stored = next((r for r in store("renewal_list", p_owner=owner_id(s.username)) if r["id"] == ap_id), row)
+                ap = stored_to_autopilot(stored)
         return with_next_ticket(ap)
     ap = s.autopilots.get(ap_id)
     if not ap:
@@ -5027,6 +5034,8 @@ def edit_autopilot(ap_id: str, body: Autopilot, pbb_session: str = Cookie(None))
     ap.update(location=body.location, rate=body.rate, duration=fmt_qty(body.duration), unit=body.unit,
               paymentAccountId=body.paymentAccountId, days=days, start=start, dateFrom=body.dateFrom,
               dateTo=body.dateTo, cmis=body.cmis, locations=zones_of(body, days), lastError=None)
+    if body.now:
+        run_autopilot(s, ap, first_now=True)
     return ap
 
 
