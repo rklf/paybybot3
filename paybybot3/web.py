@@ -1704,7 +1704,7 @@ def bot_from_refresh(refresh, owner=None):
 
 
 RENEWAL_FIELDS = ("label", "plate", "location", "rate", "duration", "unit", "payment_account_id", "email", "days",
-                  "start", "tz", "cmis_attested_at", "date_from", "date_to",
+                  "start", "tz", "cmis_attested_at", "date_from", "date_to", "locations",
                   "bank_job", "bank_ends", "bank_deadline", "bank_remind", "bank_reminded", "bank_at", "refused_tries", "card_warned",
                   "card_stats", "card_hint")
 

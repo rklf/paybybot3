@@ -154,3 +154,10 @@ class FirstTicketNow(unittest.TestCase):
         s, ap = FakeSession(running=["75016"]), self.ap()
         web.run_autopilot(s, ap, now=self.at_3am(), first_now=True)
         self.assertEqual(s.paid, [])
+
+
+class StoredZones(unittest.TestCase):
+    def test_the_arrondissements_survive_the_encryption(self):
+        with patch.dict(os.environ, {"PAYBYBOT_SECRET": "s" * 40}):
+            row = {"id": "r", "data": web.encrypt_details({**ROW, "locations": PARIS})}
+            self.assertEqual(web.with_details(row)["locations"], PARIS)
