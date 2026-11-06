@@ -446,10 +446,10 @@ export function Dashboard({
   const cmis = (s: Session) => s.kind === 'Carte mobilité CMI-S'
   const groupOf = (s: Session) => (cmis(s) ? running.filter((x) => cmis(x) && sameCar(x.plate, s.plate)) : [s])
   const sessions = running.filter((s) => !programmed(s) && groupOf(s)[0] === s)
-  // Zone codes, like a resident ticket's « 75016 »: « 75001-75020 » for all of Paris, else the first and how many more.
+  // Zone codes, like a resident ticket's « 75016 »: « 75001-75020 » for all of Paris, else « 75002 + 13 autres ».
   const placeOf = (s: Session) => {
     const zones = groupOf(s).map((x) => x.location).sort()
-    return zones.length < 2 ? undefined : zones.length >= 20 ? '75001-75020' : `${zones[0]} +${zones.length - 1}`
+    return zones.length < 2 ? undefined : zones.length >= 20 ? '75001-75020' : `${zones[0]} + ${zones.length - 1} autre${zones.length > 2 ? "s" : ""}`
   }
   // The programmed-ticket cards shown below (as DailyTickets lists them: a finished one-off ticket is not).
   const shownDaily = (data?.autopilots ?? []).filter((ap) => {

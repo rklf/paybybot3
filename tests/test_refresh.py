@@ -52,10 +52,16 @@ class SharedRefreshToken(unittest.TestCase):
         share.assert_called_once_with(web.owner_id("+33612345678"), "newest")
 
     def test_replaced_token_is_shared_with_the_renewals(self):
-        with patch.object(web.Bot, "from_refresh_token", return_value=bot("rotated")), \
-                patch.object(web, "stored_refresh") as stored, patch.object(web, "share_refresh") as share:
+        used = []
+
+        def login(token):
+            used.append(token)
+            return bot("rotated")
+        with patch.object(web.Bot, "from_refresh_token", side_effect=login), \
+                patch.object(web, "stored_refresh", return_value="stored"), patch.object(web, "share_refresh") as share:
             self.session.call("get_vehicles")
-        stored.assert_not_called()  # the cookie's token worked
+        # The newest stored token first: the cookie's copy, maybe replaced already, is never sent before it.
+        self.assertEqual(used, ["stored"])
         share.assert_called_once_with(web.owner_id("+33612345678"), "rotated")
 
     def test_both_refused_asks_to_log_in_again(self):

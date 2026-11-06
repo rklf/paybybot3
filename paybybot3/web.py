@@ -1703,7 +1703,9 @@ def bot_from_refresh(refresh, owner=None):
     using one may replace it: if this one is refused, the newest stored for the account is tried, and the token
     PayByPhone hands back is stored for all."""
     tried, error = set(), None
-    for get in (lambda: refresh, lambda: stored_refresh(owner)):
+    # The newest stored for the account first: a copy already replaced (this page's, a renewal's) only if it fails,
+    # never sent before it (PayByPhone may drop every token of a login when it is shown one already replaced).
+    for get in (lambda: stored_refresh(owner), lambda: refresh):
         token = get()
         if not token or token in tried:
             continue
