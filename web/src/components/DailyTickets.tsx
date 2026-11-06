@@ -603,9 +603,8 @@ export function DailyWizard({
       <input type="checkbox" checked={takeNow} onChange={(e) => setFirstNow(e.target.checked)} className="mt-1 size-4 shrink-0 accent-[#4e9aa0]" />
       <span>
         {kind === 'cmis'
-          ? 'Prendre les tickets maintenant, sans attendre 5 h'
-          : editing ? 'Prendre le ticket maintenant' : 'Prendre le premier ticket maintenant'}
-        {kind !== 'cmis' && cost ? ` (${euros(cost)})` : ''}, pour vérifier tout de suite que ça marche.
+          ? 'Prendre les tickets tout de suite'
+          : `${editing ? 'Prendre le ticket maintenant' : 'Prendre le premier ticket maintenant'}${cost ? ` (${euros(cost)})` : ''}, pour vérifier tout de suite que ça marche.`}
       </span>
     </label>
   )
