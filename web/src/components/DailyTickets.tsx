@@ -711,7 +711,7 @@ export function DailyWizard({
       <input type="checkbox" checked={takeNow} onChange={(e) => setFirstNow(e.target.checked)} className="mt-1 size-4 shrink-0 accent-[#4e9aa0]" />
       <span>
         {kind === 'cmis'
-          ? 'Prendre les tickets tout de suite'
+          ? 'Prendre le ticket tout de suite'
           : `${editing ? 'Prendre le ticket maintenant' : 'Prendre le premier ticket maintenant'}${cost ? ` (${euros(cost)})` : ''}, pour vérifier tout de suite que ça marche.`}
       </span>
     </label>
@@ -956,7 +956,7 @@ export function DailyWizard({
       for (const p of picked) made.push(await api.addAutopilot(rule(p) as Parameters<typeof api.addAutopilot>[0]))
       const first = nextTicket(ruleDays, start, chainFrom, period)
       toast.success(chainFrom ? 'Renouvellement activé.' : picked.length > 1 ? `${picked.length} tickets programmés.` : 'Ticket programmé.', {
-        description: takeNow ? 'Les tickets sont pris maintenant : suivez-les sur la carte.' : first ? `Prochain ticket ${when(first)}.` : undefined,
+        description: takeNow ? 'Le ticket est pris maintenant : suivez-le sur la carte.' : first ? `Prochain ticket ${when(first)}.` : undefined,
       })
       onDone()
       onClose()
@@ -974,7 +974,7 @@ export function DailyWizard({
     setSaving(true)
     try {
       const ap = await api.editAutopilot(editing!.id, rule() as Parameters<typeof api.editAutopilot>[1])
-      toast.success('Ticket modifié.', { description: takeNow ? 'Les tickets sont pris maintenant : suivez-les sur la carte.' : undefined })
+      toast.success('Ticket modifié.', { description: takeNow ? 'Le ticket est pris maintenant : suivez-le sur la carte.' : undefined })
       onDone()
       onClose()
       if (takeNow) void takeTickets(ap, onDone)

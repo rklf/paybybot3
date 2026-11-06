@@ -1044,10 +1044,22 @@ export function RiverainDialog({
                       {(() => {
                         // The first payment: the day before the running ticket ends, else right away.
                         const t = data.sessions.find((x) => samePlate(x.plate, plate) && new Date(x.expire).getTime() > Date.now())
+                        // Whether a ticket already runs for this car: the renewal follows it, never on top of it.
                         return (
-                          <span className="mt-2 block text-sm text-ink/50">
-                            Premier paiement : <span className="whitespace-nowrap text-ink">{t ? when(nextRenewal(null, t.expire)) : 'maintenant'}</span>
-                          </span>
+                          <>
+                            <span className="mt-2 block text-sm text-ink/50">
+                              {t ? (
+                                <>
+                                  Ticket en cours : <span className="whitespace-nowrap text-ink">jusqu’au {when(new Date(t.expire).getTime())}</span>
+                                </>
+                              ) : (
+                                'Aucun ticket en cours'
+                              )}
+                            </span>
+                            <span className="mt-0.5 block text-sm text-ink/50">
+                              Premier paiement : <span className="whitespace-nowrap text-ink">{t ? when(nextRenewal(null, t.expire)) : 'maintenant'}</span>
+                            </span>
+                          </>
                         )
                       })()}
                       {f?.error && <span className="mt-1 block text-sm text-destructive">{f.error}</span>}
