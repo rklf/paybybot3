@@ -579,11 +579,14 @@ export function DailyWizard({
   const hourPast = !!period && count > 0 && period.to === parisTime.day && start <= parisTime.time
   // Today is one of the chosen days (a Paris Sunday is free): the ticket can be taken at once, to see it work.
   const weekday = (new Date(`${parisTime.day}T12:00:00Z`).getUTCDay() + 6) % 7 // 0 = Monday
-  // No ticket covers the car right now (none running, or the one stopped): its ticket can be taken now.
-  const covered = data.sessions.some((x) => keyOf(x.plate) === keyOf(plate) && new Date(x.expire).getTime() > Date.now())
+  // Something is left to take now: for CMI-S an arrondissement ticked not covered yet, else no ticket on the car.
+  const running = data.sessions.filter((x) => keyOf(x.plate) === keyOf(plate) && new Date(x.expire).getTime() > Date.now())
+  const covered = kind === 'cmis'
+    ? handiZones.every((z) => running.some((x) => x.location === z))
+    : running.length > 0
   const today = !covered && (period
     ? period.from <= parisTime.day && parisTime.day <= period.to
-    : days.includes(weekday)) && !(isParis(zone) && weekday === 6)
+    : days.includes(weekday)) && !((kind === 'cmis' || isParis(zone)) && weekday === 6)
   // Taken at once by default when it is free (CMI-S); a paid ticket only if the user ticks it.
   const [firstNow, setFirstNow] = useState<boolean | null>(null)
   const takeNow = today && (firstNow ?? kind === 'cmis')
@@ -594,6 +597,18 @@ export function DailyWizard({
     return () => clearTimeout(id)
   }, [hourPast, start])
   const [cost, setCost] = useState<Money | null | undefined>(undefined)
+  // The ticket now, not at the next window (5 h for CMI-S): the user sees at once that it works.
+  const nowBox = today && (
+    <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-ink/[0.03] px-4 py-3 text-sm leading-relaxed text-ink/80">
+      <input type="checkbox" checked={takeNow} onChange={(e) => setFirstNow(e.target.checked)} className="mt-1 size-4 shrink-0 accent-[#4e9aa0]" />
+      <span>
+        {kind === 'cmis'
+          ? 'Prendre les tickets maintenant, sans attendre 5 h'
+          : editing ? 'Prendre le ticket maintenant' : 'Prendre le premier ticket maintenant'}
+        {kind !== 'cmis' && cost ? ` (${euros(cost)})` : ''}, pour vérifier tout de suite que ça marche.
+      </span>
+    </label>
+  )
   const cards = data.payments.filter((p) => p.kind === 'card' && !p.expired)
   const [payment, setPayment] = useState(
     cards.find((c) => c.id === editing?.paymentAccountId)?.id ?? cards[0]?.id ?? '',
@@ -975,6 +990,7 @@ export function DailyWizard({
                     </div>
                     <p className="mt-2 text-xs text-ink/45">Un ticket gratuit est pris dans chaque arrondissement coché.</p>
                   </div>
+                  {nowBox}
                   <CmisAttest checked={cmis} onChange={setCmis} />
                 </>
               ) : (
@@ -1256,16 +1272,8 @@ export function DailyWizard({
                   </div>
                 ))}
               </dl>
-              {today && (
-                // The first ticket now, not at the next window: the user sees at once that it works.
-                <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-ink/[0.03] px-4 py-3 text-sm leading-relaxed text-ink/80">
-                  <input type="checkbox" checked={takeNow} onChange={(e) => setFirstNow(e.target.checked)} className="mt-1 size-4 shrink-0 accent-[#4e9aa0]" />
-                  <span>
-                    {editing ? 'Prendre le ticket maintenant' : 'Prendre le premier ticket maintenant'}
-                    {effective && !handi(effective) && cost ? ` (${euros(cost)})` : ''}, pour vérifier tout de suite que ça marche.
-                  </span>
-                </label>
-              )}
+              {/* CMI-S: asked with the arrondissements, at step 2. */}
+              {kind !== 'cmis' && nowBox}
               {!cards.length ? (
                 <NoPayment compact onRefresh={async () => onDone()} />
               ) : (
