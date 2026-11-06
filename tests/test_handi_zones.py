@@ -167,3 +167,18 @@ class StoredZones(unittest.TestCase):
         with patch.dict(os.environ, {"PAYBYBOT_SECRET": "s" * 40}):
             row = {"id": "r", "data": web.encrypt_details({**ROW, "locations": PARIS})}
             self.assertEqual(web.with_details(row)["locations"], PARIS)
+
+
+class DueNow(unittest.TestCase):
+    def ap(self, **k):
+        return {"plate": "X", "location": "75001", "duration": "1", "unit": "Days", "days": [0, 1, 2, 3, 4, 5],
+                "start": "05:00", "enabled": True, "lastPayment": None, **k}
+
+    def test_due_in_its_window_not_before(self):
+        noon, night = datetime(2026, 11, 10, 11, 0, tzinfo=timezone.utc), datetime(2026, 11, 10, 2, 0, tzinfo=timezone.utc)
+        with patch.object(web, "datetime") as dt:
+            dt.now.return_value = noon
+            self.assertTrue(web.with_next_ticket(self.ap())["due"])
+            self.assertFalse(web.with_next_ticket(self.ap(lastPayment=noon.isoformat()))["due"])  # paid today
+            dt.now.return_value = night
+            self.assertFalse(web.with_next_ticket(self.ap())["due"])  # before 5 h

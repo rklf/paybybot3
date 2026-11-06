@@ -1876,8 +1876,13 @@ def stored_to_autopilot(row):
 def with_next_ticket(ap):
     """Adds when the next ticket of a "precise days" renewal will be taken (for display)."""
     rule = rule_of(ap)
-    nxt = rule and schedule.next_ticket(rule, datetime.now(timezone.utc), ap.get("pausedFrom"), ap.get("pausedUntil"))
-    return {**ap, "nextTicket": nxt.astimezone(timezone.utc).isoformat() if nxt else None}
+    now = datetime.now(timezone.utc)
+    nxt = rule and schedule.next_ticket(rule, now, ap.get("pausedFrom"), ap.get("pausedUntil"))
+    # Its ticket is due now (in today's window, not paid yet): an open page takes it at once, not waiting for the
+    # scheduler (e.g. right after logging in again).
+    due = bool(rule) and ap.get("enabled", True) and schedule.decide(rule, now, ap.get("pausedFrom"), ap.get("pausedUntil"),
+                                                                     ap.get("lastPayment"))[0]
+    return {**ap, "nextTicket": nxt.astimezone(timezone.utc).isoformat() if nxt else None, "due": due}
 
 
 def utc_iso(dt):
@@ -3066,7 +3071,7 @@ def overview(pbb_session: str = Cookie(None)):
 
         def renewals():
             if HOSTED and not s.demo:
-                return [stored_to_autopilot(r) for r in store("renewal_list", p_owner=owner_id(s.username))]
+                return [with_next_ticket(stored_to_autopilot(r)) for r in store("renewal_list", p_owner=owner_id(s.username))]
             return [with_next_ticket(a) for a in s.autopilots.values()]
 
         # The five reads go out together: the page waits for the slowest one, not for their sum.

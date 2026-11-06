@@ -63,6 +63,7 @@ const handi = (r: Rate) => /handi/i.test(`${r.name} ${r.type}`)
 /** Tickets being taken now for a programmed ticket (asked when programming it): its card shows them coming. */
 type Taking = { covered: number; total: number; busy: boolean; error?: string | null }
 const taking = new Map<string, Taking>()
+const autoTaken = new Set<string>() // taken by the page once already (not again on each refresh)
 const takingListeners = new Set<() => void>()
 function setTaking(id: string, t: Taking) {
   taking.set(id, t)
@@ -433,6 +434,19 @@ export function DailyTickets({
   useEffect(() => {
     if (locked || autoOpen) setOpen(true)
   }, [locked, autoOpen])
+  // A programmed ticket due now with an arrondissement not covered yet (e.g. just after logging in again): taken
+  // by the page at once, its card showing them coming, instead of waiting for the scheduler. Once per page.
+  useEffect(() => {
+    for (const ap of data.autopilots) {
+      if (!ap.due || !ap.enabled || autoTaken.has(ap.id) || taking.get(ap.id)?.busy) continue
+      const zones = ap.locations?.length ? ap.locations : [ap.location]
+      const covered = (z: string) =>
+        data.sessions.some((x) => keyOf(x.plate) === keyOf(ap.plate) && x.location === z && new Date(x.expire).getTime() > Date.now())
+      if (zones.every(covered)) continue
+      autoTaken.add(ap.id)
+      void takeTickets(ap, onChanged)
+    }
+  }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     // A car with nothing on it first (not the resident one, renewed above).
     if (openAsked) (setForPlate(idle[0]?.plate), setOpen(true))

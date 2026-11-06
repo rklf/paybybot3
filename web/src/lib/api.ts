@@ -56,6 +56,8 @@ export type Autopilot = Parking & {
   locations?: string[] | null
   /** A CMI-S (Handi) ticket: the holder ticked the card attestation. */
   cmis?: boolean
+  /** Its ticket is due now (today's window, not paid yet): an open page takes it at once. */
+  due?: boolean
 }
 export type HistoryItem = { at: string; kind: 'success' | 'error'; message: string }
 export type Overview = {
