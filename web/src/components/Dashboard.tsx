@@ -219,6 +219,27 @@ function Ticket({
   )
 }
 
+/** In red at the top while no card of the PayByPhone account is valid after this month (it expires this month, or
+ *  has expired): renewed in PayByPhone, the next refresh sees the new card and the banner goes. */
+function CardBanner({ payments }: { payments: Overview['payments'] }) {
+  const cards = payments.filter((p) => p.kind === 'card' && p.validUntil)
+  if (!cards.length) return null
+  const last = Math.max(...cards.map((p) => new Date(p.validUntil!).getTime()))
+  const now = new Date()
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime()
+  if (last >= monthEnd) return null // a card still valid next month
+  const gone = last < now.getTime()
+  return (
+    <div role="alert" className="bg-destructive px-6 py-3 text-center text-sm font-semibold text-white">
+      {gone ? 'Votre carte bancaire a expiré' : 'Votre carte bancaire expire ce mois-ci'} : renouvelez-la sur{' '}
+      <a href="https://paybyphone.onelink.me/ZQkh/" target="_blank" rel="noreferrer" className="underline underline-offset-2">
+        PayByPhone
+      </a>
+      , sinon vos tickets ne seront plus payés.
+    </div>
+  )
+}
+
 /** The cars with no ticket: plate, type, zone and the resident week's price, one card each. */
 const plateKey = (p: string) => p.replace(/[^0-9a-z]/gi, '').toUpperCase()
 const sameCar = (a: string, b: string) => a.replace(/[^0-9a-z]/gi, '').toUpperCase() === b.replace(/[^0-9a-z]/gi, '').toUpperCase()
@@ -550,6 +571,8 @@ export function Dashboard({
           <span className="hidden sm:inline">Déconnexion</span>
         </button>
       </TopBar>
+
+      {data && <CardBanner payments={data.payments} />}
 
       <main className="mx-auto w-full max-w-[34rem] flex-1 px-6 pt-4 pb-6">
         {/* No greeting: the page opens on what matters, whether a ticket is running. */}

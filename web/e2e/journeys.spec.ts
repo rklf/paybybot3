@@ -314,3 +314,22 @@ test('aucune erreur dans la console sur les pages principales', async ({ page })
   await page.goto(LINK + '#/faq')
   expect(errors).toEqual([])
 })
+
+test('carte bancaire qui expire ce mois-ci : bannière rouge, partie avec une carte renouvelée', async ({ page }) => {
+  const now = new Date()
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59).toISOString()
+  const later = new Date(now.getFullYear() + 2, 0, 31).toISOString()
+  let validUntil = endOfMonth
+  await page.route('**/api/overview', async (route) => {
+    const r = await route.fetch()
+    const json = await r.json()
+    if (json.payments) json.payments = json.payments.map((p: { kind: string }) => (p.kind === 'card' ? { ...p, validUntil, expired: false } : p))
+    await route.fulfill({ response: r, json })
+  })
+  await demo(page)
+  await expect(page.getByRole('alert').filter({ hasText: 'expire ce mois-ci' })).toBeVisible()
+  validUntil = later // renewed in PayByPhone: the next refresh drops the banner
+  await page.reload()
+  await expect(page.getByText('Votre stationnement', { exact: false }).or(page.getByText('Vos tickets', { exact: false })).first()).toBeVisible()
+  await expect(page.getByRole('alert').filter({ hasText: 'expire ce mois-ci' })).toHaveCount(0)
+})
