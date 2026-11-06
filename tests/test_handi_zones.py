@@ -182,3 +182,16 @@ class DueNow(unittest.TestCase):
             self.assertFalse(web.with_next_ticket(self.ap(lastPayment=noon.isoformat()))["due"])  # paid today
             dt.now.return_value = night
             self.assertFalse(web.with_next_ticket(self.ap())["due"])  # before 5 h
+
+
+class TakeWithoutCredential(unittest.TestCase):
+    def test_a_listed_row_logs_in_with_the_account_token(self):
+        # /take reads the renewal from the list, which never carries its login: the account's stored one is used.
+        row = {"id": "r", "owner": "o", "data": "d", "last_error": None}
+        logins = []
+        with patch.object(web, "with_details", return_value={**row, **ROW, "days": None}), \
+                patch.object(web, "bot_from_refresh", side_effect=lambda t, o: logins.append((t, o)) or (_ for _ in ()).throw(RuntimeError("stop"))), \
+                patch.object(web, "guarded_state", return_value="ok"), patch.object(web, "store"), patch.object(web, "notify"), \
+                patch.object(web, "is_outage", return_value=False):
+            web.process_renewal(row, first_now=True)
+        self.assertEqual(logins, [(None, "o")])

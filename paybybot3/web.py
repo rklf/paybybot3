@@ -1968,7 +1968,8 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
                 notify_blocked(row, state)
             return "blocked"
     try:
-        refresh = refresh_token or decrypt_credential(row["credential"])
+        # The row's own login, else (a row listed without it, as /take reads it) the newest stored for the account.
+        refresh = refresh_token or (decrypt_credential(row["credential"]) if row.get("credential") else None)
         bot = bot_from_refresh(refresh, row.get("owner"))
     except Exception as e:
         if is_outage(e):  # PayByPhone blocked or down: not the user's login, tried again in 30 minutes
