@@ -134,26 +134,16 @@ function Ticket({
 
       {/* The ticket: when it ends (renewal on) or the time left, large, with the end beside it. */}
       <div className="border-t border-ink/[0.06] px-5 py-5">
-        <p className="text-base font-medium text-ink sm:text-[1.05rem]">Ticket en cours</p>
-        {/* The same figures with or without a renewal: each number with its unit beside it, then when it ends. Without
-            a renewal, the end in red (to urge setting one up), and the numbers too in the last 15 minutes. */}
-        <p className="mt-2 flex items-baseline gap-3 tabular-nums">
-          {countdown(left).map(([n, unit]) => (
-            <span key={unit} className="inline-flex items-baseline gap-1">
-              <span className={cn('font-heading text-[1.4rem] leading-none', soon ? 'text-destructive' : 'text-ink')}>{n}</span>
-              <span className="text-sm text-ink/50">{unit}</span>
-            </span>
-          ))}
+        {/* One line, as on a programmed ticket's card: until when, and how long is left in grey (in red in its last
+            15 minutes). What to do next is the button below. */}
+        <p className="font-medium text-ink">Ticket en cours</p>
+        <p className="mt-1 text-sm text-ink/60">
+          jusqu’au <span className="text-ink">{when(end)}</span>
+          <span className={cn('tabular-nums', soon ? 'font-semibold text-destructive' : 'text-ink/45')}>
+            {' · dans '}
+            {countdown(left).map(([n, unit]) => `${n} ${unit}`).slice(0, 2).join(' ')}
+          </span>
         </p>
-        <p className="mt-2.5 text-sm text-ink/50">
-          Jusqu’au <span className="text-ink">{when(end)}</span>
-        </p>
-        {/* Nothing will follow this ticket (no renewal, no programmed ticket for the car): what that means, in red. */}
-        {!renewal && !data.autopilots.some((ap) => ap.enabled && sameCar(ap.plate, session.plate)) && (
-          <>
-            <p className="mt-1 text-sm font-semibold text-destructive">Sans renouvellement, risque de FPS après cette date.</p>
-          </>
-        )}
         {renewing && (
           <DailyWizard
             data={data}
