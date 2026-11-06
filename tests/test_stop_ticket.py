@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from paybybot3 import web
@@ -43,7 +44,7 @@ class StopTicket(unittest.TestCase):
         a, b = self.take("105"), self.take("105")
         self.assertTrue(self.shown()[a]["stoppable"])
         self.assertEqual(web.stop_tickets(web.StopTickets(ids=[a, b]))["stopped"], 2)
-        self.assertEqual(self.shown(), {})
+        self.assertTrue(all(x["stopped"] and not x["stoppable"] for x in self.shown().values()))
 
     def test_a_resident_week_cannot(self):
         a = self.take("101")
@@ -89,3 +90,16 @@ class TicketKind(unittest.TestCase):
         with patch.object(s, "call", side_effect=AssertionError("asked again")):
             self.assertEqual(web.ticket_kind(s, "75016", "GH456JK", "102"), "Véhicule léger")  # kept
 
+
+
+class StoppedTicket(unittest.TestCase):
+    def ticket(self, **k):
+        return {"parkingSessionId": "x", "locationId": "75001", "startTime": datetime(2026, 11, 6, 12, 35, tzinfo=timezone.utc),
+                "expireTime": datetime(2026, 11, 7, 12, 35, tzinfo=timezone.utc), **k}
+
+    def test_a_stopped_ticket_says_so(self):
+        # As PayByPhone lists it after « Arrêter »: still current, its end unchanged, the stop time set.
+        self.assertTrue(web.serialize_session(self.ticket(stopTime="2026-11-06T12:46:45.317Z"))["stopped"])
+
+    def test_a_running_ticket_has_no_stop_time(self):
+        self.assertFalse(web.serialize_session(self.ticket())["stopped"])

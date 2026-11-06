@@ -195,7 +195,9 @@ class DemoBot:
                 "expireTime": session["expireTime"].isoformat()}
 
     def stop(self, parkingSessionId, jobId, jobLineItemId):
-        self.sessions = [x for x in self.sessions if x["parkingSessionId"] != parkingSessionId]
+        # As PayByPhone: the ticket stays among the current ones, its end unchanged, with the time it was stopped.
+        ticket = self._find(parkingSessionId)
+        ticket.update(stopTime=datetime.now(timezone.utc).isoformat(), isStoppable=False)
         return {"parkingSessionId": parkingSessionId}
 
     def extend(self, parkingSessionId, durationQuantity, durationTimeUnit, licensePlate, locationId, ratePolicyId,
@@ -521,7 +523,16 @@ def serialize_session(s):
         "cost": s.get("totalCost"),
         # PayByPhone lets it be stopped now (« Arrêter » in its app): PayByBot can stop it too.
         "stoppable": bool(s.get("isStoppable") and s.get("jobId") and stop_line(s)),
+        # Stopped already (« Arrêter »): PayByPhone keeps it among the current ones, its end unchanged, with the
+        # time it was stopped. Not running for the user; still blocking its zone at PayByPhone until that end.
+        "stopped": stopped(s),
     }
+
+
+def stopped(s):
+    """The ticket was stopped before its end: PayByPhone gives the time, and keeps the ticket as it was."""
+    stop, end = parse_dt(s.get("stopTime")), parse_dt(iso(s.get("expireTime")))
+    return bool(stop and stop <= datetime.now(timezone.utc) and (end is None or stop < end))
 
 
 def stop_line(s):

@@ -266,7 +266,7 @@ function IdleVehicles({ data, onChanged, hosted, demo, autoPlate, locked, onLogo
     }
   }, [data.vehicles.length])
   const renewed = new Set(data.autopilots.filter((ap) => ap.label === WEEKLY_LABEL).map((ap) => key(ap.plate)))
-  const parked = new Set(data.sessions.filter((s) => new Date(s.expire).getTime() > Date.now()).map((s) => key(s.plate)))
+  const parked = new Set(data.sessions.filter((s) => !s.stopped && new Date(s.expire).getTime() > Date.now()).map((s) => key(s.plate)))
   // Only vehicles with the resident rate get « Activer le renouvellement résident »: the others take tickets on
   // chosen days (Tickets non-résident, below).
   const isResident = (v: { plate: string; zone?: string | null }) => (residents ? residents.has(key(v.plate)) : !!v.zone)
@@ -425,7 +425,8 @@ export function Dashboard({
       () => {},
     )
   }, [me.hosted, me.demo, data?.vehicles.length])
-  const running = data?.sessions.filter((s) => new Date(s.expire).getTime() > now) ?? []
+  // A stopped ticket is not running (PayByPhone still lists it until its end).
+  const running = data?.sessions.filter((s) => !s.stopped && new Date(s.expire).getTime() > now) ?? []
   // A Handi ticket in several arrondissements: its tickets (one per zone) shown as one card, the first one.
   // One card per car: a ticket running in the zones of a programmed ticket of the car shows on that card.
   const programmed = (s: Session) =>

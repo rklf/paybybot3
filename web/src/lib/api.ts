@@ -17,6 +17,8 @@ export type Session = {
   stoppable?: boolean
   /** A non-resident ticket's kind: « Véhicule léger », « Véhicule lourd » or « Carte mobilité CMI-S ». */
   kind?: string | null
+  /** Stopped (« Arrêter »): not running any more, though PayByPhone keeps it, blocking its zone, until its end. */
+  stopped?: boolean
 }
 export type Unit = 'Days' | 'Hours' | 'Minutes'
 export type Rate = {

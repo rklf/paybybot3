@@ -237,7 +237,7 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
   // One card per car: the tickets running now in its zones are shown here, not in a card of their own.
   const zones = ap.locations?.length ? ap.locations : [ap.location]
   const live = data.sessions.filter(
-    (x) => keyOf(x.plate) === keyOf(ap.plate) && zones.includes(x.location) && new Date(x.expire).getTime() > Date.now(),
+    (x) => !x.stopped && keyOf(x.plate) === keyOf(ap.plate) && zones.includes(x.location) && new Date(x.expire).getTime() > Date.now(),
   )
   const liveEnd = live.length ? new Date(Math.max(...live.map((x) => new Date(x.expire).getTime()))) : null
   // The next ticket is taken when its day's window opens, or when the ticket running then ends (a day ticket
