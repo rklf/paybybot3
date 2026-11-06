@@ -6,7 +6,7 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 from paybybot3 import schedule, web
-from paybybot3.schedule import PARIS
+from paybybot3.schedule import PARIS, free_day
 
 EVERY_DAY = list(range(7))
 
@@ -15,6 +15,14 @@ def rule(first, last, **extra):
     return {"days": EVERY_DAY, "start": "09:00", "unit": "Hours", "duration": 2, "location": "75017",
             "date_from": first, "date_to": last, **extra}
 
+
+
+def coming_paid_day():
+    """Two days or more ahead, never a Paris Sunday or public holiday (no ticket is taken on those)."""
+    day = datetime.now(PARIS).date() + timedelta(days=2)
+    while free_day(day):
+        day += timedelta(days=1)
+    return day
 
 class Calendar(unittest.TestCase):
     def test_only_the_days_of_the_period(self):
@@ -66,7 +74,7 @@ class Calendar(unittest.TestCase):
 
     def test_a_coming_day_is_kept_on_the_rule(self):
         s = web.UserSession("demo", "", demo=True)
-        day = (datetime.now(PARIS).date() + timedelta(days=2)).isoformat()
+        day = coming_paid_day().isoformat()
         body = web.Autopilot(plate="AB123CD", location="75017", rate="102", duration=2, unit="Hours",
                              paymentAccountId="demo-card", label="Jours précis", days=EVERY_DAY,
                              dateFrom=day, start="09:00")

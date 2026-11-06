@@ -24,6 +24,12 @@ export function startSentry() {
     denyUrls: [/^chrome-extension:\/\//, /^moz-extension:\/\//, /^safari-(web-)?extension:\/\//],
     beforeSend: scrub,
     beforeSendTransaction: scrub,
+    beforeBreadcrumb: (b) => {
+      if (b.data?.from) b.data.from = hideToken(b.data.from)
+      if (b.data?.to) b.data.to = hideToken(b.data.to)
+      if (b.data?.url) b.data.url = hideToken(b.data.url)
+      return b
+    },
   })
 }
 
@@ -34,8 +40,14 @@ function scrub<T extends Sentry.Event>(event: T): T {
     delete event.request.cookies
     delete event.request.headers
     delete event.request.data
+    if (event.request.url) event.request.url = hideToken(event.request.url)
   }
   return event
+}
+
+/** The signed links (« Valider mon paiement », unlock) carry their token as t=: never sent. */
+function hideToken(url: string) {
+  return String(url).replace(/([?&#]t=)[^&#]*/g, '$1…')
 }
 
 export const reactErrorHandler = Sentry.reactErrorHandler

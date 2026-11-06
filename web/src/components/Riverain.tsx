@@ -523,15 +523,15 @@ export function when(t: number) {
   return `${day}, ${d.getHours()}h${d.getMinutes() ? String(d.getMinutes()).padStart(2, '0') : ''}`
 }
 
-/** When this week will be renewed: the server's next look if it is ahead, else the rule it follows (20h the day
- *  before the end, never more than 24 hours before it). */
+/** When this week will be renewed: the rule the server follows (20h the day before the end, never more than 24
+ *  hours before it), or its next look when that comes later (a retry). An earlier look only checks the card. */
 export function nextRenewal(nextCheck: string | null | undefined, expire: string) {
   const end = new Date(expire).getTime()
-  const planned = nextCheck ? new Date(nextCheck).getTime() : NaN
-  if (planned > Date.now() && planned <= end + 60_000) return planned
   const dayBefore = new Date(end - 86_400_000)
   dayBefore.setHours(20, 0, 0, 0)
-  return Math.max(dayBefore.getTime(), end - 86_400_000 + 60_000)
+  const rule = Math.max(dayBefore.getTime(), end - 86_400_000 + 60_000)
+  const planned = nextCheck ? new Date(nextCheck).getTime() : NaN
+  return planned > Date.now() && planned > rule && planned <= end + 60_000 ? planned : rule
 }
 
 /** The switch's name, with whether it is on: « Renouvellement résident automatique », « Activé » or « Désactivé ». */

@@ -1815,7 +1815,8 @@ def check_login_rate(request, username):
     """Hosted: refuse bursts of login attempts (password guessing through PayByBot)."""
     ip = request.headers.get("x-real-ip") or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
     keys = {"ip": hmac.new(_subkey(_secrets()[0], "rate"), ip.encode(), hashlib.sha256).hexdigest(),
-            "user": owner_id(username.strip().lower())}
+            # The number as PayByPhone gets it: « 06 12… » and « +336… » share one count.
+            "user": owner_id(login_candidates(username)[0].lower())}
     for kind, limit in LOGIN_LIMITS:
         if not store("rate_hit", p_key=kind + ":" + keys[kind], p_window_seconds=900, p_max=limit):
             log.warning("login rate limit hit (%s)", kind)
@@ -2951,6 +2952,11 @@ def link_open(body: LinkOpen, request: Request):
     signature, so the same row follows the visit (steps, time spent)."""
     if not HOSTED:
         return {"id": None, "sig": None}
+    # No session here: a script looping on it would push the real events out of « Activité ».
+    ip = request.headers.get("x-real-ip") or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    key = hmac.new(_subkey(_secrets()[0], "rate"), ip.encode(), hashlib.sha256).hexdigest()
+    if not guarded(lambda: store("rate_hit", p_key="link:" + key, p_window_seconds=3600, p_max=10)):
+        return {"id": None, "sig": None}
     try:
         data = _fernet("activity").encrypt(json.dumps({"who": None, "detail": link_detail(body, request),
                                                        "visitor": body.visitor}).encode())
@@ -4052,6 +4058,7 @@ def billing_status(account, owner=None):
     if not account or (owner and owner in admin_owners()):
         return "ok", None  # the site owner, and renewals stored before accounts existed
     sub_id = account.get("stripe_subscription")
+    live = bool(sub_id)  # a stored subscription that still runs (a cancelled one does not hide a new one)
     if sub_id and os.environ.get("STRIPE_SECRET_KEY"):
         try:
             sub = stripe("GET", "subscriptions/" + sub_id + "?expand[]=latest_invoice")
@@ -4064,15 +4071,16 @@ def billing_status(account, owner=None):
             since = unpaid_since(sub.get("latest_invoice"))
             end = since + timedelta(days=GRACE_DAYS) if since else None
             return ("grace" if end and end > datetime.now(timezone.utc) else "unpaid"), end
+        live = False
     # Paid on Stripe Checkout but the return to PayByBot never happened (tab closed): found and recorded, during
     # the free month too, so the offer is never asked (and paid) twice. Looked up only after a Checkout was opened.
-    if owner and not sub_id and account.get("checkout_at") and os.environ.get("STRIPE_SECRET_KEY") \
+    if owner and not live and account.get("checkout_at") and os.environ.get("STRIPE_SECRET_KEY") \
             and recover_subscription(account, owner):
         return "ok", None
     start = parse_dt(account.get("trial_start"))
     if not start or start + timedelta(days=TRIAL_DAYS) > datetime.now(timezone.utc):
         return "trial", None  # no start yet: the free month begins when the account is first opened
-    if owner and not sub_id and os.environ.get("STRIPE_SECRET_KEY") and recover_subscription(account, owner):
+    if owner and not live and os.environ.get("STRIPE_SECRET_KEY") and recover_subscription(account, owner):
         return "ok", None
     return "trial_over", None
 
@@ -4265,8 +4273,9 @@ def checkout_url(owner, account, plan, success_url):
     return stripe("POST", "checkout/sessions", **data)["url"]
 
 
-def unlock_url(owner, account, plan="monthly"):
-    """Where to pay to unblock: the open invoice when Stripe failed to charge, else a new subscription."""
+def unlock_url(owner, account, plan="monthly", portal=True):
+    """Where to pay to unblock: the open invoice when Stripe failed to charge, else a new subscription. The Stripe
+    portal (card, cancellation) only for a signed-in person, not for whoever holds the e-mail's link."""
     sub_id = account.get("stripe_subscription")
     if sub_id:
         sub = stripe("GET", "subscriptions/" + sub_id)
@@ -4274,6 +4283,8 @@ def unlock_url(owner, account, plan="monthly"):
             invoice = stripe("GET", "invoices/" + sub["latest_invoice"]) if sub.get("latest_invoice") else {}
             if invoice.get("status") == "open" and invoice.get("hosted_invoice_url"):
                 return invoice["hosted_invoice_url"]
+            if not portal:
+                return APP_URL.rstrip("/") + "/#/connexion"
             return stripe("POST", "billing_portal/sessions", customer=account["stripe_customer"],
                           return_url=APP_URL.rstrip("/") + "/", configuration=portal_configuration())["url"]
     return checkout_url(owner, account, plan,
@@ -4389,7 +4400,7 @@ def billing_unlock(t: str = "", plan: str = "monthly"):
     except Exception:
         return RedirectResponse(APP_URL.rstrip("/") + "/", 303)
     account = guarded(lambda: account_by_owner(owner))
-    return RedirectResponse(unlock_url(owner, account, plan if plan in PLANS else "monthly"), 303)
+    return RedirectResponse(unlock_url(owner, account, plan if plan in PLANS else "monthly", portal=False), 303)
 
 
 @app.post("/api/billing/unlock")
@@ -5090,8 +5101,9 @@ def edit_autopilot(ap_id: str, body: Autopilot, pbb_session: str = Cookie(None))
                    "tz": body.tz or old.get("tz") or "", "date_from": body.dateFrom or "", "date_to": body.dateTo or "",
                    "cmis_attested_at": (old.get("cmis_attested_at") or utc_iso(datetime.now(timezone.utc)))
                    if body.cmis else "", "locations": zones_of(body, days)}
+        # The page takes its tickets right after (/take): the scheduler stays off it meanwhile (never both at once).
         ap = update_own_renewal(s, ap_id, {"data": encrypt_details(details), "last_error": None,
-                                           "next_check": utc_iso(datetime.now(timezone.utc))})
+                                           "next_check": utc_iso(datetime.now(timezone.utc) + timedelta(minutes=10))})
         log.info("renewal %s edited", ap_id)
         return with_next_ticket(ap)  # its tickets asked for at once: taken by the page right after (/take)
     ap = s.autopilots.get(ap_id)
@@ -5117,9 +5129,16 @@ def take_now(ap_id: str, pbb_session: str = Cookie(None)):
         row = guarded(row_of)
         if not row:
             raise HTTPException(404, "Ticket introuvable.")
+        # The scheduler stays off this ticket while the page takes it (never two logins paying the same zones).
+        def hold():
+            store("renewal_update", p_id=ap_id,
+                  p_patch={"next_check": utc_iso(datetime.now(timezone.utc) + timedelta(minutes=10))})
+        guarded(hold)
         # This page's own session as it is: no new login, so no token replaced while the waves go (PayByPhone may
         # drop all of a login's tokens when two uses meet).
         outcome = process_renewal({**row, "owner": owner_id(s.username)}, activating=True, first_now=True, session=s)
+        if outcome == "partial":  # the page calls again for the rest; if it is closed, the scheduler goes on later
+            guarded(hold)
         ap = stored_to_autopilot(guarded(row_of) or row)
     else:
         ap = s.autopilots.get(ap_id)

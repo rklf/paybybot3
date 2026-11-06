@@ -22,7 +22,12 @@ function openBankPage(html: string, sig: string) {
 
 /** « Valider mon paiement », from the alert or the e-mail: a button first, since mail scanners open links on their own. */
 export function ValidatePayment() {
-  const params = new URLSearchParams(window.location.hash.split('?')[1] ?? '')
+  const [params] = useState(() => {
+    const p = new URLSearchParams(window.location.hash.split('?')[1] ?? '')
+    // Read once, then out of the address bar: replays and the history never see the token.
+    if (p.get('t')) history.replaceState(history.state, '', window.location.pathname + '#/valider')
+    return p
+  })
   const token = params.get('t') ?? ''
   const [state, setState] = useState<'ready' | 'busy' | 'paid' | 'done'>('ready')
   const [error, setError] = useState<string | null>(null)

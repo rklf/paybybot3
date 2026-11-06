@@ -6,7 +6,7 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 from paybybot3 import web
-from paybybot3.schedule import PARIS
+from paybybot3.schedule import PARIS, free_day
 
 
 def body(**extra):
@@ -14,6 +14,14 @@ def body(**extra):
               "paymentAccountId": "demo-card", "label": "Jours précis", "days": [0, 1, 2, 3, 4, 5], "start": "09:00"}
     return web.Autopilot(**{**fields, **extra})
 
+
+
+def coming_paid_day():
+    """Two days or more ahead, never a Paris Sunday or public holiday (no ticket is taken on those)."""
+    day = datetime.now(PARIS).date() + timedelta(days=2)
+    while free_day(day):
+        day += timedelta(days=1)
+    return day
 
 class Demo(unittest.TestCase):
     def setUp(self):
@@ -35,7 +43,7 @@ class Demo(unittest.TestCase):
         self.assertIs(self.s.autopilots["a1"], ap)
 
     def test_a_calendar_period_is_kept_then_dropped(self):
-        day = (datetime.now(PARIS).date() + timedelta(days=2)).isoformat()
+        day = coming_paid_day().isoformat()
         ap = self.edit(days=list(range(7)), dateFrom=day)
         self.assertEqual((ap["dateFrom"], ap["dateTo"]), (day, day))
         ap = self.edit(days=[0, 1])
