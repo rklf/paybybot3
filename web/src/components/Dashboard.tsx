@@ -167,6 +167,7 @@ function Ticket({
             initialPlate={session.plate}
             initialZone={session.location}
             initialTicket={{ rate: session.rate, start: session.start, expire: session.expire }}
+            initialZones={group.map((x) => x.location)}
           />
         )}
         {/* A CMI-S ticket that PayByPhone lets stop (a resident week, or a Paris day ticket, may run to its end). */}
@@ -190,7 +191,7 @@ function Ticket({
             </div>
           ) : (
             <button onClick={() => setStopping('ask')} className={cn('mt-4 block text-sm', ui.link)}>
-              Arrêter ce ticket
+              {group.length > 1 ? 'Arrêter ces tickets' : 'Arrêter ce ticket'}
             </button>
           ))}
       </div>
@@ -434,26 +435,18 @@ export function Dashboard({
   }, [me.hosted, me.demo, data?.vehicles.length])
   const running = data?.sessions.filter((s) => new Date(s.expire).getTime() > now) ?? []
   // A Handi ticket in several arrondissements: its tickets (one per zone) shown as one card, the first one.
-  const zonesOf = (s: Session) =>
-    data?.autopilots.find((ap) => (ap.locations?.length ?? 0) > 1 && sameCar(ap.plate, s.plate) && ap.locations!.includes(s.location))
-      ?.locations
   // One card per car: a ticket running in the zones of a programmed ticket of the car shows on that card.
   const programmed = (s: Session) =>
     data?.autopilots.some(
       (ap) => isDaily(ap) && ap.enabled && sameCar(ap.plate, s.plate) && (ap.locations?.length ? ap.locations : [ap.location]).includes(s.location),
     )
-  const sessions = running.filter(
-    (s) => !programmed(s) && (!zonesOf(s) || running.find((x) => sameCar(x.plate, s.plate) && zonesOf(x) === zonesOf(s)) === s),
-  )
-  const groupOf = (s: Session) => {
-    const zones = zonesOf(s)
-    return zones ? running.filter((x) => sameCar(x.plate, s.plate) && zones.includes(x.location)) : [s]
-  }
+  // The others: a car's CMI-S tickets (one per arrondissement) make one card, whether programmed here or not.
+  const cmis = (s: Session) => s.kind === 'Carte mobilité CMI-S'
+  const groupOf = (s: Session) => (cmis(s) ? running.filter((x) => cmis(x) && sameCar(x.plate, s.plate)) : [s])
+  const sessions = running.filter((s) => !programmed(s) && groupOf(s)[0] === s)
   const placeOf = (s: Session) => {
-    const zones = zonesOf(s)
-    if (!zones) return undefined
-    const n = running.filter((x) => sameCar(x.plate, s.plate) && zones.includes(x.location)).length
-    return n >= 20 ? 'Tout Paris' : `${n} arr.`
+    const n = groupOf(s).length
+    return n < 2 ? undefined : n >= 20 ? 'Tout Paris' : `${n} arr.`
   }
   // The programmed-ticket cards shown below (as DailyTickets lists them: a finished one-off ticket is not).
   const shownDaily = (data?.autopilots ?? []).filter((ap) => {
