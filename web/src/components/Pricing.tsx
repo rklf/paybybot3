@@ -1,77 +1,20 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Check, Gift, Loader2, Lock, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Check, Loader2 } from 'lucide-react'
 import { Dialog as DialogPrimitive } from '@base-ui/react/dialog'
 import { toast } from 'sonner'
-import { Dialog, DialogClose, DialogDescription, DialogPortal, DialogTitle } from '@/components/ui/dialog'
-import { Horodateur } from '@/components/Horodateur'
-import { LoadingLine } from '@/components/Loading'
-import { PayByPhone, Wordmark } from '@/components/signs'
+import { Dialog, DialogPortal, DialogTitle } from '@/components/ui/dialog'
 import { HostedFooter } from '@/components/Footer'
 import { PublicTopBar } from '@/components/TopBar'
 import { clearPending } from '@/components/Riverain'
-import { api, type Pricing } from '@/lib/api'
+import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { TRY_LABEL, ui } from '@/lib/styles'
 
-export type Plan = 'monthly' | 'yearly'
-
-const PLANS: { id: Plan; name: string; popular?: boolean }[] = [
-  { id: 'yearly', name: 'Annuel', popular: true },
-  { id: 'monthly', name: 'Mensuel' },
-]
-
 // Round amounts without cents: « 5 € », « 48 € », but « 4,50 € ».
 const euros = (cents: number) => (cents % 100 ? (cents / 100).toFixed(2).replace('.', ',') : String(cents / 100)) + ' €'
-const yearOf = (monthly: number) => Math.round(monthly * 12 * 0.8)
 
 /** One price for all the account's vehicles, whatever their number, tickets and types (the server's MONTHLY_PRICE). */
 const MONTHLY = 950
-const GRID: [string, number][] = [['Tous vos véhicules', MONTHLY]]
-
-/** The signed-in account's prices (null while loading). */
-function usePricing(enabled: boolean) {
-  const [pricing, setPricing] = useState<Pricing | null>(null)
-  const load = useCallback(() => {
-    if (!enabled) return
-    setPricing(null)
-    api.pricing().then(setPricing, () => setPricing({ zone: null, monthly: null, yearly: null }))
-  }, [enabled])
-  useEffect(load, [load])
-  return [pricing, load] as const
-}
-
-/** The price by vehicle type (the same in every zone), per month or per year. */
-function PriceGrid({ plan, className }: { plan: Plan; className?: string }) {
-  const price = (m: number) => (plan === 'monthly' ? euros(m) : euros(yearOf(m)))
-  const per = plan === 'monthly' ? '/ mois' : '/ an'
-  return (
-    <table className={cn('w-full text-left text-[0.95rem]', className)}>
-      <thead>
-        <tr className="text-sm text-ink/50">
-          <th className="pb-3 text-left text-xs font-normal sm:hidden">{plan === 'monthly' ? 'Par mois' : 'Par an'}</th>
-          <th className="hidden pb-3 font-normal sm:table-cell" />
-          <th className="hidden pb-3 text-right font-normal sm:table-cell">{plan === 'monthly' ? 'Par mois' : 'Par an'}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {GRID.map(([name, m]) => (
-          <tr key={name} className="border-t border-ink/10">
-            <td className="py-3 font-semibold text-ink">{name}</td>
-            <td className="py-3 text-right text-ink tabular-nums">{price(m)} <span className="hidden text-ink/50 sm:inline">{per}</span></td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  )
-}
-
-/** What a plan shows with the account's own price. */
-function planText(id: Plan, pricing: Pricing) {
-  return id === 'monthly'
-    ? { price: euros(pricing.monthly!), per: '/ mois', note: 'Sans engagement' }
-    : // The yearly plan shown per month (what people compare), the yearly total small underneath.
-      { price: euros(Math.round(pricing.yearly! / 12)), per: '/ mois', note: `Soit ${euros(pricing.yearly!)} / an` }
-}
 
 const INCLUDED = [
   'Tickets renouvelés automatiquement',
@@ -80,17 +23,14 @@ const INCLUDED = [
   'Annulable à tout moment',
 ]
 
-/** The offer: two cards, the same for everyone, signed in or not (the offer itself is chosen when an automation is
- *  activated, on the offer screen). */
+/** The offer: one card, the same for everyone, signed in or not (paid on Stripe when an automation is activated). */
 export function PlanCards({ signedIn }: { signedIn: boolean }) {
-  // Yearly on the left (shown per month, billed once a year), monthly on the right, put forward.
   const cards: { name: string; perMonth: number; note: string; badge?: string; popular?: boolean }[] = [
-    { name: 'Annuel', perMonth: Math.round(yearOf(MONTHLY) / 12), note: `facturé ${euros(yearOf(MONTHLY))} par an`, badge: '−20 %' },
     { name: 'Mensuel', perMonth: MONTHLY, note: 'facturé chaque mois, sans engagement', popular: true },
   ]
   return (
     <>
-      <div className="mx-auto grid max-w-3xl items-center gap-5 md:grid-cols-2">
+      <div className="mx-auto grid max-w-md items-center gap-5">
         {cards.map((c) => (
           <div
             key={c.name}
@@ -227,154 +167,39 @@ function graceDay(iso: string | null) {
  *  before leaving for Stripe. */
 export function PlansDialog({
   onClose,
-  text,
   onPay,
 }: {
   onClose: () => void
   text?: string
   onPay?: () => void
 }) {
-  const [plan, setPlan] = useState<Plan>('yearly')
-  const [busy, setBusy] = useState(false)
-  const [loaded] = usePricing(true)
-  const pricing = loaded // one price, whatever the number of vehicles
-  const locked = false // no resident rate needed any more
-  // Still in the free month: nothing is charged before its end (Stripe starts billing then).
-  const [trialEnd, setTrialEnd] = useState<Date | null>(null)
-  const [trialStarted, setTrialStarted] = useState(false) // kept from an earlier account: only what is left of it
+  // One offer (monthly): no screen to choose from, straight to Stripe, which says when the first payment is (the end
+  // of the free month, nothing before).
+  const asked = useRef(false)
   useEffect(() => {
-    api.account().then(
-      (a) => {
-        // Started: its end. Not started yet: it starts today with the offer, so nothing is due for trialDays days.
-        const end = a.trialEnd ? new Date(a.trialEnd) : a.trialDays ? new Date(Date.now() + a.trialDays * 86_400_000) : null
-        setTrialEnd(end && end.getTime() > Date.now() ? end : null)
-        setTrialStarted(!!a.trialEnd)
+    if (asked.current) return
+    asked.current = true
+    api.checkout('monthly').then(
+      ({ url }) => {
+        if (onPay) onPay()
+        else clearPending() // from the banner: a choice left unpaid earlier is not activated by this payment
+        window.location.assign(url)
       },
-      () => {},
+      (e) => {
+        toast((e as Error).message)
+        onClose()
+      },
     )
-  }, [])
-
-  async function pay() {
-    setBusy(true)
-    try {
-      const { url } = await api.checkout(plan)
-      if (onPay) onPay()
-      else clearPending() // from the banner: a choice left unpaid earlier is not activated by this payment
-      window.location.assign(url)
-    } catch (e) {
-      toast((e as Error).message)
-      setBusy(false)
-    }
-  }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
+    <Dialog open onOpenChange={() => {}}>
       <DialogPortal>
-        <DialogPrimitive.Popup className="fixed inset-0 z-[70] grid overflow-y-auto bg-background outline-none duration-200 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 lg:grid-cols-[1.4fr_1fr]">
-          <div className="flex flex-col px-6 pt-5 pb-10 sm:px-10 lg:px-[clamp(2.5rem,8vw,8rem)] lg:pb-6">
-            <div className="flex items-center justify-between">
-              <Wordmark />
-              <DialogClose
-                aria-label="Fermer"
-                disabled={busy}
-                className="grid size-10 place-items-center rounded-full bg-ink/[0.06] text-ink transition hover:bg-ink/[0.1]"
-              >
-                <X className="size-5" />
-              </DialogClose>
-            </div>
-            <Horodateur className={cn('mx-auto mt-6 h-44 lg:hidden', locked && 'opacity-50 grayscale')} />
-            <div className="mx-auto w-full max-w-md lg:my-auto lg:max-w-xl lg:pt-4">
-              <DialogTitle className={cn(ui.title, 'mt-6 lg:mt-0')}>Choisissez votre offre</DialogTitle>
-              {text && <DialogDescription className={ui.subtitle}>{text}</DialogDescription>}
-              {trialEnd && (
-                <div className="mt-5 flex items-center gap-3 rounded-2xl bg-[#e7f6ec] px-4 py-2.5 text-[#14703a]">
-                  <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[#1a9a4a] text-white">
-                    <Gift className="size-5" />
-                  </span>
-                  <span>
-                    <span className="block font-heading text-lg leading-tight font-bold">{trialStarted ? 'Reste de votre mois offert' : '1er mois offert'}</span>
-                    <span className="block text-sm text-[#14703a]/80">
-                      Rien à payer avant le {trialEnd.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}.
-                    </span>
-                  </span>
-                </div>
-              )}
-
-              {/* No resident status on PayByPhone: the offer stays visible but greyed and out of reach. */}
-              <div
-                aria-hidden={locked || undefined}
-                className={cn(locked && 'pointer-events-none select-none opacity-50 blur-[2px] grayscale')}
-              >
-              <div role="radiogroup" aria-label="Offre" className="mt-5 space-y-2.5">
-                {pricing && pricing.monthly == null && !locked && (
-                  <p className="rounded-2xl border border-ink/10 p-4 text-sm text-ink/60">
-                    Votre prix n’a pas pu être calculé avec <PayByPhone /> pour le moment. Réessayez dans quelques minutes.
-                  </p>
-                )}
-                {/* The account's price is being worked out with PayByPhone: the app's loading bar. */}
-                {!pricing && (
-                  <div className="grid h-40 place-items-center rounded-2xl border border-ink/10">
-                    <LoadingLine className="items-center" label="Calcul de votre prix…" />
-                  </div>
-                )}
-                {pricing?.monthly != null && pricing.yearly != null &&
-                  PLANS.map((p) => ({ ...p, ...planText(p.id, pricing) })).map((p) => (
-                    <button
-                      key={p.id}
-                      role="radio"
-                      aria-checked={plan === p.id}
-                      onClick={() => setPlan(p.id)}
-                      className={cn(
-                        'flex w-full items-center gap-4 rounded-2xl border px-4 py-3 text-left transition',
-                        plan === p.id ? 'border-eu bg-eu/[0.04] ring-1 ring-eu' : 'border-ink/15 hover:border-ink/30',
-                      )}
-                    >
-                      <span className={cn('grid size-5 shrink-0 place-items-center rounded-full border-2', plan === p.id ? 'border-eu' : 'border-ink/25')}>
-                        {plan === p.id && <span className="size-2.5 rounded-full bg-eu" />}
-                      </span>
-                      <span className="flex-1">
-                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold text-ink">
-                          {p.name}
-                          {p.popular && (
-                            <>
-                              <span className="rounded-full bg-eu px-2 py-0.5 text-xs font-semibold text-white">Offre populaire</span>
-                              <span className="rounded-full bg-eu/[0.08] px-2 py-0.5 text-xs font-semibold text-eu">-20 %</span>
-                            </>
-                          )}
-                        </span>
-                        <span className="block text-sm text-ink/55">{p.note}</span>
-                      </span>
-                      <span className="text-right">
-                        <span className="font-heading text-xl font-semibold text-ink">{p.price}</span>{' '}
-                        <span className="text-sm text-ink/50">{p.per}</span>
-                      </span>
-                    </button>
-                  ))}
-                {locked && <PriceGrid plan={plan} className="rounded-2xl border border-ink/10 p-4" />}
-              </div>
-
-              <ul className="mt-4 grid gap-1.5 text-sm text-ink/70 sm:grid-cols-2">
-                {INCLUDED.map((x) => (
-                  <li key={x} className="flex items-start gap-2">
-                    <Check className="mt-0.5 size-4 shrink-0 text-eu" /> {x}
-                  </li>
-                ))}
-              </ul>
-
-              <button onClick={pay} disabled={busy || pricing?.monthly == null} className={cn('mt-5', ui.primary)}>
-                {busy ? <Loader2 className="size-5 animate-spin" /> : 'Continuer vers le paiement'}
-              </button>
-              <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-sm text-ink/50">
-                <Lock className="size-3.5" /> Paiement sécurisé par Stripe. Sans engagement.
-              </p>
-              </div>
-            </div>
-          </div>
-
-          {/* The parking meter robot, on its soft blue backdrop. */}
-          <div className="relative hidden items-center justify-center overflow-hidden bg-[radial-gradient(70%_60%_at_50%_45%,#e6ecfb_0%,#f4f6fb_60%,#f7f8fb_100%)] lg:flex">
-            <Horodateur className="w-[min(78%,30rem)] drop-shadow-[0_30px_40px_rgb(29_42_107/0.12)]" />
-          </div>
+        <DialogPrimitive.Popup className="fixed inset-0 z-[70] grid place-items-center bg-background/95 outline-none">
+          <DialogTitle className="sr-only">Paiement sécurisé</DialogTitle>
+          <p className="flex items-center gap-3 text-ink/70">
+            <Loader2 className="size-5 animate-spin text-eu" /> Ouverture du paiement sécurisé…
+          </p>
         </DialogPrimitive.Popup>
       </DialogPortal>
     </Dialog>

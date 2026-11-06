@@ -560,11 +560,11 @@ function Terms() {
         <ul>
           <li>
             <strong>Mois offert :</strong> un mois gratuit, offert une seule fois par personne (même
-            compte <PayByPhone />, e-mail ou plaque). Il commence quand vous choisissez votre offre, et non à l’inscription.
+            compte <PayByPhone />, e-mail ou plaque). Il commence quand vous vous abonnez, et non à l’inscription.
           </li>
           <li>
-            <strong>Offres et prix :</strong> abonnement mensuel, ou annuel avec 20 % de remise, TTC : 9,50 € par mois pour tous les véhicules du compte, quels que soient leur nombre, le ticket (résident, visiteur, carte mobilité CMI-S) ou le type de véhicule,
-            ou 91,20 € par an. Le prix exact est affiché avant tout paiement. Le paiement se fait par carte bancaire, via notre
+            <strong>Offre et prix :</strong> un abonnement mensuel, TTC : 9,50 € par mois pour tous les véhicules du compte, quels que soient leur nombre, le ticket (résident, visiteur, carte mobilité CMI-S) ou le type de véhicule.
+            Le prix exact est affiché avant tout paiement. Le paiement se fait par carte bancaire, via notre
             prestataire de paiement Stripe ; <PayByBot /> ne voit ni ne conserve votre numéro de carte.
           </li>
           <li>
@@ -574,7 +574,7 @@ function Terms() {
           </li>
           <li>
             <strong>Changement de prix :</strong> si <PayByBot /> modifie ses prix, le nouveau prix ne s’applique qu’à partir du
-            mois suivant, à votre prochaine échéance ; un abonnement annuel garde son prix jusqu’à la fin de l’année payée. Vous
+            mois suivant, à votre prochaine échéance. Vous
             êtes prévenu par e-mail avant, et pouvez résilier sans frais depuis « Mon compte » si le nouveau prix ne vous convient pas.
           </li>
           <li>

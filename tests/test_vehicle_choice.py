@@ -29,7 +29,7 @@ class OnePrice(unittest.TestCase):
     def test_three_vehicles_cost_the_same_as_one(self):
         self.assertEqual(self.checkout(account_with(["AB123CD"]), "monthly"), 950)
         self.assertEqual(self.checkout(account_with(["AB123CD", "EF456GH", "IJ789KL"]), "monthly"), 950)
-        self.assertEqual(self.checkout(account_with(["AB123CD", "EF456GH", "IJ789KL"]), "yearly"), 9120)
+        self.assertEqual(self.checkout(account_with(["AB123CD", "EF456GH", "IJ789KL"]), "yearly"), 950)  # yearly is gone: monthly
 
     def test_every_vehicle_is_covered(self):
         s = account_with(["AB123CD", "EF456GH"])

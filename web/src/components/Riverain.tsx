@@ -914,7 +914,7 @@ export function RiverainDialog({
         }
       } catch (e) {
         // No subscription yet (the account had not loaded when « Activer » was clicked): the offer screen.
-        if (e instanceof ApiError && e.status === 402 && /offre/.test(e.message)) {
+        if (e instanceof ApiError && e.status === 402 && /offre|abonn/i.test(e.message)) {
           setSaving(false)
           setPaywall(true)
           return

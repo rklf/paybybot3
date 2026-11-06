@@ -32,7 +32,7 @@ class DailyNeedsAnOffer(unittest.TestCase):
         for extra in ({"days": [5], "start": "09:00"}, {}):  # precise days, and the weekly renewal alike
             status, detail, saved = self.add("trial", **extra)
             self.assertEqual(status, 402)
-            self.assertIn("offre", detail)
+            self.assertIn("Abonnez-vous", detail)
             self.assertEqual(saved, [])  # nothing stored
 
     def test_blocked_account_is_refused(self):

@@ -3922,8 +3922,8 @@ def check_offer(s):
         raise HTTPException(402, "Compte bloqué : débloquez-le (bandeau en haut de page) pour activer un "
                                  "renouvellement.")
     if state == "trial":
-        raise HTTPException(402, "Choisissez votre offre pour activer le renouvellement : rien n'est prélevé "
-                                 "avant la fin de votre mois offert.")
+        raise HTTPException(402, "Abonnez-vous pour activer le renouvellement : rien n'est prélevé avant la fin "
+                                 "de votre mois offert.")
 
 
 @app.post("/api/autopilots")
@@ -4436,7 +4436,8 @@ def resident_status_route(pbb_session: str = Cookie(None)):
 
 @app.post("/api/billing/checkout")
 def billing_checkout(body: Checkout, request: Request, pbb_session: str = Cookie(None)):
-    """Stripe Checkout for the monthly or yearly plan; nothing is charged before the free month ends."""
+    """Stripe Checkout for the monthly plan (the only one now; a yearly one asked by an old page is taken as monthly);
+    nothing is charged before the free month ends."""
     s = current(pbb_session)
     if s.demo:
         raise HTTPException(400, "Le paiement n'est pas disponible en mode démo.")
@@ -4452,7 +4453,7 @@ def billing_checkout(body: Checkout, request: Request, pbb_session: str = Cookie
         if billing_status(guarded(lambda: load_account(s)), owner_id(s.username))[0] in ("ok", "grace"):
             raise HTTPException(409, "Vous avez déjà un abonnement en cours : gérez-le depuis « Mon compte ».")
     guarded(lambda: save_account(s, {"checkout_at": int(time.time())}))
-    url = checkout_url(owner_id(s.username), account, body.plan,
+    url = checkout_url(owner_id(s.username), account, "monthly",
                        APP_URL.rstrip("/") + "/#/abonnement?session_id={CHECKOUT_SESSION_ID}")
     return {"url": url}
 
@@ -4465,7 +4466,7 @@ def billing_unlock(t: str = "", plan: str = "monthly"):
     except Exception:
         return RedirectResponse(APP_URL.rstrip("/") + "/", 303)
     account = guarded(lambda: account_by_owner(owner))
-    return RedirectResponse(unlock_url(owner, account, plan if plan in PLANS else "monthly", portal=False), 303)
+    return RedirectResponse(unlock_url(owner, account, "monthly", portal=False), 303)
 
 
 @app.post("/api/billing/unlock")

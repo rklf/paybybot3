@@ -41,7 +41,7 @@ class Billing(unittest.TestCase):
         self.assertEqual(r["url"], "https://checkout.stripe.com/x")
         data = self.calls[0][2]
         self.assertEqual((data["line_items[0][price_data][unit_amount]"],
-                          data["line_items[0][price_data][recurring][interval]"]), (9120, "year"))  # one price: 9,50 € x 12, 20 % off
+                          data["line_items[0][price_data][recurring][interval]"]), (950, "month"))  # one offer: 9,50 € a month
         self.assertNotIn("subscription_data[trial_end]", data)  # no Stripe trial: the free month already runs
         self.assertEqual((data["adaptive_pricing[enabled]"], data["payment_method_types[0]"]), ("false", "card"))
         self.assertEqual(data["subscription_data[proration_behavior]"], "none")

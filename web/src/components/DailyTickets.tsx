@@ -963,7 +963,7 @@ export function DailyWizard({
       if (takeNow) for (const ap of made) void takeTickets(ap, onDone) // the window closes at once
     } catch (e) {
       // No subscription yet (the account had not loaded): the offer screen.
-      if (e instanceof ApiError && e.status === 402 && /offre/.test(e.message)) setPaywall(true)
+      if (e instanceof ApiError && e.status === 402 && /offre|abonn/i.test(e.message)) setPaywall(true)
       else toast.error((e as Error).message)
     } finally {
       setSaving(false)
@@ -979,7 +979,7 @@ export function DailyWizard({
       onClose()
       if (takeNow) void takeTickets(ap, onDone)
     } catch (e) {
-      if (e instanceof ApiError && e.status === 402 && /offre/.test(e.message)) setPaywall(true)
+      if (e instanceof ApiError && e.status === 402 && /offre|abonn/i.test(e.message)) setPaywall(true)
       else toast.error((e as Error).message)
     } finally {
       setSaving(false)

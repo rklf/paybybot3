@@ -65,7 +65,7 @@ function AccountDialog({
 
   // « Gérer »: Stripe's customer portal (card, invoices, cancel), back here after.
   const [opening, setOpening] = useState(false)
-  const [plans, setPlans] = useState(false) // « Choisir mon offre »: the offer screen
+  const [plans, setPlans] = useState(false) // « S’abonner »: straight to Stripe
   function manage() {
     setOpening(true)
     api.billingPortal().then(
@@ -200,10 +200,10 @@ function AccountDialog({
                       </span>
                     )}
                     {account?.trialDays && !account.trialEnd && (
-                      <span className="text-ink/60">1er mois offert dès le choix de l’offre</span>
+                      <span className="text-ink/60">1er mois offert à l’abonnement</span>
                     )}
                     <button type="button" onClick={() => setPlans(true)} className={cn('text-sm', ui.link)}>
-                      Choisir mon offre
+                      S’abonner · 9,50 €/mois
                     </button>
                   </span>
                 )}
