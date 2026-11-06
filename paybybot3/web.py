@@ -393,6 +393,8 @@ def current(token):
                 raise ValueError("login too old")
             session = UserSession.from_state(state)
             session.issued_at = state["iat"]
+            if not session.demo and state["iat"] in revoked_logins(owner_id(session.username)):
+                raise ValueError("logged out")
         except Exception as e:
             # Why a session is refused (never its content): no cookie, unreadable or expired, idle, too old.
             reason = "no cookie" if not token else str(e) if isinstance(e, ValueError) else type(e).__name__
@@ -415,6 +417,35 @@ def current(token):
     if session is None:
         raise HTTPException(401, "Session expirée, reconnectez-vous.")
     return session
+
+
+# Logins ended with « Déconnexion »: their cookie, even copied elsewhere, opens nothing any more. Kept on the
+# account (the login's time), read again at most once a minute per server.
+_REVOKED = {}
+
+
+def revoked_logins(owner):
+    hit = _REVOKED.get(owner)
+    if hit and time.time() - hit[0] < 60:
+        return hit[1]
+    try:
+        found = set(account_by_owner(owner).get("revoked") or [])
+    except Exception:
+        found = hit[1] if hit else set()  # store unreachable: never log everyone out for it
+    _REVOKED[owner] = (time.time(), found)
+    return found
+
+
+def revoke_login(session):
+    """« Déconnexion » on the hosted site: this login's cookie is refused from now on, wherever it is."""
+    owner = owner_id(session.username)
+    account = account_by_owner(owner)
+    if not account:
+        return  # no PayByBot account (never signed up): nothing stored for it
+    since = time.time() - REMEMBER  # older logins have expired on their own
+    kept = [x for x in account.get("revoked") or [] if x > since] + [session.issued_at]
+    save_account_by_owner(owner, {"revoked": kept})
+    _REVOKED.pop(owner, None)
 
 
 def set_session_cookie(response, value, remember=False):
@@ -494,7 +525,9 @@ def friendly_error(e):
         if "getRateOptions" in text:
             return "PayByPhone ne trouve pas de tarif pour ce véhicule dans cette zone. Vérifiez le numéro de zone."
         return "PayByPhone a renvoyé une erreur. Réessayez dans un instant."
-    return "Une erreur est survenue : " + text[:200]
+    # The raw text stays in the logs, never on screen (it can hold PayByPhone's answer or a plate).
+    log.warning("unexpected error shown as generic: %s: %s", type(e).__name__, text[:300])
+    return "Une erreur est survenue. Réessayez dans un instant."
 
 
 def iso(d):
@@ -786,7 +819,10 @@ def diagnosis(session):
 
 def log_diagnosis(session):
     try:
-        log.warning("diagnosis: %s", json.dumps(diagnosis(session), default=str))
+        text = json.dumps(diagnosis(session), default=str)
+        # Plates only by their last two characters: enough to tell cars apart, no one's car in the logs.
+        text = re.sub(r'("(?:plate|licensePlate)": ")[^"]*?([^"]{2})"', r'\1…\2"', text)
+        log.warning("diagnosis: %s", text)
     except Exception as e:
         log.warning("diagnosis failed: %s", e)
 
@@ -1759,7 +1795,7 @@ def with_details(row):
 
 ACCOUNT_FIELDS = ("email", "first_name", "zone", "trial_start", "trial_kept", "plan", "stripe_customer", "stripe_subscription",
                   "weekly_cents", "price_zone", "billed_weekly_cents", "weeklies", "billed_weeklies", "monthlies", "billed_monthlies", "suv_plates", "zone_found",
-                  "vehicle_zones", "dunning", "check_mailed", "early_stops", "checkout_at", "chosen_plates", "email_keyed", "origin")
+                  "vehicle_zones", "dunning", "check_mailed", "early_stops", "checkout_at", "chosen_plates", "email_keyed", "origin", "revoked")
 TRIAL_DAYS = 30  # one free month for every new account, from the day the offer is chosen (never at sign-up)
 
 
@@ -2717,8 +2753,11 @@ def signup_check(body: SignupCheck, request: Request):
         return {"exists": False}
     ip = request.headers.get("x-real-ip") or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
     key = hmac.new(_subkey(_secrets()[0], "rate"), ip.encode(), hashlib.sha256).hexdigest()
-    if not store("rate_hit", p_key="check:" + key, p_window_seconds=900, p_max=20):
+    if not store("rate_hit", p_key="check:" + key, p_window_seconds=900, p_max=10):
         return {"exists": False}  # too many checks: say nothing, sign-up still refuses at the end
+    # And for the whole site: a script changing address at each try still cannot go through a list of numbers.
+    if not store("rate_hit", p_key="check:all", p_window_seconds=3600, p_max=200):
+        return {"exists": False}
 
     def exists():
         for candidate in login_candidates(body.username)[:3]:
@@ -2880,6 +2919,14 @@ def resend_signup_code(response: Response, pbb_pending: str = Cookie(None)):
 @app.post("/api/logout")
 def logout(response: Response, pbb_session: str = Cookie(None)):
     SESSIONS.pop(pbb_session or "", None)
+    if HOSTED and pbb_session:
+        try:
+            s = current(pbb_session)
+            s.logged_out = True  # the middleware must not write the cookie back
+            if not s.demo and getattr(s, "issued_at", None):
+                revoke_login(s)
+        except Exception as e:  # already expired, or the store unreachable: the cookie is deleted all the same
+            log.info("logout not recorded: %s", type(e).__name__)
     response.delete_cookie(COOKIE, path="/")
     return {"ok": True}
 

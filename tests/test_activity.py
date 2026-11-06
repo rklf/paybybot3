@@ -1,4 +1,5 @@
 import json
+import time
 import os
 import unittest
 from types import SimpleNamespace
@@ -135,3 +136,26 @@ class Resubscribed(unittest.TestCase):
                 patch.object(web, "recover_subscription", return_value=True) as recover:
             self.assertEqual(web.billing_status(account, "owner")[0], "ok")
         recover.assert_called_once()
+
+
+class LogoutRevokes(unittest.TestCase):
+    """After « Déconnexion », the same cookie (copied elsewhere) opens nothing; a new login works."""
+
+    def test_a_logged_out_cookie_is_refused(self):
+        accounts = {}
+        with patch.dict(os.environ, {"PAYBYBOT_SECRET": "s" * 40}), patch.object(web, "HOSTED", True), \
+                patch.object(web, "account_by_owner", side_effect=lambda o: dict(accounts.get(o, {"email": "x@y.fr"}))), \
+                patch.object(web, "save_account_by_owner",
+                             side_effect=lambda o, p: accounts.setdefault(o, {"email": "x@y.fr"}).update(p)):
+            web._REVOKED.clear()
+            s = web.UserSession.from_state({"u": "+33612345678", "d": False, "t": "a", "r": "b",
+                                            "iat": int(time.time()) - 5})
+            cookie = web.seal(s)
+            self.assertEqual(web.current(cookie).username, "+33612345678")
+            web.logout(web.Response(), cookie)
+            with self.assertRaises(web.HTTPException):
+                web.current(cookie)
+            fresh = web.UserSession.from_state({"u": "+33612345678", "d": False, "t": "a", "r": "b",
+                                                "iat": 0})
+            fresh.issued_at = int(time.time()) + 1  # a new login: a later time
+            self.assertEqual(web.current(web.seal(fresh)).username, "+33612345678")
