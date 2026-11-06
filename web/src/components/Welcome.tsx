@@ -1,8 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { ArrowRight, Car, Check, CreditCard, Loader2, Minus, Phone, RefreshCw, Ticket, UserRound } from 'lucide-react'
+import { ArrowRight, Car, Check, CreditCard, Loader2, Minus, Phone, RefreshCw, Ticket, UserRound, X } from 'lucide-react'
 import { LoadingLine } from '@/components/Loading'
 import { RemotePanel } from '@/components/RemoteScene'
-import { CardGate } from '@/components/Riverain'
 import { arrondissement, PayByBot, PayByPhone, Plate, withPayByPhone, Wordmark, ZonePlate } from '@/components/signs'
 import { api, until, type Me, type Overview, type PricedVehicle } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -24,6 +23,7 @@ function Row({
   found = true,
   loading = false,
   highlight = false,
+  missing = false,
 }: {
   icon: ReactNode
   label: string
@@ -34,6 +34,8 @@ function Row({
   loading?: boolean
   /** The resident vehicle, what the whole service is about: framed in blue. */
   highlight?: boolean
+  /** Required and absent (no valid card): a red cross, and the next step waits for it. */
+  missing?: boolean
 }) {
   return (
     <li
@@ -47,6 +49,10 @@ function Row({
       </div>
       {loading ? (
         <span className="mt-2.5 size-6 shrink-0 rounded-full bg-ink/[0.05]" aria-hidden />
+      ) : missing ? (
+        <span className="mt-2.5 grid size-6 shrink-0 place-items-center rounded-full bg-destructive/10 text-destructive">
+          <X className="size-3.5" strokeWidth={3} />
+        </span>
       ) : found ? (
         <span className="mt-2.5 grid size-6 shrink-0 place-items-center rounded-full bg-[#e7f6ec] text-[#1a9a4a]">
           <Check className="size-3.5" strokeWidth={3} />
@@ -110,8 +116,10 @@ export function Welcome({
         ? `${n} véhicules, dont ${r} résident${r > 1 ? 's' : ''}`
         : n > 1 ? `${n} véhicules` : 'Véhicule'
 
-  // PayByBot pays with a card saved on PayByPhone: without one it cannot be used.
+  // PayByBot pays with a card saved on PayByPhone (not Apple Pay, Google Pay or PayPal), not expired: without one
+  // the next step waits, and « Rafraîchir » looks again once it is added.
   const cards = data.payments.filter((p) => p.kind === 'card')
+  const valid = cards.filter((p) => !p.expired)
 
   const step = 140
   let i = 0
@@ -119,7 +127,6 @@ export function Welcome({
 
   return (
     <div className="grid min-h-dvh bg-background lg:grid-cols-[1.05fr_1fr]">
-      {!cards.length && !me.demo && <CardGate />}
       <div className="flex flex-col px-6 pt-5 pb-10 sm:px-10 lg:px-[clamp(2.5rem,7vw,7rem)] lg:pb-6">
         <Wordmark />
         <div className="mx-auto w-full max-w-lg lg:my-auto lg:pt-2">
@@ -190,18 +197,30 @@ export function Welcome({
               icon={<CreditCard className="size-5" />}
               label={cards.length > 1 ? 'Cartes bancaires' : 'Carte bancaire'}
               delay={next()}
-              found={cards.length > 0}
+              found={valid.length > 0}
+              missing={!valid.length}
             >
-              {cards.length ? (
-                <>
-                  <span className="flex flex-col gap-0.5 font-semibold">
-                    {cards.map((p) => (
-                      <span key={p.id}>{p.label}</span>
-                    ))}
+              {cards.length > 0 && (
+                <span className="flex flex-col gap-0.5 font-semibold">
+                  {cards.map((p) => (
+                    <span key={p.id} className={cn(p.expired && 'text-ink/45 line-through decoration-ink/30')}>
+                      {p.label}
+                      {p.expired && <span className="ml-2 text-sm font-normal text-destructive no-underline">expirée</span>}
+                    </span>
+                  ))}
+                </span>
+              )}
+              {!valid.length && (
+                <span className={cn('block text-sm leading-relaxed text-destructive', cards.length > 0 && 'mt-2')}>
+                  {withPayByPhone(
+                    cards.length
+                      ? 'Carte expirée : ajoutez une carte bancaire valide dans l’application PayByPhone, puis touchez « Rafraîchir ».'
+                      : 'Aucune carte bancaire : ajoutez-en une dans l’application PayByPhone, puis touchez « Rafraîchir ».',
+                  )}
+                  <span className="mt-1 block text-ink/55">
+                    Apple Pay, Google Pay et PayPal ne fonctionnent pas avec <PayByBot /> : seule une carte bancaire convient.
                   </span>
-                </>
-              ) : (
-                <span className="text-ink/60">{withPayByPhone('Aucune carte : ajoutez-en une dans l’application PayByPhone.')}</span>
+                </span>
               )}
             </Row>
           </ul>
@@ -219,14 +238,12 @@ export function Welcome({
             {refreshing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Rafraîchir
           </button>
 
-          <button
-            onClick={onContinue}
-            disabled={!vehicles?.length || !cards.length}
-            className={cn('rise mt-5', ui.primary)}
-            style={{ animationDelay: `${next()}ms` }}
-          >
-            C’est bien moi, continuer <ArrowRight className="size-5" />
-          </button>
+          {/* The animation on a wrapper: on the button itself its opacity would hide the greyed-out state. */}
+          <div className="rise mt-5" style={{ animationDelay: `${next()}ms` }}>
+            <button onClick={onContinue} disabled={!vehicles?.length || !valid.length} className={ui.primary}>
+              C’est bien moi, continuer <ArrowRight className="size-5" />
+            </button>
+          </div>
         </div>
       </div>
 

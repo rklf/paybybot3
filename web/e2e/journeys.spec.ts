@@ -91,6 +91,25 @@ test('sans voiture résidente ni ticket : une carte par voiture, l’interrupteu
   await expect(page.getByRole('button', { name: /LM-789-NP/ })).toHaveAttribute('aria-pressed', 'true')
 })
 
+test('bienvenue sans carte bancaire valide : croix rouge, on ne passe pas', async ({ page }) => {
+  let payments: object[] = [{ id: 'c1', label: 'Visa •••• 4242 — exp. 10/26', kind: 'card', expired: true }]
+  await page.route('**/api/overview', async (route) => {
+    const answer = await route.fetch()
+    const json = await answer.json()
+    if (!json.vehicles) return route.fulfill({ response: answer, json })
+    await route.fulfill({ json: { ...json, payments } })
+  })
+  await demo(page)
+  await page.goto('/#/bienvenue')
+  const next = page.getByRole('button', { name: /C’est bien moi/ })
+  await expect(page.getByText(/Carte expirée/)).toBeVisible()
+  await expect(page.getByText(/Apple Pay, Google Pay et PayPal/)).toBeVisible()
+  await expect(next).toBeDisabled()
+  payments = [{ id: 'c2', label: 'Visa •••• 1111 — exp. 04/29', kind: 'card' }]
+  await page.getByRole('button', { name: 'Rafraîchir' }).click()
+  await expect(next).toBeEnabled()
+})
+
 test('programmer un ticket : une voiture résidente mène au renouvellement de la semaine', async ({ page }) => {
   await demo(page)
   await wizardButton(page).click()
