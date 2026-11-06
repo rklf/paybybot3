@@ -35,12 +35,14 @@ function countdown(ms: number): [string, string][] {
 }
 
 /** « Activer le renouvellement automatique » under a card: the same as turning its switch on (same window, same checks). */
-function ActivateButton() {
-  // One line on a phone too: the text shrinks a little on the narrowest screens.
+function ActivateButton({ onClick }: { onClick?: () => void }) {
+  // One line on a phone too: the text shrinks a little on the narrowest screens. Without onClick: the card's switch.
   return (
     <button
       type="button"
-      onClick={(e) => e.currentTarget.closest('[data-renewal-card]')?.querySelector<HTMLButtonElement>('[role=switch]')?.click()}
+      onClick={(e) =>
+        onClick ? onClick() : e.currentTarget.closest('[data-renewal-card]')?.querySelector<HTMLButtonElement>('[role=switch]')?.click()
+      }
       className={cn(ui.primary, 'px-3 text-[length:min(0.95rem,calc((100vw-96px)/18))] whitespace-nowrap sm:text-lg')}
     >
       Activer le renouvellement automatique
@@ -150,12 +152,6 @@ function Ticket({
         {!renewal && !data.autopilots.some((ap) => ap.enabled && sameCar(ap.plate, session.plate)) && (
           <>
             <p className="mt-1 text-sm font-semibold text-destructive">Sans renouvellement, risque de FPS après cette date.</p>
-            {/* A non-resident ticket: the same ticket taken again, from when this one ends (a resident one has its switch). */}
-            {daily && (
-              <button onClick={() => setRenewing(true)} className={cn(ui.primary, 'mt-4 h-11 w-full text-[0.95rem]')}>
-                Renouveler automatiquement
-              </button>
-            )}
           </>
         )}
         {renewing && (
@@ -244,6 +240,12 @@ function Ticket({
           )}
           {/* A resident ticket not renewed yet: the switch's action again, as a button at the bottom of the card. */}
           {!renewal && !pending && <ActivateButton />}
+        </div>
+      )}
+      {/* A non-resident ticket with nothing after it: the same button as a resident one, taking it again from its end. */}
+      {daily && !renewal && !data.autopilots.some((ap) => ap.enabled && sameCar(ap.plate, session.plate)) && (
+        <div className="border-t border-ink/[0.06] px-5 py-5">
+          <ActivateButton onClick={() => setRenewing(true)} />
         </div>
       )}
     </article>
