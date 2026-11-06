@@ -393,7 +393,8 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
         {now?.busy ? (
           <p className="mt-3 flex items-center gap-2 text-sm text-ink/70">
             <Loader2 className="size-4 animate-spin text-[#4e9aa0]" />
-            {now.total > 1 ? `Prise des tickets : ${now.covered} / ${now.total} arrondissements` : 'Prise du ticket en cours…'}
+            {/* The tickets already visible count as they come, before their wave's answer. */}
+            {now.total > 1 ? `Prise des tickets : ${Math.max(now.covered, live.length)} / ${now.total} arrondissements` : 'Prise du ticket en cours…'}
           </p>
         ) : (
           ap.lastError && !finished && <p className="mt-3 text-sm text-destructive">{ap.lastError}</p>
