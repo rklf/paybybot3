@@ -332,7 +332,7 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
           <RenewalActions
             ap={ap}
             onChanged={onChanged}
-            withPause={!single}
+            withPause={!single && !ap.cmis} // a CMI-S ticket is free: stopped or kept, never paused
             stopLabel={single ? 'Annuler ce ticket' : 'Arrêter ces tickets'}
             switchLabel={single ? 'Ticket programmé' : 'Renouvellement auto'}
             stoppedText={single ? 'Ticket annulé.' : 'Tickets arrêtés.'}
