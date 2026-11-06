@@ -99,6 +99,10 @@ function Ticket({
   // Renewal on and nothing wrong: nothing to watch, only when the ticket ends and when the next one is paid.
   const calm = !!renewal && renewal.enabled && !note
 
+  // Renewal off and under 48 h left: the one thing to do on the card, said in red under the switch.
+  const urgent = !renewal?.enabled && !note && left < 48 * 3600000
+  const hoursLeft = Math.max(1, Math.round(left / 3600000))
+
   // Qonto-like: one white card, one 20px grid, labels left and values right, hairline dividers, a muted teal accent.
   return (
     <article data-renewal-card className="rise overflow-hidden rounded-2xl border border-ink/10 bg-white">
@@ -193,6 +197,11 @@ function Ticket({
                 </>
               }
             />
+            {urgent && (
+              <p className="mt-0.5 text-sm font-medium text-destructive">
+                Non renouvelé : {left < 3600000 ? `il reste ${Math.max(1, Math.round(left / 60000))} min` : `il reste ${hoursLeft} h`}
+              </p>
+            )}
           </div>
           {/* The pause is offered under the switch; here only « Reprendre » or the planned pause, when there is one. */}
           {renewal && (pauseState(renewal).paused || pauseState(renewal).later) && (
