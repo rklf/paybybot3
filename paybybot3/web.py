@@ -632,7 +632,7 @@ def check_payable(session, location, rate, plate, payment_account_id, avoid=Fals
 
 
 HANDI_RATE = re.compile(r"handi", re.I)
-ZONES_WAVE = 10  # tickets sent together (PayByPhone takes up to a minute each): the rest at the next call
+ZONES_WAVE = 5  # tickets sent together (PayByPhone takes up to a minute each, and refuses 10 at once: 429)
 
 
 def arrondissement_text(zone):
@@ -693,6 +693,8 @@ def zone_reason(e):
     """Why PayByPhone did not take the ticket in one arrondissement, in a few words."""
     if "VehicleAlreadyParked" in str(e):
         return "un ticket y est encore en cours chez PayByPhone"
+    if "429" in str(e):
+        return "PayByPhone a demandé de ralentir, réessayé tout de suite après"
     return str(e) if isinstance(e, NotPayable) else friendly_error(e)
 
 
