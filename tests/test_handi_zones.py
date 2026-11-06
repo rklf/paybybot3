@@ -51,25 +51,31 @@ class TakeZones(unittest.TestCase):
     def test_one_handi_ticket_in_each_zone_with_its_own_rate(self):
         s = FakeSession()
         expire, failed, left = web.take_zones(s, ROW, "card")
-        self.assertEqual(s.paid, [("75001", "h75001"), ("75002", "h75002"), ("75016", "h75016")])
+        self.assertEqual(sorted(s.paid), [("75001", "h75001"), ("75002", "h75002"), ("75016", "h75016")])
         self.assertEqual((failed, left), ([], []))
         self.assertIsNotNone(expire)
 
     def test_a_zone_already_covered_is_left_alone(self):
         s = FakeSession(running=["75002"])
         web.take_zones(s, ROW, "card")
-        self.assertEqual([z for z, _ in s.paid], ["75001", "75016"])
+        self.assertEqual(sorted(z for z, _ in s.paid), ["75001", "75016"])
 
     def test_a_refused_zone_does_not_stop_the_others(self):
         s = FakeSession(refuse=["75001"])
         _, failed, _ = web.take_zones(s, ROW, "card")
-        self.assertEqual([z for z, _ in s.paid], ["75002", "75016"])
+        self.assertEqual(sorted(z for z, _ in s.paid), ["75002", "75016"])
         self.assertEqual([z for z, _ in failed], ["75001"])
-        self.assertTrue(web.zones_error(failed).startswith("Ticket non pris dans le 1er : PayByPhone n'autorise pas"))
+        self.assertTrue(web.zones_error(failed).startswith("Non couverts : 1er (PayByPhone n'autorise pas"))
+
+    def test_a_zone_still_parked_says_so(self):
+        failed = [("75001", RuntimeError("Quote error: VehicleAlreadyParked")),
+                  ("75004", RuntimeError("Quote error: VehicleAlreadyParked"))]
+        self.assertEqual(web.zones_error(failed),
+                         "Non couverts : 1er, 4e (un ticket y est encore en cours chez PayByPhone)")
 
     def test_the_zones_left_when_time_is_up(self):
         s = FakeSession()
-        _, _, left = web.take_zones(s, ROW, "card", budget=-1)
+        _, _, left = web.take_zones(s, ROW, "card", wave=0)
         self.assertEqual((s.paid, left), ([], PARIS))
 
 
@@ -91,12 +97,12 @@ class RenewZones(unittest.TestCase):
     def test_a_refused_zone_is_said_and_tried_again_without_counting_the_day(self):
         outcome = web.renew_zones(FakeSession(refuse=["75002"]), dict(ROW), None, datetime.now(timezone.utc), {}, None)
         self.assertEqual(outcome, "error")
-        self.assertIn("2e", self.stored[0]["last_error"])
+        self.assertIn("2e", self.stored[0]["last_error"])  # « Non couverts : 2e (…) »
         self.assertNotIn("last_payment", self.stored[0])
         self.assertEqual(self.mails, ["problem"])
 
     def test_time_up_comes_back_in_a_minute(self):
-        with patch.object(web, "ZONES_BUDGET", -1):
+        with patch.object(web, "ZONES_WAVE", 0):
             outcome = web.renew_zones(FakeSession(), dict(ROW), None, datetime.now(timezone.utc), {}, None)
         self.assertEqual(outcome, "partial")
         self.assertEqual(self.mails, [])

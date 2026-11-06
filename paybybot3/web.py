@@ -632,7 +632,7 @@ def check_payable(session, location, rate, plate, payment_account_id, avoid=Fals
 
 
 HANDI_RATE = re.compile(r"handi", re.I)
-ZONES_BUDGET = 60  # seconds of payments per call: the zones left are taken at the scheduler's next call
+ZONES_WAVE = 10  # tickets sent together (PayByPhone takes up to a minute each): the rest at the next call
 
 
 def arrondissement_text(zone):
@@ -660,31 +660,48 @@ def handi_rate(session, zone, plate):
     raise NotPayable("PayByPhone ne propose pas le ticket carte mobilité CMI-S dans le %s." % arrondissement_text(zone))
 
 
-def take_zones(session, row, card, budget=None):
+def take_zones(session, row, card, wave=None):
     """The Handi ticket in several Paris arrondissements (all of them by default): PayByPhone takes a free Handi
-    ticket in each zone at the same time, so every zone not covered yet gets its own, one after the other.
-    Returns (end of the last ticket taken, [(zone, error)], zones left when the time was up)."""
+    ticket in each zone at the same time, so every zone not covered yet gets its own. PayByPhone takes up to a minute
+    to confirm each one: a wave of them goes out together, the rest at the next call.
+    Returns (end of the last ticket taken, [(zone, error)], zones left for the next call)."""
     covered = {str(x.get("locationId")) for x in running_for(session, row["plate"])}
     todo = [z for z in row["locations"] if str(z) not in covered]
-    started, expire, failed = time.monotonic(), None, []
-    budget = ZONES_BUDGET if budget is None else budget
-    for i, zone in enumerate(todo):
-        if time.monotonic() - started > budget:
-            return expire, failed, todo[i:]
+    wave = ZONES_WAVE if wave is None else wave
+    now, later = todo[:wave], todo[wave:]
+
+    def take(zone):
         try:
             rate = row["rate"] if str(zone) == str(row["location"]) else handi_rate(session, zone, row["plate"])
             _, found = pay_and_confirm(session, zone, rate, fmt_qty(row["duration"]), row["unit"], row["plate"], card)
-            expire = covered_until(found) or expire
+            return covered_until(found), None
         except Exception as e:
-            failed.append((zone, e))
-    return expire, failed, []
+            return None, e
+    expire, failed = None, []
+    if now:
+        with ThreadPoolExecutor(max_workers=len(now)) as pool:
+            results = list(pool.map(lambda z: contextvars.copy_context().run(take, z), now))
+        for zone, (end, e) in zip(now, results):
+            if e is not None:
+                failed.append((zone, e))
+            elif end:
+                expire = max(expire, end) if expire else end
+    return expire, failed, later
+
+
+def zone_reason(e):
+    """Why PayByPhone did not take the ticket in one arrondissement, in a few words."""
+    if "VehicleAlreadyParked" in str(e):
+        return "un ticket y est encore en cours chez PayByPhone"
+    return str(e) if isinstance(e, NotPayable) else friendly_error(e)
 
 
 def zones_error(failed):
-    """What to tell when some arrondissements were not covered: which ones, and PayByPhone's reason for the first."""
-    e = failed[0][1]
-    return "Ticket non pris dans le %s : %s" % (", ".join(arrondissement_text(z) for z, _ in failed),
-                                                str(e) if isinstance(e, NotPayable) else friendly_error(e))
+    """The arrondissements not covered, grouped by reason: « Non couverts : 1er (un ticket y est encore en cours…) »."""
+    reasons = {}
+    for zone, e in failed:
+        reasons.setdefault(zone_reason(e), []).append(arrondissement_text(zone))
+    return "Non couverts : " + " ; ".join("%s (%s)" % (", ".join(z), r) for r, z in reasons.items())
 
 
 def pay_and_confirm(session, location, rate, duration, unit, plate, paymentAccountId, attempts=10, delay=3):
@@ -1465,7 +1482,7 @@ def run_autopilot(session, ap, now=None, first_now=False):
     if len(ap.get("locations") or []) > 1:
         ap["lastCheck"] = datetime.now(timezone.utc).isoformat()
         try:
-            _, failed, _ = take_zones(session, ap, ap["paymentAccountId"], budget=float("inf"))
+            _, failed, _ = take_zones(session, ap, ap["paymentAccountId"], wave=len(ap["locations"]))
         except Exception as e:
             failed = [(ap["location"], e)]
         ap["lastError"] = zones_error(failed) if failed else None
@@ -3824,8 +3841,9 @@ def add_autopilot(body: Autopilot, pbb_session: str = Cookie(None)):
             row = {**row, "owner": owner_id(s.username)}  # its stored login is the fallback if this one is stale
             details = {**with_details(row)}
             before = running_for(s, body.plate)
-            # Pay now if it is due, or at once when the first ticket is asked for now.
-            outcome = process_renewal(row, refresh_token=refresh, activating=True, first_now=body.now and bool(days))
+            # Pay now if it is due. Its tickets asked for at once: taken by the page right after (/take), so the
+            # window closes at once and the card shows them coming (PayByPhone takes up to a minute each).
+            outcome = "waiting" if body.now and days else process_renewal(row, refresh_token=refresh, activating=True)
             stored = next((r for r in store("renewal_list", p_owner=owner_id(s.username)) if r["id"] == row["id"]), row)
             message = None
             if outcome in ("paid", "active", "waiting", "partial"):
@@ -3855,11 +3873,12 @@ def add_autopilot(body: Autopilot, pbb_session: str = Cookie(None)):
     ap = {**body.model_dump(), "duration": fmt_qty(body.duration), "id": uuid.uuid4().hex[:8], "enabled": True,
           "lastCheck": None, "lastPayment": None, "lastError": None, "days": days, "start": start, "locations": zones}
     s.autopilots[ap["id"]] = ap
-    first_now = body.now and bool(days)
+    if body.now and days:  # taken by the page right after (/take)
+        return ap
     if HOSTED:  # demo on a serverless host: no background thread, run it now
-        run_autopilot(s, ap, first_now=first_now)
+        run_autopilot(s, ap)
     else:
-        threading.Thread(target=lambda: guarded(lambda: run_autopilot(s, ap, first_now=first_now)), daemon=True).start()
+        threading.Thread(target=lambda: guarded(lambda: run_autopilot(s, ap)), daemon=True).start()
     return ap
 
 
@@ -5017,14 +5036,7 @@ def edit_autopilot(ap_id: str, body: Autopilot, pbb_session: str = Cookie(None))
         ap = update_own_renewal(s, ap_id, {"data": encrypt_details(details), "last_error": None,
                                            "next_check": utc_iso(datetime.now(timezone.utc))})
         log.info("renewal %s edited", ap_id)
-        if body.now:  # its next ticket asked for at once (never over a ticket running for the car)
-            row = next((r for r in store("renewal_list", p_owner=owner_id(s.username)) if r["id"] == ap_id), None)
-            if row:
-                process_renewal({**row, "owner": owner_id(s.username)}, refresh_token=getattr(s.bot, "refresh_token", None),
-                                activating=True, first_now=True)
-                stored = next((r for r in store("renewal_list", p_owner=owner_id(s.username)) if r["id"] == ap_id), row)
-                ap = stored_to_autopilot(stored)
-        return with_next_ticket(ap)
+        return with_next_ticket(ap)  # its tickets asked for at once: taken by the page right after (/take)
     ap = s.autopilots.get(ap_id)
     if not ap:
         raise HTTPException(404, "Ticket introuvable.")
@@ -5034,9 +5046,33 @@ def edit_autopilot(ap_id: str, body: Autopilot, pbb_session: str = Cookie(None))
     ap.update(location=body.location, rate=body.rate, duration=fmt_qty(body.duration), unit=body.unit,
               paymentAccountId=body.paymentAccountId, days=days, start=start, dateFrom=body.dateFrom,
               dateTo=body.dateTo, cmis=body.cmis, locations=zones_of(body, days), lastError=None)
-    if body.now:
+    return ap  # its tickets asked for at once: taken by the page right after (/take)
+
+
+@app.post("/api/autopilots/{ap_id}/take")
+def take_now(ap_id: str, pbb_session: str = Cookie(None)):
+    """A programmed ticket's tickets taken now, asked for when programming it: one wave per call (the page calls
+    again while some are left), never over a ticket running there. Says how many of its zones are covered."""
+    s = current(pbb_session)
+    if HOSTED and not s.demo:
+        def row_of():
+            return next((r for r in store("renewal_list", p_owner=owner_id(s.username)) if r["id"] == ap_id), None)
+        row = guarded(row_of)
+        if not row:
+            raise HTTPException(404, "Ticket introuvable.")
+        outcome = process_renewal({**row, "owner": owner_id(s.username)}, refresh_token=getattr(s.bot, "refresh_token", None),
+                                  activating=True, first_now=True)
+        ap = stored_to_autopilot(guarded(row_of) or row)
+    else:
+        ap = s.autopilots.get(ap_id)
+        if not ap:
+            raise HTTPException(404, "Ticket introuvable.")
         run_autopilot(s, ap, first_now=True)
-    return ap
+        outcome = "done"
+    zones = [str(z) for z in (ap.get("locations") or [ap["location"]])]
+    covered = {str(x.get("locationId")) for x in guarded(lambda: running_for(s, ap["plate"]))}
+    return {"covered": len(covered & set(zones)), "total": len(zones), "more": outcome == "partial",
+            "error": ap.get("lastError")}
 
 
 @app.delete("/api/autopilots/{ap_id}")

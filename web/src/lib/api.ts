@@ -267,6 +267,9 @@ export const api = {
   editAutopilot: (id: string, p: Parking & { label: string }) =>
     request<Autopilot>(`/api/autopilots/${id}`, { method: 'PUT', body: JSON.stringify(p) }),
   deleteAutopilot: (id: string) => request(`/api/autopilots/${id}`, { method: 'DELETE' }),
+  /** Its tickets taken now, one wave per call (`more`: call again); how many of its zones are covered. */
+  takeNow: (id: string) =>
+    post<{ covered: number; total: number; more: boolean; error: string | null }>(`/api/autopilots/${id}/take`),
 }
 
 export const UNIT_LABEL: Record<Unit, [string, string]> = {

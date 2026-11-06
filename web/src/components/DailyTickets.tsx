@@ -60,6 +60,48 @@ const heavy = (r: Rate) => /lourd/i.test(r.name)
 const light = (r: Rate) => /l[ée]ger/i.test(r.name)
 const handi = (r: Rate) => /handi/i.test(`${r.name} ${r.type}`)
 
+/** Tickets being taken now for a programmed ticket (asked when programming it): its card shows them coming. */
+type Taking = { covered: number; total: number; busy: boolean; error?: string | null }
+const taking = new Map<string, Taking>()
+const takingListeners = new Set<() => void>()
+function setTaking(id: string, t: Taking) {
+  taking.set(id, t)
+  takingListeners.forEach((f) => f())
+}
+function useTaking(id: string) {
+  const [, redraw] = useState(0)
+  useEffect(() => {
+    const f = () => redraw((n) => n + 1)
+    takingListeners.add(f)
+    return () => void takingListeners.delete(f)
+  }, [])
+  return taking.get(id)
+}
+
+/** Takes a programmed ticket's tickets now, wave after wave (PayByPhone takes up to a minute each), the dashboard
+ *  refreshed after each one; then says how many were taken. The window is already closed. */
+async function takeTickets(ap: Autopilot, onChanged: () => void) {
+  const total = ap.locations?.length || 1
+  setTaking(ap.id, { covered: 0, total, busy: true })
+  let last: Taking = { covered: 0, total, busy: false }
+  try {
+    for (let i = 0; i < 6; i++) {
+      const r = await api.takeNow(ap.id)
+      last = { covered: r.covered, total: r.total, busy: r.more, error: r.error }
+      setTaking(ap.id, last)
+      onChanged()
+      if (!r.more) break
+    }
+  } catch (e) {
+    last = { ...last, error: (e as Error).message }
+  }
+  setTaking(ap.id, { ...last, busy: false })
+  const all = last.covered >= last.total
+  const text = last.total > 1 ? `${last.covered} arrondissements couverts sur ${last.total}` : all ? 'Ticket pris.' : 'Ticket non pris.'
+  if (all) toast.success(last.total > 1 ? `Tickets pris : ${text}.` : text)
+  else toast.error(last.total > 1 ? `${text}.` : text, { description: last.error ?? undefined })
+}
+
 /** The first question: the vehicle's type, which says the rate. */
 const KINDS: ['light' | 'heavy' | 'cmis', string, string][] = [
   ['light', 'Véhicule léger', 'Moins de 1,6 t (2 t électrique)'],
@@ -188,6 +230,7 @@ export function ruleState(ap: Autopilot, now = Date.now()) {
 }
 
 function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: Overview; onChanged: () => void; needsOffer: boolean }) {
+  const now = useTaking(ap.id) // its tickets being taken now (asked when programming it)
   const { period, next, last, finished } = ruleState(ap)
   const single = !!period && period.from === period.to
   const [removing, setRemoving] = useState(false)
@@ -291,7 +334,14 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
         </dl>
         {finished && !single && <p className="mt-3 text-sm text-ink/55">Période terminée : plus aucun ticket ne sera pris.</p>}
         {finished && single && !last && !ap.lastError && <p className="mt-3 text-sm text-ink/55">Ce ticket n’a pas été pris.</p>}
-        {ap.lastError && !finished && <p className="mt-3 text-sm text-destructive">{ap.lastError}</p>}
+        {now?.busy ? (
+          <p className="mt-3 flex items-center gap-2 text-sm text-ink/70">
+            <Loader2 className="size-4 animate-spin text-[#4e9aa0]" />
+            {now.total > 1 ? `Prise des tickets : ${now.covered} / ${now.total} arrondissements` : 'Prise du ticket en cours…'}
+          </p>
+        ) : (
+          ap.lastError && !finished && <p className="mt-3 text-sm text-destructive">{ap.lastError}</p>
+        )}
       </div>
       {editing && <DailyWizard data={data} editing={ap} onClose={() => setEditing(false)} onDone={onChanged} needsOffer={needsOffer} />}
     </article>
@@ -844,13 +894,15 @@ export function DailyWizard({
     if (editing) return save()
     setSaving(true)
     try {
-      for (const p of picked) await api.addAutopilot(rule(p) as Parameters<typeof api.addAutopilot>[0])
+      const made: Autopilot[] = []
+      for (const p of picked) made.push(await api.addAutopilot(rule(p) as Parameters<typeof api.addAutopilot>[0]))
       const first = nextTicket(ruleDays, start, chainFrom, period)
       toast.success(chainFrom ? 'Renouvellement activé.' : picked.length > 1 ? `${picked.length} tickets programmés.` : 'Ticket programmé.', {
-        description: first ? `Prochain ticket ${when(first)}.` : undefined,
+        description: takeNow ? 'Les tickets sont pris maintenant : suivez-les sur la carte.' : first ? `Prochain ticket ${when(first)}.` : undefined,
       })
       onDone()
       onClose()
+      if (takeNow) for (const ap of made) void takeTickets(ap, onDone) // the window closes at once
     } catch (e) {
       // No subscription yet (the account had not loaded): the offer screen.
       if (e instanceof ApiError && e.status === 402 && /offre/.test(e.message)) setPaywall(true)
@@ -863,10 +915,11 @@ export function DailyWizard({
   async function save() {
     setSaving(true)
     try {
-      await api.editAutopilot(editing!.id, rule() as Parameters<typeof api.editAutopilot>[1])
-      toast.success('Ticket modifié.')
+      const ap = await api.editAutopilot(editing!.id, rule() as Parameters<typeof api.editAutopilot>[1])
+      toast.success('Ticket modifié.', { description: takeNow ? 'Les tickets sont pris maintenant : suivez-les sur la carte.' : undefined })
       onDone()
       onClose()
+      if (takeNow) void takeTickets(ap, onDone)
     } catch (e) {
       if (e instanceof ApiError && e.status === 402 && /offre/.test(e.message)) setPaywall(true)
       else toast.error((e as Error).message)
