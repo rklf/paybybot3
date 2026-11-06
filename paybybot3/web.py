@@ -2130,8 +2130,8 @@ def renew_zones(session, row, rule, now, patch, previous_error):
         expire, failed, left = take_zones(session, row, row["payment_account_id"])
     except Exception as e:  # PayByPhone not answering the list of tickets: nothing taken
         expire, failed, left = None, [(row["location"], e)], []
-    if left:
-        patch.update(next_check=utc_iso(now + timedelta(minutes=1)))
+    if left:  # the rest at the next call; only a lasting refusal is said (an old message never stays)
+        patch.update(next_check=utc_iso(now + timedelta(minutes=1)), last_error=zones_error(failed) if failed else None)
         outcome = "partial"
     elif failed:
         patch.update(last_error=zones_error(failed), next_check=utc_iso(now + timedelta(minutes=30)))
