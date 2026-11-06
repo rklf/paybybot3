@@ -295,8 +295,7 @@ export function RenewalActions({
             {withPause && !later && !paused && (
               <button onClick={() => setPausing(true)} className="inline-flex shrink-0 items-center gap-1.5 text-sm whitespace-nowrap text-ink/55 transition hover:text-ink">
                 <Pause className="size-3.5" />
-                <span className="sm:hidden">Pause</span>
-                <span className="hidden sm:inline">Programmer une pause</span>
+                Pause
               </button>
             )}
             <button
@@ -628,7 +627,7 @@ export function RenewalSwitch({
   autoOpen?: boolean
   locked?: boolean
   onLogout?: () => void
-  /** Shown under the switch's line (a note when something needs saying), above « Programmer une pause ». */
+  /** Shown under the switch's line (a note when something needs saying). */
   details?: ReactNode
   /** Said under the switch's name instead of « Activé » (the next renewal). */
   status?: ReactNode
@@ -656,8 +655,14 @@ export function RenewalSwitch({
 
   const row = (onClick: () => void) => (
     <div className="flex items-center justify-between gap-4">
-      {/* The title and its state on the left, the switch alone on the right: nothing in between. */}
+      {/* The title and its state on the left; « Pause » then the switch on the right. */}
       <SwitchLabel on={on} status={on ? status : undefined} />
+      <span className="ml-auto" />
+      {pausable && (
+        <button onClick={() => setPausing(true)} className="inline-flex shrink-0 items-center gap-1.5 text-sm text-ink/55 transition hover:text-ink">
+          <Pause className="size-3.5" /> Pause
+        </button>
+      )}
       <button
         type="button"
         role="switch"
@@ -714,11 +719,6 @@ export function RenewalSwitch({
             })(),
       )}
       {details}
-      {pausable && (
-        <button onClick={() => setPausing(true)} className="mt-4 inline-flex items-center gap-1.5 text-sm text-ink/55 transition hover:text-ink">
-          <Pause className="size-3.5" /> Programmer une pause
-        </button>
-      )}
       {pausing && <PauseDialog ap={ap} onClose={() => setPausing(false)} onDone={onChanged} />}
     </>
   )
