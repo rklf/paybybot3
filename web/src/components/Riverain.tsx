@@ -1,3 +1,4 @@
+import { RippleButton } from '@/components/ui/ripple-button'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Check, Loader2, Mail, Pause, Play, Repeat, RotateCw } from 'lucide-react'
 import { toast } from 'sonner'
@@ -504,9 +505,9 @@ export function RiverainCard({
           </ul>
         )}
         {another && (
-          <button onClick={() => setOpen(true)} className={cn('mx-auto block text-sm', ui.link)}>
+          <RippleButton onClick={() => setOpen(true)} rippleColor="#ADD8E6" className={ui.primaryGray}>
             Renouveler un autre véhicule
-          </button>
+          </RippleButton>
         )}
         <RiverainDialog open={open} onOpenChange={setOpen} data={data} onDone={onChanged} hosted={hosted} demo={demo} />
       </section>
