@@ -433,7 +433,9 @@ export function Dashboard({
   // opens by itself, then the offer comes when it is activated.
   // Online, no offer chosen yet: PayByBot is not usable before choosing one. With a resident vehicle, its renewal
   // dialog stays open (then the offer); without one, the « Programmer un ticket » wizard does (then the offer).
-  const needsOffer = !!me.hosted && !me.demo && !!account && !account.subscribed && !account.blocked
+  // No subscription running (never taken, or the free month over without one): every automation ends on the
+  // subscription screen. An unpaid one is not: its invoice is paid from the banner, not with a new subscription.
+  const needsOffer = !!me.hosted && !me.demo && !!account && !account.subscribed && account.blocked !== 'unpaid'
   const [offerOpen, setOfferOpen] = useState(false) // « Activer mon compte »: the offer screen
   const [backPlate, setBackPlate] = useState<string | undefined>() // back to the wizard, on the car it left
   const [residentFor, setResidentFor] = useState<string | null>(null) // a resident car chosen in « Programmer un ticket »

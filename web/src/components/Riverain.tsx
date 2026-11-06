@@ -892,7 +892,7 @@ export function RiverainDialog({
 
   async function activate() {
     if (!ok.length) return
-    if (account && !account.subscribed && !account.blocked) {
+    if (account && !account.subscribed && account.blocked !== 'unpaid') {
       // No subscription yet: the offer screen first. The renewal is activated on the way back from Stripe, and
       // that is when the first payment (or the extension) happens.
       setPaywall(true)

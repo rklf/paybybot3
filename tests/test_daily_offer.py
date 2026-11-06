@@ -35,6 +35,11 @@ class DailyNeedsAnOffer(unittest.TestCase):
             self.assertIn("Abonnez-vous", detail)
             self.assertEqual(saved, [])  # nothing stored
 
+    def test_free_month_over_leads_to_the_subscription(self):
+        status, detail, saved = self.add("trial_over", days=[5], start="09:00")
+        self.assertEqual((status, saved), (402, []))
+        self.assertIn("Abonnez-vous", detail)  # the page opens the subscription screen on this answer
+
     def test_blocked_account_is_refused(self):
         status, detail, _ = self.add("unpaid", days=[5], start="09:00")
         self.assertEqual(status, 402)

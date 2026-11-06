@@ -3918,9 +3918,11 @@ def check_card(s, payment_account_id):
 def check_offer(s):
     """Online, nothing is renewed or programmed without an offer chosen (the paywall), nor while blocked."""
     state = billing_state(guarded(lambda: load_account(s)), owner_id(s.username))
-    if state in BLOCKED_STATES:
+    if state == "unpaid":
         raise HTTPException(402, "Compte bloqué : débloquez-le (bandeau en haut de page) pour activer un "
                                  "renouvellement.")
+    if state == "trial_over":  # the free month ended without a subscription: the subscription screen
+        raise HTTPException(402, "Abonnez-vous pour activer le renouvellement : votre mois offert est terminé.")
     if state == "trial":
         raise HTTPException(402, "Abonnez-vous pour activer le renouvellement : rien n'est prélevé avant la fin "
                                  "de votre mois offert.")
