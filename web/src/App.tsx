@@ -26,6 +26,7 @@ const LegalView = lazy(() => import('@/components/Legal').then((m) => ({ default
 const AdminPage = lazy(() => import('@/components/Admin').then((m) => ({ default: m.AdminPage })))
 const Welcome = lazy(() => import('@/components/Welcome').then((m) => ({ default: m.Welcome })))
 const SubscriptionDialog = lazy(() => import('@/components/Subscription').then((m) => ({ default: m.SubscriptionDialog })))
+const Mockup = lazy(() => import('@/components/Mockup').then((m) => ({ default: m.Mockup })))
 
 type Route = 'faq' | 'comment-ca-marche' | 'qui-sommes-nous' | 'tarifs' | 'connexion' | 'inscription' | 'demo' | 'admin' | 'bienvenue' | 'valider' | null
 
@@ -312,6 +313,13 @@ export default function App() {
     setMe(null)
   }
 
+  // Development only: the « one question, then nothing » journey, made-up data (#/maquette).
+  if (import.meta.env.DEV && window.location.hash === '#/maquette')
+    return (
+      <Suspense fallback={null}>
+        <Mockup />
+      </Suspense>
+    )
   // Development only: « Mon abonnement » with a made-up subscription (#/apercu-abonnement).
   if (import.meta.env.DEV && window.location.hash === '#/apercu-abonnement') {
     const fake = {
