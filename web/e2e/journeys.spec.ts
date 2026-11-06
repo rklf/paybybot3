@@ -177,7 +177,7 @@ test('retour de paiement : un ticket programmé n’affiche pas « automatisé �
 
 test('renouvellement résident : s’active depuis la carte du véhicule', async ({ page }) => {
   await demo(page)
-  await page.getByRole('button', { name: 'Activer le renouvellement automatique' }).first().click()
+  await page.getByRole('switch', { name: /Renouvellement/ }).first().click() // the switch alone, off, opens it
   await page.getByRole('dialog').getByRole('button', { name: /^Activer le renouvellement/ }).click()
   // Under the switch: « Activé » or the next renewal, depending on the ticket.
   await expect(page.getByRole('switch', { name: /Renouvellement/ }).first()).toHaveAttribute('aria-checked', 'true', { timeout: 15_000 })

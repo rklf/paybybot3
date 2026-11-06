@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { NoPayment } from '@/components/NoPayment'
 import { PlansDialog } from '@/components/Pricing'
 import { isoDay, periodDays, periodText, RangeCalendar } from '@/components/RangeCalendar'
-import { clearPending, pauseState, RenewalActions, savePending, ZoneTag, type PendingRenewal } from '@/components/Riverain'
+import { clearPending, pauseState, RenewalActions, savePending, when as longWhen, ZoneTag, type PendingRenewal } from '@/components/Riverain'
 import { arrondissement, Plate, withPayByPhone } from '@/components/signs'
 import { api, ApiError, unitLabel, type Autopilot, type Money, type Overview, type Rate, type Unit } from '@/lib/api'
 import { ui } from '@/lib/styles'
@@ -283,11 +283,14 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
       {/* The tickets running now: how many arrondissements, and until when. */}
       {liveEnd && (
         <div className="border-t border-ink/[0.06] px-5 py-4">
-          <p className="font-medium text-ink">Ticket en cours</p>
-          <p className="mt-1 text-sm text-ink/60">
-            {zones.length > 1 && `${live.length} / ${zones.length} arrondissements couverts · `}
-            jusqu’au <span className="text-ink">{when(liveEnd)}</span>
-          </p>
+          {/* As on any ticket card: until when; how many arrondissements only when some are missing (the pill says
+              which zones). */}
+          <p className="text-ink">Couvert jusqu’au {longWhen(liveEnd.getTime())}</p>
+          {live.length < zones.length && (
+            <p className="mt-1 text-sm text-ink/55">
+              {live.length} / {zones.length} arrondissements
+            </p>
+          )}
         </div>
       )}
       {/* Same order as the resident card: the switch right under the header, then the details. */}
@@ -307,6 +310,14 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
             onChanged={onChanged}
             withPause={!single && !ap.cmis} // a CMI-S ticket is free: stopped or kept, never paused
             aside={ap.cmis ? modify : undefined}
+            detail={
+              ap.cmis && ap.enabled && nextTake ? (
+                // As on a resident card: when the next tickets are taken.
+                <span className="mt-0.5 block text-sm text-ink/50">
+                  Prochain : <span className="whitespace-nowrap text-ink tabular-nums">{longWhen(nextTake.getTime())}</span>
+                </span>
+              ) : undefined
+            }
             stopLabel={single ? 'Annuler ce ticket' : 'Arrêter ces tickets'}
             switchLabel={single ? 'Ticket programmé' : 'Renouvellement auto'}
             stoppedText={single ? 'Ticket annulé.' : 'Tickets arrêtés.'}

@@ -25,30 +25,7 @@ function useNow(interval = 1000) {
 }
 
 /** The time left as a countdown: [['6', 'jours'], ['10', 'heures'], ['57', 'minutes']] (days only when there are some). */
-function countdown(ms: number): [string, string][] {
-  const min = Math.max(0, Math.floor(ms / 60000))
-  const d = Math.floor(min / 1440)
-  const h = Math.floor((min % 1440) / 60)
-  const m = min % 60
-  const unit = (n: number, one: string) => (n > 1 ? one + 's' : one)
-  return [...(d ? [[String(d), unit(d, 'jour')] as [string, string]] : []), [String(h), unit(h, 'heure')], [String(m), unit(m, 'minute')]]
-}
 
-/** « Activer le renouvellement automatique » under a card: the same as turning its switch on (same window, same checks). */
-function ActivateButton({ onClick }: { onClick?: () => void }) {
-  // One line on a phone too: the text shrinks a little on the narrowest screens. Without onClick: the card's switch.
-  return (
-    <button
-      type="button"
-      onClick={(e) =>
-        onClick ? onClick() : e.currentTarget.closest('[data-renewal-card]')?.querySelector<HTMLButtonElement>('[role=switch]')?.click()
-      }
-      className={cn(ui.primary, 'px-3 text-[length:min(0.95rem,calc((100vw-96px)/18))] whitespace-nowrap sm:text-lg')}
-    >
-      Activer le renouvellement automatique
-    </button>
-  )
-}
 
 function Ticket({
   session,
@@ -134,16 +111,8 @@ function Ticket({
 
       {/* The ticket: when it ends (renewal on) or the time left, large, with the end beside it. */}
       <div className="border-t border-ink/[0.06] px-5 py-5">
-        {/* One line, as on a programmed ticket's card: until when, and how long is left in grey (in red in its last
-            15 minutes). What to do next is the button below. */}
-        <p className="font-medium text-ink">Ticket en cours</p>
-        <p className="mt-1 text-sm text-ink/60">
-          jusqu’au <span className="text-ink">{when(end)}</span>
-          <span className={cn('tabular-nums', soon ? 'font-semibold text-destructive' : 'text-ink/45')}>
-            {' · dans '}
-            {countdown(left).map(([n, unit]) => `${n} ${unit}`).slice(0, 2).join(' ')}
-          </span>
-        </p>
+        {/* One line: until when (the time left would say it twice); in red in its last 15 minutes. */}
+        <p className={cn(soon ? 'font-semibold text-destructive' : 'text-ink')}>Couvert jusqu’au {when(end)}</p>
         {renewing && (
           <DailyWizard
             data={data}
@@ -193,8 +162,8 @@ function Ticket({
       )}
       {renewable && (
         <div className="border-t border-ink/[0.06] px-5 py-5">
-          {/* Not automated yet: no switch line, only the button below (the switch stays, hidden, to open the window). */}
-          <div className={renewal ? undefined : 'hidden'}>
+          {/* The switch alone, on or off: turning it on opens the renewal setup (no second button saying the same). */}
+          <div>
             <RenewalSwitch
               ap={renewal ?? null}
               data={data}
@@ -228,14 +197,22 @@ function Ticket({
           {renewal && (pauseState(renewal).paused || pauseState(renewal).later) && (
             <RenewalActions ap={renewal} onChanged={onRefresh} withStop={false} withPause={false} className="mt-4" />
           )}
-          {/* A resident ticket not renewed yet: the switch's action again, as a button at the bottom of the card. */}
-          {!renewal && !pending && <ActivateButton />}
         </div>
       )}
-      {/* A non-resident ticket with nothing after it: the same button as a resident one, taking it again from its end. */}
+      {/* A non-resident ticket with nothing after it: the same switch, off; turning it on takes it again from its end. */}
       {daily && !renewal && !data.autopilots.some((ap) => ap.enabled && sameCar(ap.plate, session.plate)) && (
-        <div className="border-t border-ink/[0.06] px-5 py-5">
-          <ActivateButton onClick={() => setRenewing(true)} />
+        <div className="flex items-center justify-between gap-4 border-t border-ink/[0.06] px-5 py-4">
+          <span className="text-[1.05rem] text-ink">Renouvellement auto</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={renewing}
+            aria-label="Renouvellement auto"
+            onClick={() => setRenewing(true)}
+            className={cn('relative h-7 w-12 shrink-0 rounded-full transition-colors', renewing ? 'bg-[#4e9aa0]' : 'bg-ink/15')}
+          >
+            <span className={cn('absolute top-1 size-5 rounded-full bg-white shadow transition-all', renewing ? 'left-6' : 'left-1')} />
+          </button>
         </div>
       )}
     </article>
@@ -315,7 +292,6 @@ function IdleVehicles({ data, onChanged, hosted, demo, autoPlate, locked, onLogo
                 onLogout={onLogout}
                 trigger={(open, isOpen) => <OpeningSwitch open={open} isOpen={isOpen} />}
               />
-              <ActivateButton />
             </div>
           </div>
         )
@@ -586,7 +562,7 @@ export function Dashboard({
             : running.length
               ? // One card: « Votre ticket en cours », several (running or programmed): « Vos tickets ».
                 sessions.length + shownDaily > 1
-                ? 'Vos tickets :'
+                ? 'Vos tickets en cours :'
                 : 'Votre ticket en cours :'
               : nextPlanned
                 ? `Aucun ticket en cours : le prochain est prévu ${whenAt(nextPlanned)}.`

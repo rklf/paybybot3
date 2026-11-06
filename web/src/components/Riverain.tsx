@@ -205,6 +205,7 @@ export function RenewalActions({
   stoppedText = 'Renouvellement arrêté.',
   switchLabel,
   aside,
+  detail,
 }: {
   ap: Autopilot
   onChanged: () => void
@@ -219,6 +220,8 @@ export function RenewalActions({
   stoppedText?: string
   /** On the switch's line, before it (a CMI-S ticket's « Modifier », its card having no details below). */
   aside?: React.ReactNode
+  /** Under the switch's label (a CMI-S ticket's « Prochain : … », as on a resident card). */
+  detail?: React.ReactNode
 }) {
   const [pausing, setPausing] = useState(false)
   const [confirming, setConfirming] = useState(false)
@@ -282,7 +285,10 @@ export function RenewalActions({
           </div>
         ) : (
           <div className="flex items-center justify-between gap-4">
-            <span className="text-[1.05rem] text-ink">{switchLabel}</span>
+            <span className="min-w-0">
+              <span className="block text-[1.05rem] text-ink">{switchLabel}</span>
+              {detail}
+            </span>
             {/* The pause on the switch's line (one line less on the card). */}
             <span className="ml-auto" />
             {aside}
@@ -553,15 +559,17 @@ export function nextRenewal(nextCheck: string | null | undefined, expire: string
 }
 
 /** The switch's name, with whether it is on: « Renouvellement résident automatique », « Activé » or « Désactivé ». */
-function SwitchLabel({ on, children, status }: { on: boolean; children?: ReactNode; status?: ReactNode }) {
+function SwitchLabel({ children, status }: { on: boolean; children?: ReactNode; status?: ReactNode }) {
   return (
     <span className="min-w-0">
-      <span className="block text-base font-medium text-ink sm:text-[1.05rem]">Renouvellement hebdomadaire automatique</span>
-      <span className="flex items-center gap-3">
-        {/* A line of its own (the next renewal) in place of « Activé », when the card gives one. */}
-        {status ?? <span className={cn('text-sm', on ? 'font-medium text-[#3d7f84]' : 'text-ink/50')}>{on ? 'Activé' : 'Désactivé'}</span>}
-        {children}
-      </span>
+      <span className="block text-base text-ink sm:text-[1.05rem]">Renouvellement auto</span>
+      {/* The switch says on or off: only a line of its own (the next renewal) when the card gives one. */}
+      {(status || children) && (
+        <span className="flex items-center gap-3">
+          {status}
+          {children}
+        </span>
+      )}
     </span>
   )
 }
