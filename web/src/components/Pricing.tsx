@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
-import { Check, Loader2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Check, Gift, Loader2, Lock, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from '@base-ui/react/dialog'
 import { toast } from 'sonner'
-import { Dialog, DialogPortal, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogDescription, DialogPortal, DialogTitle } from '@/components/ui/dialog'
+import { Horodateur } from '@/components/Horodateur'
+import { Wordmark } from '@/components/signs'
 import { HostedFooter } from '@/components/Footer'
 import { PublicTopBar } from '@/components/TopBar'
 import { clearPending } from '@/components/Riverain'
@@ -167,39 +169,109 @@ function graceDay(iso: string | null) {
  *  before leaving for Stripe. */
 export function PlansDialog({
   onClose,
+  text,
   onPay,
 }: {
   onClose: () => void
   text?: string
   onPay?: () => void
 }) {
-  // One offer (monthly): no screen to choose from, straight to Stripe, which says when the first payment is (the end
-  // of the free month, nothing before).
-  const asked = useRef(false)
+  const [busy, setBusy] = useState(false)
+  // Still in the free month: nothing is charged before its end (Stripe starts billing then).
+  const [trialEnd, setTrialEnd] = useState<Date | null>(null)
+  const [trialStarted, setTrialStarted] = useState(false) // kept from an earlier account: only what is left of it
   useEffect(() => {
-    if (asked.current) return
-    asked.current = true
-    api.checkout('monthly').then(
-      ({ url }) => {
-        if (onPay) onPay()
-        else clearPending() // from the banner: a choice left unpaid earlier is not activated by this payment
-        window.location.assign(url)
+    api.account().then(
+      (a) => {
+        // Started: its end. Not started yet: it starts today with the subscription, so nothing is due for trialDays days.
+        const end = a.trialEnd ? new Date(a.trialEnd) : a.trialDays ? new Date(Date.now() + a.trialDays * 86_400_000) : null
+        setTrialEnd(end && end.getTime() > Date.now() ? end : null)
+        setTrialStarted(!!a.trialEnd)
       },
-      (e) => {
-        toast((e as Error).message)
-        onClose()
-      },
+      () => {},
     )
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function pay() {
+    setBusy(true)
+    try {
+      const { url } = await api.checkout('monthly')
+      if (onPay) onPay()
+      else clearPending() // from the banner: a choice left unpaid earlier is not activated by this payment
+      window.location.assign(url)
+    } catch (e) {
+      toast((e as Error).message)
+      setBusy(false)
+    }
+  }
 
   return (
-    <Dialog open onOpenChange={() => {}}>
+    <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
       <DialogPortal>
-        <DialogPrimitive.Popup className="fixed inset-0 z-[70] grid place-items-center bg-background/95 outline-none">
-          <DialogTitle className="sr-only">Paiement sécurisé</DialogTitle>
-          <p className="flex items-center gap-3 text-ink/70">
-            <Loader2 className="size-5 animate-spin text-eu" /> Ouverture du paiement sécurisé…
-          </p>
+        <DialogPrimitive.Popup className="fixed inset-0 z-[70] grid overflow-y-auto bg-background outline-none duration-200 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 lg:grid-cols-[1.4fr_1fr]">
+          <div className="flex flex-col px-6 pt-5 pb-10 sm:px-10 lg:px-[clamp(2.5rem,8vw,8rem)] lg:pb-6">
+            <div className="flex items-center justify-between">
+              <Wordmark />
+              <DialogClose
+                aria-label="Fermer"
+                disabled={busy}
+                className="grid size-10 place-items-center rounded-full bg-ink/[0.06] text-ink transition hover:bg-ink/[0.1]"
+              >
+                <X className="size-5" />
+              </DialogClose>
+            </div>
+            <Horodateur className="mx-auto mt-6 h-44 lg:hidden" />
+            <div className="mx-auto w-full max-w-md lg:my-auto lg:max-w-xl lg:pt-4">
+              <DialogTitle className={cn(ui.title, 'mt-6 lg:mt-0')}>Votre abonnement</DialogTitle>
+              {text && <DialogDescription className={ui.subtitle}>{text}</DialogDescription>}
+
+              {trialEnd && (
+                <div className="mt-5 flex items-center gap-3 rounded-2xl bg-[#e7f6ec] px-4 py-2.5 text-[#14703a]">
+                  <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[#1a9a4a] text-white">
+                    <Gift className="size-5" />
+                  </span>
+                  <span>
+                    <span className="block font-heading text-lg leading-tight font-bold">{trialStarted ? 'Reste de votre mois offert' : '1er mois offert'}</span>
+                    <span className="block text-sm text-[#14703a]/80">
+                      Rien à payer avant le {trialEnd.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}.
+                    </span>
+                  </span>
+                </div>
+              )}
+
+              {/* The one offer: monthly, the same price for every vehicle of the account. */}
+              <div className="mt-5 flex w-full items-center gap-4 rounded-2xl border border-eu bg-eu/[0.04] px-4 py-3 ring-1 ring-eu">
+                <span className="flex-1">
+                  <span className="block font-semibold text-ink">Mensuel</span>
+                  <span className="block text-sm text-ink/55">Tous vos véhicules, sans engagement</span>
+                </span>
+                <span className="text-right">
+                  <span className="font-heading text-xl font-semibold text-ink">{euros(MONTHLY)}</span>{' '}
+                  <span className="text-sm text-ink/50">/ mois</span>
+                </span>
+              </div>
+
+              <ul className="mt-4 grid gap-1.5 text-sm text-ink/70 sm:grid-cols-2">
+                {INCLUDED.map((x) => (
+                  <li key={x} className="flex items-start gap-2">
+                    <Check className="mt-0.5 size-4 shrink-0 text-eu" /> {x}
+                  </li>
+                ))}
+              </ul>
+
+              <button onClick={pay} disabled={busy} className={cn('mt-5', ui.primary)}>
+                {busy ? <Loader2 className="size-5 animate-spin" /> : 'Continuer vers le paiement'}
+              </button>
+              <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-sm text-ink/50">
+                <Lock className="size-3.5" /> Paiement sécurisé par Stripe. Sans engagement.
+              </p>
+            </div>
+          </div>
+
+          {/* The parking meter robot, on its soft blue backdrop. */}
+          <div className="relative hidden items-center justify-center overflow-hidden bg-[radial-gradient(70%_60%_at_50%_45%,#e6ecfb_0%,#f4f6fb_60%,#f7f8fb_100%)] lg:flex">
+            <Horodateur className="w-[min(78%,30rem)] drop-shadow-[0_30px_40px_rgb(29_42_107/0.12)]" />
+          </div>
         </DialogPrimitive.Popup>
       </DialogPortal>
     </Dialog>

@@ -1,7 +1,7 @@
 import { Loading } from '@/components/Loading'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { ChevronRight, Loader2, LogOut, Plus } from 'lucide-react'
+import { ChevronRight, LogOut, Plus } from 'lucide-react'
 import { arrondissement, PayByPhone, Plate, vehicleType, withPayByPhone } from '@/components/signs'
 import { TopBar } from '@/components/TopBar'
 import { InviteButton } from '@/components/Invite'
@@ -66,24 +66,6 @@ function Ticket({
 }) {
   // A non-resident ticket with nothing after it: « Renouveler automatiquement » opens the ticket wizard from it.
   const [renewing, setRenewing] = useState(false)
-  // « Arrêter ce ticket »: asked once more before stopping (PayByPhone stops it at once, it cannot be undone).
-  const [stopping, setStopping] = useState<'ask' | 'busy' | null>(null)
-  // A CMI-S ticket that PayByPhone lets stop (the server says it: stoppable is false for any other ticket).
-  const stoppable = group.every((x) => x.stoppable)
-  async function stop() {
-    setStopping('busy')
-    try {
-      const r = await api.stopTickets(group.map((x) => x.id))
-      toast.success(r.stopped > 1 ? `${r.stopped} tickets arrêtés.` : 'Ticket arrêté.', {
-        description: r.stopped < r.asked ? `${r.asked - r.stopped} n’ont pas pu être arrêtés : réessayez.` : undefined,
-      })
-      await onRefresh()
-    } catch (e) {
-      toast.error((e as Error).message)
-    } finally {
-      setStopping(null)
-    }
-  }
   const renewal = renewalOf(data, session)
   // The weekly renewal is for resident tickets only: a non-resident ticket (visitor, Handi…) shows no switch, unless
   // it is already renewed; tickets on chosen days are set up in « Tickets non-résident ».
@@ -130,30 +112,6 @@ function Ticket({
             initialZones={group.map((x) => x.location)}
           />
         )}
-        {/* A CMI-S ticket that PayByPhone lets stop (a resident week, or a Paris day ticket, may run to its end). */}
-        {stoppable &&
-          (stopping ? (
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <span className="text-sm text-ink/70">
-                {group.length > 1 ? `Arrêter les ${group.length} tickets maintenant ?` : 'Arrêter ce ticket maintenant ?'}
-              </span>
-              <button
-                onClick={stop}
-                disabled={stopping === 'busy'}
-                className="inline-flex h-9 items-center gap-1.5 rounded-[10px] border border-destructive/30 px-3 text-sm font-semibold text-destructive transition hover:bg-destructive/5 disabled:opacity-60"
-              >
-                {stopping === 'busy' && <Loader2 className="size-3.5 animate-spin" />}
-                Oui, arrêter
-              </button>
-              <button onClick={() => setStopping(null)} disabled={stopping === 'busy'} className={cn('text-sm', ui.link)}>
-                Non
-              </button>
-            </div>
-          ) : (
-            <button onClick={() => setStopping('ask')} className={cn('mt-4 block text-sm', ui.link)}>
-              {group.length > 1 ? 'Arrêter ces tickets' : 'Arrêter ce ticket'}
-            </button>
-          ))}
       </div>
 
       {/* « Renouvellement auto » is for resident tickets only: a non-resident ticket card has no switch (tickets on

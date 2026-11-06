@@ -8,7 +8,7 @@ import { FaqView, Home } from '@/components/Landing'
 import { HowPage } from '@/components/HowPage'
 import { AboutPage } from '@/components/AboutPage'
 import { PayWizard } from '@/components/PayWizard'
-import { PricingPage } from '@/components/Pricing'
+import { PlansDialog, PricingPage } from '@/components/Pricing'
 import { legalPageFromHash, type LegalPage } from '@/lib/legalPages'
 import { NotFoundPage } from '@/components/NotFound'
 import { CheckoutDone } from '@/components/CheckoutDone'
@@ -321,6 +321,9 @@ export default function App() {
         <Mockup />
       </Suspense>
     )
+  // Development only: the subscription screen, before Stripe (#/apercu-offre).
+  if (import.meta.env.DEV && window.location.hash === '#/apercu-offre')
+    return <PlansDialog onClose={() => (window.location.hash = '#/')} />
   // Development only: the first-visit card, side by side (#/maquette-vide).
   if (import.meta.env.DEV && window.location.hash === '#/maquette-vide')
     return (
