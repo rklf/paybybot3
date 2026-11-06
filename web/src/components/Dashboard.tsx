@@ -12,7 +12,8 @@ import { ui } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 import { HostedFooter } from '@/components/Footer'
 import { CheckoutDone } from '@/components/CheckoutDone'
-import { ActivateRenewal, CardGate, OpeningSwitch, RenewalActions, RenewalNote, RenewalSwitch, pauseState, nextRenewal, when, ZoneTag, RiverainCard, WEEKLY_LABEL, renewalOf, runPendingRenewals } from '@/components/Riverain'
+import { ActivateRenewal, CardGate, OpeningSwitch, RenewalActions, RenewalNote, RenewalSwitch, RiverainDialog, pauseState, nextRenewal, when, ZoneTag, RiverainCard, WEEKLY_LABEL, renewalOf, runPendingRenewals } from '@/components/Riverain'
+import { RippleButton } from '@/components/ui/ripple-button'
 import { api, type Account, type Me, type Overview, type Session } from '@/lib/api'
 
 function useNow(interval = 1000) {
@@ -644,9 +645,51 @@ export function Dashboard({
             <RiverainCard data={data} onChanged={onRefresh} hosted={!!me.hosted} demo={me.demo} />
           </div>
         )}
+
+        {/* As soon as a ticket runs, always: another car's renewal (resident) or ticket (any other). */}
+        {data && running.length > 0 && (
+          <AnotherVehicle
+            data={data}
+            residentPlates={residentPlates}
+            onChanged={onRefresh}
+            hosted={!!me.hosted}
+            demo={me.demo}
+            onProgram={() => setProgramAsked((n) => n + 1)}
+          />
+        )}
       </main>
 
       <HostedFooter className="px-6 pb-5" hosted={!!me.hosted} />
+    </div>
+  )
+}
+
+/** « Renouveler un autre véhicule », under the cards: a car with the resident rate not renewed yet gets the resident
+ *  renewal; otherwise the ticket wizard, for any other car. */
+function AnotherVehicle({
+  data,
+  residentPlates,
+  onChanged,
+  hosted,
+  demo,
+  onProgram,
+}: {
+  data: Overview
+  residentPlates: Set<string> | null
+  onChanged: () => Promise<void>
+  hosted: boolean
+  demo: boolean
+  onProgram: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const renewed = new Set(data.autopilots.filter((ap) => ap.label === WEEKLY_LABEL && ap.enabled).map((ap) => plateKey(ap.plate)))
+  const resident = data.vehicles.some((v) => residentPlates?.has(plateKey(v.plate)) && !renewed.has(plateKey(v.plate)))
+  return (
+    <div className="mt-6">
+      <RippleButton onClick={() => (resident ? setOpen(true) : onProgram())} rippleColor="#ADD8E6" className={ui.primaryGray}>
+        Renouveler un autre véhicule
+      </RippleButton>
+      {resident && <RiverainDialog open={open} onOpenChange={setOpen} data={data} onDone={onChanged} hosted={hosted} demo={demo} />}
     </div>
   )
 }

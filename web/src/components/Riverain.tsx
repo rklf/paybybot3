@@ -1,4 +1,3 @@
-import { RippleButton } from '@/components/ui/ripple-button'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Check, Loader2, Mail, Pause, Play, Repeat, RotateCw } from 'lucide-react'
 import { toast } from 'sonner'
@@ -456,24 +455,6 @@ export function RiverainCard({
 
   const weekly = data?.autopilots.filter(isWeekly) ?? []
 
-  // « Renouveler un autre véhicule » only while a riverain vehicle is not renewed yet.
-  const key = (plate: string) => plate.replace(/[^0-9a-z]/gi, '').toUpperCase()
-  const renewed = weekly.map((ap) => key(ap.plate)).sort().join(',')
-  const [another, setAnother] = useState(false)
-  useEffect(() => {
-    if (!weekly.length || !data) return
-    const covered = new Set(renewed.split(','))
-    if (data.vehicles.every((v) => covered.has(key(v.plate)))) return setAnother(false) // nothing else at all
-    let cancelled = false
-    api.pricing().then(
-      (p) => !cancelled && setAnother((p.vehicles ?? []).some((v) => !covered.has(key(v.plate)))),
-      () => !cancelled && setAnother(false),
-    )
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [renewed, data?.vehicles.length])
 
   if (weekly.length && data) {
     // Renewals of a running ticket are shown on the ticket itself; only the others are listed here.
@@ -503,11 +484,6 @@ export function RiverainCard({
               )
             })}
           </ul>
-        )}
-        {another && (
-          <RippleButton onClick={() => setOpen(true)} rippleColor="#ADD8E6" className={ui.primaryGray}>
-            Renouveler un autre véhicule
-          </RippleButton>
         )}
         <RiverainDialog open={open} onOpenChange={setOpen} data={data} onDone={onChanged} hosted={hosted} demo={demo} />
       </section>
@@ -774,7 +750,7 @@ export function ActivateRenewal({
 type Found = { rate: Rate | null; quote: Quote | null; error: string | null }
 type Quote = { cost: Money | null; afterCurrent?: boolean; currentExpire?: string | null; priceSource?: 'history' | 'paris' | null }
 
-function RiverainDialog({
+export function RiverainDialog({
   open,
   onOpenChange,
   data,
