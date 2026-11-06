@@ -238,7 +238,22 @@ function AccountDialog({
 
 /** Validation before erasing everything PayByBot keeps; a confirmation e-mail follows. */
 function DeleteConfirm({ data, onCancel, onDeleted }: { data: Overview; onCancel: () => void; onDeleted: () => void }) {
-  const running = data.sessions.filter((s) => new Date(s.expire).getTime() > Date.now())
+  // One line per car (a CMI-S car holds a ticket in each arrondissement): its zones together, its last end.
+  const running = Object.values(
+    data.sessions
+      .filter((s) => !s.stopped && new Date(s.expire).getTime() > Date.now())
+      .reduce<Record<string, { plate: string; zones: string[]; expire: string }>>((cars, s) => {
+        const k = s.plate.replace(/[^0-9a-z]/gi, '').toUpperCase()
+        const car = (cars[k] ??= { plate: s.plate, zones: [], expire: s.expire })
+        car.zones.push(s.location)
+        if (new Date(s.expire) > new Date(car.expire)) car.expire = s.expire
+        return cars
+      }, {}),
+  )
+  const zonesText = (zones: string[]) => {
+    const z = [...new Set(zones)].sort()
+    return z.length < 2 ? z[0] : z.length >= 20 ? '75001-75020' : `${z[0]} + ${z.length - 1} autre${z.length > 2 ? 's' : ''}`
+  }
   const [busy, setBusy] = useState(false)
 
   async function erase() {
@@ -271,9 +286,9 @@ function DeleteConfirm({ data, onCancel, onDeleted }: { data: Overview; onCancel
                 <p>{running.length > 1 ? 'Vos tickets en cours restent valables jusqu’à leur fin :' : 'Votre ticket en cours reste valable jusqu’à sa fin :'}</p>
                 <ul className="mt-3 space-y-2">
                   {running.map((t) => (
-                    <li key={t.id} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <li key={t.plate} className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <Plate plate={t.plate} size="sm" />
-                      <ZonePlate zone={t.location} />
+                      <ZonePlate zone={zonesText(t.zones)} />
                       <span className="text-ink/70">expire {clock(t.expire)}</span>
                     </li>
                   ))}
