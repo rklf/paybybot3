@@ -181,10 +181,6 @@ class Bot:
         for s in sessions:
             s["startTime"] = _parse_dt(s.get("startTime"))
             s["expireTime"] = _parse_dt(s.get("expireTime"))
-            # A stopped ticket stays among the current ones, its end unchanged: it ended when it was stopped.
-            stop = _parse_dt(s.get("stopTime"))
-            if stop and s["expireTime"] and stop < s["expireTime"]:
-                s["expireTime"] = stop
         return sessions
 
     def get_parking_sessions(self, licensePlate=None, locationId=None):

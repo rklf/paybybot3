@@ -3098,6 +3098,11 @@ def overview(pbb_session: str = Cookie(None)):
             for x, kind in zip(others, kinds):
                 x["kind"] = kind
         raw = {x.get("parkingSessionId"): x for x in got["sessions"]}
+        for r in got["sessions"]:  # what PayByPhone's stopTime means on a ticket not stopped (nothing personal)
+            if r.get("stopTime"):
+                log.info("ticket stop fields: zone=%s type=%s isStoppable=%s start=%s stopTime=%s expire=%s",
+                         r.get("locationId"), (r.get("ratePolicy") or {}).get("type"), r.get("isStoppable"),
+                         iso(r.get("startTime")), r.get("stopTime"), iso(r.get("expireTime")))
         for x in sessions:  # only a CMI-S ticket is stopped from PayByBot
             if x.get("kind") != CMIS_KIND:
                 x["stoppable"] = False
@@ -5060,8 +5065,9 @@ def take_now(ap_id: str, pbb_session: str = Cookie(None)):
         row = guarded(row_of)
         if not row:
             raise HTTPException(404, "Ticket introuvable.")
-        outcome = process_renewal({**row, "owner": owner_id(s.username)}, refresh_token=getattr(s.bot, "refresh_token", None),
-                                  activating=True, first_now=True)
+        # Its own stored login, never this page's: PayByPhone renews a login each time it is used and drops the old
+        # one, so the page's would be stale from the second call on (and the page's own login with it).
+        outcome = process_renewal({**row, "owner": owner_id(s.username)}, activating=True, first_now=True)
         ap = stored_to_autopilot(guarded(row_of) or row)
     else:
         ap = s.autopilots.get(ap_id)

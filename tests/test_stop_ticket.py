@@ -89,13 +89,3 @@ class TicketKind(unittest.TestCase):
         with patch.object(s, "call", side_effect=AssertionError("asked again")):
             self.assertEqual(web.ticket_kind(s, "75016", "GH456JK", "102"), "Véhicule léger")  # kept
 
-
-class StoppedTicket(unittest.TestCase):
-    def test_a_stopped_ticket_ends_when_it_was_stopped(self):
-        # PayByPhone keeps a stopped ticket among the current ones, its end unchanged and its stop time set.
-        from paybybot3.bot import Bot
-        answer = {"getParkingSessionsV1": [{"parkingSessionId": "x", "startTime": "2026-11-05T18:52:00Z",
-                                            "expireTime": "2026-11-06T18:52:00Z", "stopTime": "2026-11-05T19:39:27Z"}]}
-        with patch.object(Bot, "_graphql", return_value=answer):
-            (ticket,) = Bot.__new__(Bot)._get_parking_sessions()
-        self.assertEqual(ticket["expireTime"].isoformat()[:19], "2026-11-05T19:39:27")

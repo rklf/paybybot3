@@ -87,10 +87,11 @@ async function takeTickets(ap: Autopilot, onChanged: () => void) {
   try {
     for (let i = 0; i < 6; i++) {
       const r = await api.takeNow(ap.id)
-      last = { covered: r.covered, total: r.total, busy: r.more, error: r.error }
+      const gained = r.covered > last.covered
+      last = { covered: r.covered, total: r.total, busy: r.more && gained, error: r.error }
       setTaking(ap.id, last)
       onChanged()
-      if (!r.more) break
+      if (!r.more || !gained) break // nothing new taken: PayByPhone refuses the rest, said on the card
     }
   } catch (e) {
     last = { ...last, error: (e as Error).message }
