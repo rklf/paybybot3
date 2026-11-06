@@ -760,7 +760,10 @@ export function RiverainDialog({
   plate,
   locked = false,
   onLogout,
+  onBack,
 }: {
+  /** Opened from « Programmer un ticket » (a resident car chosen): « Précédent » leads back to it. */
+  onBack?: () => void
   open: boolean
   onOpenChange: (open: boolean) => void
   data: Overview
@@ -1066,13 +1069,19 @@ export function RiverainDialog({
 
           {/* After a refusal: retry on purpose (once the card is checked or changed in PayByPhone, or with the other
               card chosen above), never by accident. */}
+          <div className="flex gap-3">
+          {onBack && (
+            <button onClick={onBack} disabled={saving} className={cn(ui.primaryGray, 'w-auto flex-1')}>
+              Précédent
+            </button>
+          )}
           <button
             onClick={() => {
               setError(null)
               activate()
             }}
             disabled={!ok.length || loading || saving}
-            className={ui.primary}
+            className={cn(ui.primary, onBack && 'flex-[2]')}
           >
             {cardRefused ? (
               <>
@@ -1086,6 +1095,7 @@ export function RiverainDialog({
               'Activer le renouvellement'
             )}
           </button>
+          </div>
           {locked && onLogout && (
             <button onClick={onLogout} className={cn('mx-auto block text-sm', ui.link)}>
               Se déconnecter

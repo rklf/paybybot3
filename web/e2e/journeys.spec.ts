@@ -60,6 +60,7 @@ test('déconnexion après un lien : l’accueil, pas le rideau « parrainage »'
 test('programmer un ticket : véhicule choisi, zone de France reconnue', async ({ page }) => {
   await demo(page)
   await wizardButton(page).click()
+  await page.getByRole('button', { name: 'Suivant' }).click() // the vehicle, then its type
   await page.getByRole('button', { name: 'Suivant' }).click() // the type (light by default), then the zone
   const zone = page.getByRole('combobox')
   await zone.fill('690')
@@ -68,9 +69,22 @@ test('programmer un ticket : véhicule choisi, zone de France reconnue', async (
   await expect(page.getByText('zone PayByPhone reconnue', { exact: false })).toBeVisible()
 })
 
+test('programmer un ticket : une voiture résidente mène au renouvellement de la semaine', async ({ page }) => {
+  await demo(page)
+  await wizardButton(page).click()
+  await page.getByRole('button', { name: /AB-123-CD/ }).click()
+  await page.getByRole('button', { name: 'Suivant' }).click()
+  await expect(page.getByText('Renouvellement hebdomadaire')).toBeVisible()
+  await expect(page.getByText('Type de véhicule')).toBeHidden()
+  await page.getByRole('button', { name: 'Précédent' }).click() // back to the vehicle, still the one chosen
+  await expect(page.getByText(/Étape 1 sur 5/)).toBeVisible()
+  await expect(page.getByRole('button', { name: /AB-123-CD/ })).toHaveAttribute('aria-pressed', 'true')
+})
+
 test('programmer un ticket : le type de véhicule choisit le tarif visiteur', async ({ page }) => {
   await demo(page)
   await wizardButton(page).click()
+  await page.getByRole('button', { name: 'Suivant' }).click() // the vehicle, then its type
   await page.getByRole('button', { name: /Véhicule lourd/ }).click()
   await page.getByRole('button', { name: 'Suivant' }).click()
   const zone = page.getByRole('combobox')
@@ -85,6 +99,7 @@ test('programmer un ticket : le type de véhicule choisit le tarif visiteur', as
 test('programmer un ticket : carte mobilité CMI-S, « Tous » coche tout Paris', async ({ page }) => {
   await demo(page)
   await wizardButton(page).click()
+  await page.getByRole('button', { name: 'Suivant' }).click() // the vehicle, then its type
   await page.getByRole('button', { name: /Carte mobilité CMI-S/ }).click()
   await page.getByRole('button', { name: 'Suivant' }).click()
   await expect(page.getByRole('combobox')).toHaveCount(0) // no zone asked
@@ -105,6 +120,7 @@ test('programmer un ticket : un tarif sans durées ni nom ne fait pas planter', 
   ] }))
   await demo(page)
   await wizardButton(page).click()
+  await page.getByRole('button', { name: 'Suivant' }).click() // the vehicle, then its type
   await page.getByRole('button', { name: 'Suivant' }).click() // the type (light by default), then the zone
   const zone = page.getByRole('combobox')
   await zone.fill('923')
@@ -121,6 +137,7 @@ test('programmer un ticket : à Paris, les dimanches ne se choisissent pas', asy
   const sunday = new Date(firstOfNext.getFullYear(), firstOfNext.getMonth(), 1 + ((7 - firstOfNext.getDay()) % 7))
   const pick = async (typed: string, option: RegExp) => {
     await wizardButton(page).click()
+    await page.getByRole('button', { name: 'Suivant' }).click() // the vehicle, then its type
     await page.getByRole('button', { name: 'Suivant' }).click() // the type (light by default), then the zone
     const zone = page.getByRole('combobox')
     await zone.fill(typed)
@@ -140,6 +157,7 @@ test('programmer un ticket : à Paris, les dimanches ne se choisissent pas', asy
 test('programmer un ticket : une heure déjà passée est refusée', async ({ page }) => {
   await demo(page)
   await wizardButton(page).click()
+  await page.getByRole('button', { name: 'Suivant' }).click() // the vehicle, then its type
   await page.getByRole('button', { name: 'Suivant' }).click() // the type (light by default), then the zone
   const zone = page.getByRole('combobox')
   await zone.fill('690')
@@ -210,7 +228,7 @@ test('mon compte : un seul prix pour tous les véhicules, sans choix à faire', 
   await expect(dialog.getByRole('checkbox')).toHaveCount(0)
 })
 
-test('programmer un ticket : deux véhicules, les deux tickets sans paiement en plus', async ({ page }) => {
+test('programmer un ticket : un seul véhicule à la fois, sans paiement en plus', async ({ page }) => {
   const programmed: string[] = []
   const vehicle = (plate: string) => ({ plate, zone: null, monthly: 950, yearly: 9120, renewed: false })
   await page.route('**/api/pricing', (route) =>
@@ -220,8 +238,11 @@ test('programmer un ticket : deux véhicules, les deux tickets sans paiement en 
   page.on('request', (r) => r.method() === 'POST' && r.url().endsWith('/api/autopilots') && programmed.push(r.postDataJSON().plate))
   await demo(page)
   await wizardButton(page).click()
+  await page.getByRole('button', { name: /AB-123-CD/ }).click()
   await page.getByRole('button', { name: /GH-456-JK/ }).click()
   await expect(page.getByRole('button', { name: /GH-456-JK/ })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: /AB-123-CD/ })).toHaveAttribute('aria-pressed', 'false') // one at a time
+  await page.getByRole('button', { name: 'Suivant' }).click() // the vehicle, then its type
   await page.getByRole('button', { name: 'Suivant' }).click() // the type (light by default), then the zone
   const zone = page.getByRole('combobox')
   await zone.fill('690')
@@ -232,8 +253,8 @@ test('programmer un ticket : deux véhicules, les deux tickets sans paiement en 
   await page.locator('input[type=time]').fill('23:59')
   await page.getByRole('button', { name: 'Suivant', exact: true }).click()
   await page.getByRole('button', { name: 'Activer' }).click()
-  await expect.poll(() => programmed.length).toBe(2)
-  expect(programmed.map((p) => p.replace(/[^0-9A-Z]/gi, '')).sort()).toEqual(['AB123CD', 'GH456JK'])
+  await expect.poll(() => programmed.length).toBe(1)
+  expect(programmed.map((p) => p.replace(/[^0-9A-Z]/gi, ''))).toEqual(['GH456JK'])
   await expect(page.getByText('Votre abonnement', { exact: true })).toBeHidden()
 })
 

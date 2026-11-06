@@ -477,6 +477,8 @@ export function Dashboard({
   // dialog stays open (then the offer); without one, the « Programmer un ticket » wizard does (then the offer).
   const needsOffer = !!me.hosted && !me.demo && !!account && !account.subscribed && !account.blocked
   const [offerOpen, setOfferOpen] = useState(false) // « Activer mon compte »: the offer screen
+  const [backPlate, setBackPlate] = useState<string | undefined>() // back to the wizard, on the car it left
+  const [residentFor, setResidentFor] = useState<string | null>(null) // a resident car chosen in « Programmer un ticket »
   const [programAsked, setProgramAsked] = useState(0) // « Programmer un ticket »: each click opens the ticket wizard
   const live = data?.sessions.filter((s) => new Date(s.expire).getTime() > Date.now()) ?? []
   const isResidentCar = (plate: string) => (residentPlates ? residentPlates.has(plateKey(plate)) : true)
@@ -567,7 +569,7 @@ export function Dashboard({
         {/* Inviting a friend: always offered to a signed-in account (word of mouth is the only way in). */}
         {/* Programming a non-resident ticket: a sober button beside the invitation, no card in the page. */}
         <button
-          onClick={() => setProgramAsked((n) => n + 1)}
+          onClick={() => (setBackPlate(undefined), setProgramAsked((n) => n + 1))}
           disabled={!data}
           aria-label="Programmer un ticket"
           className={cn(ui.pillGray, 'gap-2')}
@@ -639,6 +641,8 @@ export function Dashboard({
             onChanged={onRefresh}
             needsOffer={needsOffer}
             openAsked={programAsked}
+            onResident={(p) => (setBackPlate(undefined), setResidentFor(p))}
+            openPlate={backPlate}
             // Just past the welcome page (or no offer yet) without a resident car to renew: the wizard opens by itself.
             autoOpen={offerDaily || (autoRenew && !renewing && !!residentPlates && !residentPlate)}
             onLogout={onLogout}
@@ -657,13 +661,27 @@ export function Dashboard({
 
         {/* As soon as a ticket runs, always: another car's renewal (resident) or ticket (any other). */}
         {data && running.length > 0 && (
-          <AnotherVehicle
+          <div className="mt-6">
+            {/* Any car, any ticket: the wizard asks the car first, then resident options or the vehicle type. */}
+            <RippleButton onClick={() => (setBackPlate(undefined), setProgramAsked((n) => n + 1))} rippleColor="#ADD8E6" className={ui.primaryGray}>
+              Renouveler un autre véhicule
+            </RippleButton>
+          </div>
+        )}
+        {data && residentFor && (
+          <RiverainDialog
+            open
+            onOpenChange={(o) => !o && setResidentFor(null)}
             data={data}
-            residentPlates={residentPlates}
-            onChanged={onRefresh}
+            onDone={onRefresh}
             hosted={!!me.hosted}
             demo={me.demo}
-            onProgram={() => setProgramAsked((n) => n + 1)}
+            plate={residentFor}
+            onBack={() => {
+              setBackPlate(residentFor)
+              setResidentFor(null)
+              setProgramAsked((n) => n + 1)
+            }}
           />
         )}
       </main>
@@ -675,34 +693,6 @@ export function Dashboard({
 
 /** « Renouveler un autre véhicule », under the cards: a car with the resident rate not renewed yet gets the resident
  *  renewal; otherwise the ticket wizard, for any other car. */
-function AnotherVehicle({
-  data,
-  residentPlates,
-  onChanged,
-  hosted,
-  demo,
-  onProgram,
-}: {
-  data: Overview
-  residentPlates: Set<string> | null
-  onChanged: () => Promise<void>
-  hosted: boolean
-  demo: boolean
-  onProgram: () => void
-}) {
-  const [open, setOpen] = useState(false)
-  const renewed = new Set(data.autopilots.filter((ap) => ap.label === WEEKLY_LABEL && ap.enabled).map((ap) => plateKey(ap.plate)))
-  const resident = data.vehicles.some((v) => residentPlates?.has(plateKey(v.plate)) && !renewed.has(plateKey(v.plate)))
-  return (
-    <div className="mt-6">
-      <RippleButton onClick={() => (resident ? setOpen(true) : onProgram())} rippleColor="#ADD8E6" className={ui.primaryGray}>
-        Renouveler un autre véhicule
-      </RippleButton>
-      {resident && <RiverainDialog open={open} onOpenChange={setOpen} data={data} onDone={onChanged} hosted={hosted} demo={demo} />}
-    </div>
-  )
-}
-
 /** PayByPhone's vehicle type, in French (unknown: as given). */
 function vehicleTypeLabel(type?: string) {
   if (!type) return null

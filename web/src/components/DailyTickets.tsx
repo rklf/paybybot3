@@ -389,11 +389,17 @@ export function DailyTickets({
   onLogout,
   residentPlates,
   openAsked = 0,
+  openPlate,
+  onResident,
 }: {
   data: Overview
   onChanged: () => void
   /** Counts the clicks on « Programmer un ticket » (top bar): each one opens the wizard. */
   openAsked?: number
+  /** The car the wizard opens on (back from a resident car's renewal). */
+  openPlate?: string
+  /** A car with the resident rate chosen in the wizard: its weekly renewal opens instead. */
+  onResident?: (plate: string) => void
   /** The cars with the resident rate (checked with PayByPhone): renewed above, not offered a ticket here. */
   residentPlates?: Set<string> | null
   /** Online, no offer chosen yet: activating leads to the offer screen first. */
@@ -424,7 +430,7 @@ export function DailyTickets({
   }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     // A car with nothing on it first (not the resident one, renewed above).
-    if (openAsked) (setForPlate(idle[0]?.plate), setOpen(true))
+    if (openAsked) (setForPlate(openPlate ?? idle[0]?.plate), setOpen(true))
   }, [openAsked]) // eslint-disable-line react-hooks/exhaustive-deps
   // A one-off ticket (a single day) that has ended is no longer shown.
   const daily = data.autopilots.filter((ap) => {
@@ -452,7 +458,10 @@ export function DailyTickets({
         </div>
       )}
       {open && (
-        <DailyWizard data={data} onClose={() => setOpen(false)} onDone={onChanged} needsOffer={needsOffer} locked={locked} onLogout={onLogout} initialPlate={forPlate} />
+        <DailyWizard data={data} onClose={() => setOpen(false)} onDone={onChanged} needsOffer={needsOffer} locked={locked} onLogout={onLogout} initialPlate={forPlate}
+          isResidentPlate={(p) => data.vehicles.some((v) => key(v.plate) === key(p) && isResident(v))}
+          onResident={onResident}
+        />
       )}
     </section>
   )
@@ -584,6 +593,8 @@ export function DailyWizard({
   initialTicket,
   initialZones,
   editing,
+  isResidentPlate,
+  onResident,
 }: {
   data: Overview
   onClose: () => void
@@ -600,8 +611,13 @@ export function DailyWizard({
   initialZones?: string[]
   /** A programmed ticket being changed: every step filled with its settings, its vehicle fixed, saved in place. */
   editing?: Autopilot
+  /** The car has the resident rate: its weekly renewal (onResident) instead of a programmed ticket. */
+  isResidentPlate?: (plate: string) => boolean
+  onResident?: (plate: string) => void
 }) {
   const [step, setStep] = useState(1)
+  // Step 1 in two screens: the vehicle (one), then its type; a car being changed or renewed already has its vehicle.
+  const [typing, setTyping] = useState(!!editing || !!initialTicket)
   // One vehicle or several, the same ticket for each; the first one chosen is the one the rates are looked up for.
   const [picked, setPicked] = useState<string[]>(() => {
     const first =
@@ -610,12 +626,7 @@ export function DailyWizard({
     return first ? [first] : []
   })
   const plate = picked[0] ?? ''
-  const pick = (p: string) =>
-    setPicked((now) =>
-      now.some((x) => keyOf(x) === keyOf(p))
-        ? now.length > 1 ? now.filter((x) => keyOf(x) !== keyOf(p)) : now // at least one vehicle
-        : [...now, p],
-    )
+  const pick = (p: string) => setPicked([p]) // one vehicle: what follows depends on it (resident or not)
   // Its settings, applied once its rate is found again (then the user's own choices win).
   const edit = useRef(editing ?? null)
   const editPeriod = editing ? periodOf(editing) : null
@@ -977,12 +988,24 @@ export function DailyWizard({
 
   const steps = [editing ? 'Type de véhicule' : 'Véhicule et type', kind === 'cmis' ? 'Arrondissements' : 'Zone', initialTicket ? 'Horaires' : 'Horaires et jours', editing ? 'Vérifier et enregistrer' : 'Vérifier et activer']
 
+  // The vehicle on a screen of its own (not when it is fixed): five steps instead of four.
+  const split = !editing && !initialTicket
+  const labels = split ? ['Véhicule', 'Type de véhicule', ...steps.slice(1)] : steps
+  const shown = split ? (step === 1 ? (typing ? 2 : 1) : step + 1) : step
+
+  function nextFromVehicle() {
+    if (onResident && isResidentPlate?.(plate)) {
+      onClose()
+      onResident(plate)
+    } else setTyping(true)
+  }
+
   return (
     <Dialog open onOpenChange={(o) => !o && !saving && !locked && onClose()}>
       <DialogContent className={ui.dialog} showCloseButton={!locked}>
         <div className="px-6 pt-6">
           <p className="text-xs font-medium tracking-wide text-ink/45 uppercase">
-            Étape {step} sur {steps.length} · {steps[step - 1]}
+            Étape {shown} sur {labels.length} · {labels[shown - 1]}
           </p>
           <DialogTitle className={cn(ui.dialogTitle, 'mt-1')}>{editing ? 'Modifier le ticket' : initialTicket ? 'Renouveler ce ticket' : 'Programmer un ticket'}</DialogTitle>
           {/* The sentence under the title only on the first step: the others need the height. */}
@@ -991,18 +1014,18 @@ export function DailyWizard({
               ? 'Les nouveaux réglages valent pour les prochains tickets.'
               : initialTicket ? 'Repris automatiquement chaque jour, à l’heure voulue.' : 'Pris automatiquement les jours choisis, à l’heure voulue.'}
           </DialogDescription>
-          <div className="mt-5 grid grid-cols-4 gap-1.5" aria-hidden>
-            {[1, 2, 3, 4].map((n) => (
-              <span key={n} className={cn('h-1 rounded-full', n <= step ? TEAL : 'bg-ink/[0.08]')} />
+          <div className={cn('mt-5 grid gap-1.5', labels.length === 5 ? 'grid-cols-5' : 'grid-cols-4')} aria-hidden>
+            {labels.map((_, i) => (
+              <span key={i} className={cn('h-1 rounded-full', i < shown ? TEAL : 'bg-ink/[0.08]')} />
             ))}
           </div>
         </div>
 
         <div className="space-y-4 p-6 pt-4">
-          {step === 1 && (
+          {step === 1 && !typing && (
             <>
               <div>
-                <p className={ui.label}>{editing ? 'Véhicule' : 'Véhicules · un ou plusieurs'}</p>
+                <p className={ui.label}>Véhicule</p>
                 <div className="flex flex-wrap gap-2">
                   {data.vehicles.filter((v) => !editing || keyOf(v.plate) === keyOf(editing.plate)).map((v) => (
                     <button
@@ -1021,6 +1044,10 @@ export function DailyWizard({
                   ))}
                 </div>
               </div>
+            </>
+          )}
+          {step === 1 && typing && (
+            <>
               <div>
                 <p className={ui.label}>Type de véhicule</p>
                 <div className="space-y-2">
@@ -1404,13 +1431,13 @@ export function DailyWizard({
           )}
 
           <div className="flex gap-3 pt-1">
-            {step > 1 && (
-              <button onClick={() => setStep(step - 1)} className={cn(ui.primaryGray, 'w-auto flex-1')}>
+            {(step > 1 || (typing && split)) && (
+              <button onClick={() => (step > 1 ? setStep(step - 1) : setTyping(false))} className={cn(ui.primaryGray, 'w-auto flex-1')}>
                 Précédent
               </button>
             )}
             {step === 1 && (
-              <button onClick={() => setStep(2)} disabled={!plate} className={cn(ui.primary, 'flex-[2]')}>
+              <button onClick={typing ? () => setStep(2) : nextFromVehicle} disabled={!plate} className={cn(ui.primary, 'flex-[2]')}>
                 Suivant
               </button>
             )}
