@@ -125,9 +125,11 @@ function CmisAttest({ checked, onChange }: { checked: boolean; onChange: (v: boo
 
 /** The 20 Paris arrondissements: a Handi ticket in Paris covers all of them by default, one free ticket in each. */
 const PARIS_ZONES = Array.from({ length: 20 }, (_, i) => `750${String(i + 1).padStart(2, '0')}`)
-/** Its zone in the pill, as on the running-ticket card: « 75001 », « Tout Paris » or « 3 arr. ». */
-const zoneOf = (ap: Autopilot) =>
-  (ap.locations?.length ?? 0) > 1 ? (ap.locations!.length >= 20 ? 'Tout Paris' : `${ap.locations!.length} arr.`) : ap.location
+/** Its zone in the pill, in codes as on the running-ticket card: « 75001 », « 75001-75020 » or « 75002 +3 ». */
+const zoneOf = (ap: Autopilot) => {
+  const zones = [...(ap.locations ?? [])].sort()
+  return zones.length > 1 ? (zones.length >= 20 ? '75001-75020' : `${zones[0]} +${zones.length - 1}`) : ap.location
+}
 const resident = (r: Rate) => /r[ée]sident/i.test(`${r.name} ${r.type}`)
 
 /** « 6 h », « 1 jour », « 360 min ». */
