@@ -14,6 +14,7 @@ import { HostedFooter } from '@/components/Footer'
 import { CheckoutDone } from '@/components/CheckoutDone'
 import { ActivateRenewal, CardGate, OpeningSwitch, RenewalActions, RenewalNote, RenewalSwitch, RiverainDialog, pauseState, nextRenewal, when, ZoneTag, RiverainCard, WEEKLY_LABEL, renewalOf, runPendingRenewals } from '@/components/Riverain'
 import { RippleButton } from '@/components/ui/ripple-button'
+import { AddCardDialog } from '@/components/AddCard'
 import { api, type Account, type Me, type Overview, type Session } from '@/lib/api'
 
 function useNow(interval = 1000) {
@@ -222,7 +223,8 @@ function Ticket({
 
 /** In red at the top while no card of the PayByPhone account is valid after this month (it expires this month, or
  *  has expired): renewed in PayByPhone, the next refresh sees the new card and the banner goes. */
-function CardBanner({ payments }: { payments: Overview['payments'] }) {
+function CardBanner({ payments, onAdded }: { payments: Overview['payments']; onAdded: () => void }) {
+  const [adding, setAdding] = useState(false)
   const cards = payments.filter((p) => p.kind === 'card' && p.validUntil)
   if (!cards.length) return null
   const last = Math.max(...cards.map((p) => new Date(p.validUntil!).getTime()))
@@ -232,11 +234,12 @@ function CardBanner({ payments }: { payments: Overview['payments'] }) {
   const gone = last < now.getTime()
   return (
     <div role="alert" className="bg-destructive px-6 py-3 text-center text-sm font-semibold text-white">
-      {gone ? 'Votre carte bancaire a expiré' : 'Votre carte bancaire expire ce mois-ci'} : renouvelez-la sur{' '}
-      <a href="https://paybyphone.onelink.me/ZQkh/" target="_blank" rel="noreferrer" className="underline underline-offset-2">
-        PayByPhone
-      </a>
-      , sinon vos tickets ne seront plus payés.
+      {gone ? 'Votre carte bancaire a expiré' : 'Votre carte bancaire expire ce mois-ci'} : sinon vos tickets ne seront
+      plus payés.{' '}
+      <button onClick={() => setAdding(true)} className="underline underline-offset-2">
+        Ajouter une carte
+      </button>
+      {adding && <AddCardDialog onClose={() => setAdding(false)} onAdded={onAdded} />}
     </div>
   )
 }
@@ -566,14 +569,14 @@ export function Dashboard({
           <Plus className="size-4" /> <span className="hidden sm:inline">Programmer un ticket</span>
         </button>
         {!me.demo && <InviteButton disabled={!data} />}
-        <AccountButton data={data} onDeleted={onDeleted ?? onLogout} demo={me.demo} />
+        <AccountButton data={data} onDeleted={onDeleted ?? onLogout} onChanged={onRefresh} demo={me.demo} />
         <button onClick={onLogout} className={ui.navText} aria-label="Déconnexion">
           <LogOut className="size-5 sm:hidden" />
           <span className="hidden sm:inline">Déconnexion</span>
         </button>
       </TopBar>
 
-      {data && <CardBanner payments={data.payments} />}
+      {data && <CardBanner payments={data.payments} onAdded={onRefresh} />}
 
       <main className="mx-auto w-full max-w-[34rem] flex-1 px-6 pt-4 pb-6">
         {/* No greeting: the page opens on what matters, whether a ticket is running. */}

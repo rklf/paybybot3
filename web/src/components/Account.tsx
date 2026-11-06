@@ -8,6 +8,7 @@ import { api, clock, type Account, type Overview, type PricedVehicle, type Prici
 import { cn } from '@/lib/utils'
 import { ui } from '@/lib/styles'
 import { LoadingLine } from '@/components/Loading'
+import { AddCardDialog } from '@/components/AddCard'
 
 const euros = (cents: number) => (cents / 100).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })
 
@@ -15,10 +16,13 @@ const euros = (cents: number) => (cents / 100).toLocaleString('fr-FR', { style: 
 export function AccountButton({
   data,
   onDeleted,
+  onChanged = () => {},
   demo = false,
 }: {
   data: Overview | null
   onDeleted: () => void
+  /** A card was added: the page asks PayByPhone again. */
+  onChanged?: () => void
   demo?: boolean
 }) {
   const [open, setOpen] = useState(false)
@@ -29,7 +33,7 @@ export function AccountButton({
         <UserRound className="size-5 sm:hidden" />
         <span className="hidden sm:inline">Mon compte</span>
       </button>
-      {open && data && <AccountDialog data={data} onClose={() => setOpen(false)} onDeleted={onDeleted} demo={demo} />}
+      {open && data && <AccountDialog data={data} onClose={() => setOpen(false)} onDeleted={onDeleted} onChanged={onChanged} demo={demo} />}
     </>
   )
 }
@@ -38,11 +42,13 @@ function AccountDialog({
   data,
   onClose,
   onDeleted,
+  onChanged,
   demo,
 }: {
   data: Overview
   onClose: () => void
   onDeleted: () => void
+  onChanged: () => void
   demo: boolean
 }) {
   const [email, setEmail] = useState<string | undefined>(undefined)
@@ -66,6 +72,7 @@ function AccountDialog({
   // « Gérer »: Stripe's customer portal (card, invoices, cancel), back here after.
   const [opening, setOpening] = useState(false)
   const [plans, setPlans] = useState(false) // « Choisir mon offre »: the offer screen
+  const [addingCard, setAddingCard] = useState(false) // « Ajouter une carte », straight to PayByPhone
   function manage() {
     setOpening(true)
     api.billingPortal().then(
@@ -177,6 +184,9 @@ function AccountDialog({
               ) : (
                 <span className="font-normal text-ink/60">Aucune carte</span>
               )}
+              <button type="button" onClick={() => setAddingCard(true)} className={cn('text-sm', ui.link)}>
+                Ajouter une carte
+              </button>
             </dd>
           </div>
 
@@ -228,6 +238,7 @@ function AccountDialog({
         </div>
       </DialogContent>
       {plans && <PlansDialog onClose={() => setPlans(false)} />}
+      {addingCard && <AddCardDialog onClose={() => setAddingCard(false)} onAdded={onChanged} />}
     </Dialog>
   )
 }

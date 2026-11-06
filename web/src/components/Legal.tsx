@@ -176,7 +176,7 @@ function Security() {
       <div className="mt-8 grid gap-3 sm:grid-cols-2">
         {[
           [true, 'Votre mot de passe n’est jamais enregistré'],
-          [true, 'Aucun numéro de carte bancaire : PayByPhone ne montre que les 4 derniers chiffres'],
+          [true, 'Aucun numéro de carte bancaire enregistré : une carte ajoutée ici part directement chez PayByPhone'],
           [true, 'Données hébergées et traitées à Paris'],
           [true, 'Code source ouvert, vérifiable par tous'],
           [false, 'Aucune publicité, aucune revente de données'],
@@ -250,7 +250,10 @@ function Privacy() {
             plaque masqués.
           </li>
         </ul>
-        <p><PayByBot /> ne conserve ni nom, ni adresse postale, et ne voit jamais votre numéro de carte.</p>
+        <p>
+          <PayByBot /> ne conserve ni nom, ni adresse postale, ni numéro de carte : une carte que vous ajoutez depuis{' '}
+          <PayByBot /> est transmise directement à <PayByPhone />, sans être enregistrée ni écrite dans un journal.
+        </p>
       </Section>
 
       <Section title="3. Pourquoi, et sur quelle base">
