@@ -243,6 +243,14 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
   // The next ticket is taken when its day's window opens, or when the ticket running then ends (a day ticket
   // taken at 14 h covers until 14 h the next day: the next one is taken then, not at 5 h).
   const nextTake = next && liveEnd && liveEnd > next ? liveEnd : next
+  const modify = !finished && (
+    <button
+      onClick={() => setEditing(true)}
+      className="inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-ink/55 transition hover:text-ink"
+    >
+      <Pencil className="size-3.5" /> Modifier
+    </button>
+  )
   const [stopping, setStopping] = useState<'ask' | 'busy' | null>(null)
   async function stop() {
     setStopping('busy')
@@ -333,13 +341,18 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
             ap={ap}
             onChanged={onChanged}
             withPause={!single && !ap.cmis} // a CMI-S ticket is free: stopped or kept, never paused
+            aside={ap.cmis ? modify : undefined}
             stopLabel={single ? 'Annuler ce ticket' : 'Arrêter ces tickets'}
             switchLabel={single ? 'Ticket programmé' : 'Renouvellement auto'}
             stoppedText={single ? 'Ticket annulé.' : 'Tickets arrêtés.'}
           />
         )}
       </div>
-      <div className="border-t border-ink/[0.06] px-5 pt-3.5 pb-4">
+      {/* CMI-S: no details (one free ticket a day, all set); only the progress or a message, when there is one. */}
+      {(!ap.cmis || now?.busy || (ap.lastError && !finished)) && (
+      <div className={cn('border-t border-ink/[0.06] px-5', ap.cmis ? 'py-3' : 'pt-3.5 pb-4')}>
+        {!ap.cmis && (
+        <>
         <div className="flex items-start justify-between gap-4">
           {/* One ticket on one day: when it is planned, or when it was taken. Several: the next one and the last. */}
           <dl className="min-w-0 flex-1 space-y-1 text-sm">
@@ -353,14 +366,7 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
             )}
           </dl>
           {/* Zone, ticket, length, days, time, card: changed in the same steps as when it was programmed. */}
-          {!finished && (
-            <button
-              onClick={() => setEditing(true)}
-              className="inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-ink/55 transition hover:text-ink"
-            >
-              <Pencil className="size-3.5" /> Modifier
-            </button>
-          )}
+          {modify}
         </div>
         {/* The days, unless it is every day (then said in words above). */}
         {!period && !everyDay(ap) && (
@@ -378,18 +384,21 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
           ))}
         </div>
         )}
+        </>
+        )}
         {finished && !single && <p className="mt-3 text-sm text-ink/55">Période terminée : plus aucun ticket ne sera pris.</p>}
         {finished && single && !last && !ap.lastError && <p className="mt-3 text-sm text-ink/55">Ce ticket n’a pas été pris.</p>}
         {now?.busy ? (
-          <p className="mt-3 flex items-center gap-2 text-sm text-ink/70">
+          <p className={cn('flex items-center gap-2 text-sm text-ink/70', !ap.cmis && 'mt-3')}>
             <Loader2 className="size-4 animate-spin text-[#4e9aa0]" />
             {/* The tickets already visible count as they come, before their wave's answer. */}
             {now.total > 1 ? `Prise des tickets : ${Math.max(now.covered, live.length)} / ${now.total} arrondissements` : 'Prise du ticket en cours…'}
           </p>
         ) : (
-          ap.lastError && !finished && <p className="mt-3 text-sm text-destructive">{ap.lastError}</p>
+          ap.lastError && !finished && <p className={cn('text-sm text-destructive', !ap.cmis && 'mt-3')}>{ap.lastError}</p>
         )}
       </div>
+      )}
       {editing && <DailyWizard data={data} editing={ap} onClose={() => setEditing(false)} onDone={onChanged} needsOffer={needsOffer} />}
     </article>
   )

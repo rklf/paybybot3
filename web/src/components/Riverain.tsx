@@ -204,6 +204,7 @@ export function RenewalActions({
   stopLabel = 'Arrêter le renouvellement',
   stoppedText = 'Renouvellement arrêté.',
   switchLabel,
+  aside,
 }: {
   ap: Autopilot
   onChanged: () => void
@@ -216,6 +217,8 @@ export function RenewalActions({
   /** A single programmed ticket: nothing to pause. */
   withPause?: boolean
   stoppedText?: string
+  /** On the switch's line, before it (a CMI-S ticket's « Modifier », its card having no details below). */
+  aside?: React.ReactNode
 }) {
   const [pausing, setPausing] = useState(false)
   const [confirming, setConfirming] = useState(false)
@@ -282,6 +285,7 @@ export function RenewalActions({
             <span className="text-[1.05rem] text-ink">{switchLabel}</span>
             {/* The pause on the switch's line (one line less on the card). */}
             <span className="ml-auto" />
+            {aside}
             {withPause && !later && !paused && (
               <button onClick={() => setPausing(true)} className="inline-flex shrink-0 items-center gap-1.5 text-sm whitespace-nowrap text-ink/55 transition hover:text-ink">
                 <Pause className="size-3.5" />
