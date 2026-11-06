@@ -240,8 +240,6 @@ export const api = {
   verifySignup: (code: string) => post<Me>('/api/signup/verify', { code }),
   resendSignupCode: () => post<SignupPending>('/api/signup/resend'),
   deleteData: () => request('/api/me/data', { method: 'DELETE' }),
-  /** A bank card added to the PayByPhone account (passed straight on, never kept). */
-  addCard: (card: { number: string; month: string; year: string; cvv: string; name: string }) => post<{ ok: boolean }>('/api/cards', card),
   stopTickets: (ids: string[]) => post<{ stopped: number; asked: number }>('/api/sessions/stop', { ids }),
   overview: () => request<Overview>('/api/overview'),
   /** The weeks already paid, from PayByPhone, newest first. */

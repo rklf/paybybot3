@@ -35,7 +35,7 @@ from zoneinfo import ZoneInfo
 from pathlib import Path
 
 import requests
-from fastapi import Body, Cookie, FastAPI, HTTPException, Request, Response
+from fastapi import Cookie, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
@@ -87,17 +87,10 @@ class DemoBot:
             "paymentCards": [
                 {"cardType": "Visa", "maskedCardNumber": "************4242", "paymentAccountId": "demo-card",
                  "paymentScope": "", "expiryMonth": 4, "expiryYear": 2028},
-            ] + getattr(self, "added_cards", []),
+            ],
             "mno": [],
             "paypalAccounts": [],
         }
-
-    def add_card(self, cardNumber, cvv, expiryMonth, expiryYear, nameOnCard, countryCode="FR"):
-        card = {"cardType": "Mastercard", "maskedCardNumber": "*" * 12 + cardNumber[-4:],
-                "paymentAccountId": "demo-card-%s" % uuid.uuid4().hex[:6], "paymentScope": "",
-                "expiryMonth": int(expiryMonth), "expiryYear": int(expiryYear)}
-        self.added_cards = getattr(self, "added_cards", []) + [card]
-        return {"paymentAccountId": card["paymentAccountId"]}
 
     def get_parking_sessions(self, licensePlate=None, locationId=None):
         now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -3677,50 +3670,6 @@ def monthlies_from(metadata):
 
 def fmt_qty(value):
     return int(value) if float(value).is_integer() else value
-
-
-def luhn(number):
-    """The check digit every bank card number carries: catches a mistyped number before PayByPhone does."""
-    total = 0
-    for i, d in enumerate(int(c) for c in reversed(number)):
-        total += d if i % 2 == 0 else (d * 2 - 9 if d > 4 else d * 2)
-    return total % 10 == 0
-
-
-@app.post("/api/cards")
-def add_card(body: dict = Body(...), pbb_session: str = Cookie(None)):
-    """A bank card added to the PayByPhone account from here, as « Ajouter une carte » in PayByPhone: passed straight
-    on, never kept, never logged (not even in an error: the body is read by hand, so a refusal never echoes it)."""
-    s = current(pbb_session)
-    number = re.sub(r"\D", "", str(body.get("number") or ""))
-    cvv = re.sub(r"\D", "", str(body.get("cvv") or ""))
-    name = re.sub(r"\s+", " ", str(body.get("name") or "")).strip()[:60]
-    try:
-        month, year = int(body.get("month")), int(body.get("year"))
-    except (TypeError, ValueError):
-        month = year = 0
-    year += 2000 if 0 <= year < 100 else 0
-    now = datetime.now(PARIS)
-    if not (12 <= len(number) <= 19 and luhn(number)):
-        raise HTTPException(400, "Ce numéro de carte n'est pas valide : vérifiez les chiffres.")
-    if not (1 <= month <= 12) or (year, month) < (now.year, now.month) or year > now.year + 20:
-        raise HTTPException(400, "Cette date d'expiration n'est pas valide.")
-    if not 3 <= len(cvv) <= 4:
-        raise HTTPException(400, "Le code de sécurité (3 chiffres au dos de la carte) n'est pas valide.")
-    if len(name) < 2:
-        raise HTTPException(400, "Indiquez le nom inscrit sur la carte.")
-    try:
-        s.call("add_card", number, cvv, month, year, name)
-    except Exception as e:
-        # PayByPhone's reason, without any run of digits nor the name (nothing of the card can be read in it).
-        reason = re.sub(r"\d[\d\s./-]*", "#", str(e)).replace(name, "<nom>")[:800]
-        log.warning("card not added: %s: %s", type(e).__name__, reason)
-        raise HTTPException(400, "PayByPhone n'a pas accepté cette carte. Vérifiez-la, ou ajoutez-la dans l'application "
-                                 "PayByPhone.")
-    finally:
-        number = cvv = None  # nothing of the card outlives the request
-    record_activity("Carte bancaire ajoutée", s)
-    return {"ok": True}
 
 
 @app.post("/api/sessions/stop")

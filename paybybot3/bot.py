@@ -463,21 +463,6 @@ class Bot:
             "parkingSessionResponse"
         ]
 
-    def add_card(self, cardNumber, cvv, expiryMonth, expiryYear, nameOnCard, countryCode="FR"):
-        """Adds a bank card to the PayByPhone account, as « Ajouter une carte » in its web app (which sends these
-        same fields). The card is only passed on: never kept, never logged."""
-        query = """mutation CreatePaymentAccountV1($input: CreatePaymentAccountV1Input!) {
-  createPaymentAccountV1(input: $input) {
-    createPaymentAccountResponse {
-      paymentAccountId
-    }
-  }
-}"""
-        request = {"accountType": "PaymentCard", "cardNumber": cardNumber, "cvv": cvv, "expiryMonth": int(expiryMonth),
-                   "expiryYear": int(expiryYear), "nameOnCard": nameOnCard, "countryCode": countryCode,
-                   "validationMethod": "Immediate"}
-        return self._graphql(query, {"input": {"request": request}})["createPaymentAccountV1"]["createPaymentAccountResponse"]
-
     def stop(self, parkingSessionId, jobId, jobLineItemId):
         """Stops a running ticket now, as « Arrêter » in the PayByPhone app (only when it says isStoppable)."""
         query = """mutation StopParkingSessionV1($input: StopParkingSessionV1Input!) {

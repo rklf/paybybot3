@@ -9,8 +9,7 @@ import { cn } from '@/lib/utils'
 const NEVER = [
   <>
     Votre numéro de carte bancaire pour le stationnement : les tickets sont payés avec la carte déjà enregistrée dans votre
-    compte <PayByPhone />. Si vous ajoutez vous-même une carte depuis <PayByBot />, elle est transmise directement à{' '}
-    <PayByPhone />, jamais enregistrée.
+    compte <PayByPhone />.
   </>,
   <>
     Votre mot de passe <PayByPhone /> : il sert à vous connecter, puis il n’est jamais enregistré.

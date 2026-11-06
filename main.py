@@ -14,7 +14,7 @@ if os.environ.get("SENTRY_DSN"):
         request = event.get("request") or {}
         for key in ("cookies", "headers", "data", "query_string", "env"):
             request.pop(key, None)
-        # Nor any function's variables in a crash's frames (a card being added could be among them).
+        # Nor any function's variables in a crash's frames (logins, plates or e-mails could be among them).
         for exc in (event.get("exception") or {}).get("values") or []:
             for frame in (exc.get("stacktrace") or {}).get("frames") or []:
                 frame.pop("vars", None)
