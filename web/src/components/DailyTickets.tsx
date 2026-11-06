@@ -309,7 +309,6 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
             ap={ap}
             onChanged={onChanged}
             withPause={!single && !ap.cmis} // a CMI-S ticket is free: stopped or kept, never paused
-            aside={ap.cmis ? modify : undefined}
             detail={
               ap.cmis && ap.enabled && nextTake ? (
                 // As on a resident card: when the next tickets are taken.
