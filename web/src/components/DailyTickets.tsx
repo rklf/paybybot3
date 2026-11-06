@@ -134,12 +134,6 @@ const zoneOf = (ap: Autopilot) => {
 }
 const resident = (r: Rate) => /r[ée]sident/i.test(`${r.name} ${r.type}`)
 
-/** « 6 h », « 1 jour », « 360 min ». */
-function lengthText(duration: number, unit: Unit) {
-  if (unit === 'Days') return `${duration} jour${duration > 1 ? 's' : ''}`
-  if (unit === 'Hours') return `${duration} h`
-  return duration % 60 === 0 ? `${duration / 60} h` : `${duration} min`
-}
 
 /** The next ticket of a precise-days rule (Paris ≈ the browser's time): the next chosen day at the start time. */
 /** Now in Paris, whatever the device's time zone: the server takes tickets at Paris time. */
@@ -246,6 +240,9 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
     (x) => keyOf(x.plate) === keyOf(ap.plate) && zones.includes(x.location) && new Date(x.expire).getTime() > Date.now(),
   )
   const liveEnd = live.length ? new Date(Math.max(...live.map((x) => new Date(x.expire).getTime()))) : null
+  // The next ticket is taken when its day's window opens, or when the ticket running then ends (a day ticket
+  // taken at 14 h covers until 14 h the next day: the next one is taken then, not at 5 h).
+  const nextTake = next && liveEnd && liveEnd > next ? liveEnd : next
   const [stopping, setStopping] = useState<'ask' | 'busy' | null>(null)
   async function stop() {
     setStopping('busy')
@@ -344,14 +341,17 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
       </div>
       <div className="border-t border-ink/[0.06] px-5 pt-3.5 pb-4">
         <div className="flex items-start justify-between gap-4">
-          <span className="text-ink">
-            Ticket de {lengthText(Number(ap.duration), ap.unit)}
-            {period
-              ? ` ${periodText(period.from, period.to)}`
-              : everyDay(ap)
-                ? isParis(ap.location) ? ', chaque jour sauf dimanche et jours fériés' : ', chaque jour'
-                : ''}
-          </span>
+          {/* One ticket on one day: when it is planned, or when it was taken. Several: the next one and the last. */}
+          <dl className="min-w-0 flex-1 space-y-1 text-sm">
+            {single ? (
+              last ? row('Ticket pris', when(last)) : next ? row('Prévu', when(next)) : null
+            ) : (
+              <>
+                {nextTake && row('Prochain ticket', when(nextTake))}
+                {last && row('Dernier ticket', when(last))}
+              </>
+            )}
+          </dl>
           {/* Zone, ticket, length, days, time, card: changed in the same steps as when it was programmed. */}
           {!finished && (
             <button
@@ -378,17 +378,6 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
           ))}
         </div>
         )}
-        {/* One ticket on one day: when it is planned, or when it was taken. Several: the time and the last. */}
-        <dl className="mt-3 space-y-1 text-sm">
-          {single ? (
-            last ? row('Ticket pris', when(last)) : next ? row('Prévu', when(next)) : null
-          ) : (
-            <>
-              {row('Heure de prise', startOf(ap).replace(':', 'h'))}
-              {last && row('Dernier ticket', when(last))}
-            </>
-          )}
-        </dl>
         {finished && !single && <p className="mt-3 text-sm text-ink/55">Période terminée : plus aucun ticket ne sera pris.</p>}
         {finished && single && !last && !ap.lastError && <p className="mt-3 text-sm text-ink/55">Ce ticket n’a pas été pris.</p>}
         {now?.busy ? (

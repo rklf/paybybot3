@@ -206,3 +206,14 @@ class SlowDown(unittest.TestCase):
                 return super().call(name, *args, **kw)
         _, failed, left = web.take_zones(Busy(), ROW, "card")
         self.assertEqual((failed, left), ([], ["75002"]))
+
+
+class NoNewLogin(unittest.TestCase):
+    def test_the_pages_session_is_used_as_it_is(self):
+        row = {"id": "r", "owner": "o", "data": "d", "last_error": None}
+        with patch.object(web, "with_details", return_value={**row, **ROW, "days": None}), \
+                patch.object(web, "bot_from_refresh", side_effect=AssertionError("a new login")), \
+                patch.object(web, "guarded_state", return_value="ok"), patch.object(web, "store"), \
+                patch.object(web, "notify"):
+            outcome = web.process_renewal(row, first_now=True, session=FakeSession())
+        self.assertEqual(outcome, "paid")

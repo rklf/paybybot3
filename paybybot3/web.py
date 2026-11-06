@@ -1937,10 +1937,14 @@ def keep_early_stops(session, row):
         log.warning("early stops not checked: %s", str(e)[:200])
 
 
-def process_renewal(row, refresh_token=None, activating=False, refused=False, validating=False, first_now=False):
+def process_renewal(row, refresh_token=None, activating=False, refused=False, validating=False, first_now=False,
+                    session=None, logins=None):
     """Check one stored renewal and pay for it if no session is active. Never raises.
     validating: the card holder just asked to validate a payment their bank wants confirmed, so it is paid now.
-    first_now: a ticket on chosen days just programmed, its first ticket asked for at once (outside its window)."""
+    first_now: a ticket on chosen days just programmed, its first ticket asked for at once (outside its window).
+    session: the page's own logged-in session, used as it is. logins: the logins of this scheduler run, by account.
+    PayByPhone replaces a login's token at each use and may drop them all when two uses meet: never a new login
+    when one is at hand."""
     now = datetime.now(timezone.utc)
     patch = {}
     try:
@@ -1975,10 +1979,15 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
             if previous_error != BLOCKED and state == "trial_over":  # unpaid: the dunning e-mails say it
                 notify_blocked(row, state)
             return "blocked"
+    owner = row.get("owner")
+    if session is None and logins is not None and owner and owner in logins:
+        session = UserSession.for_bot(logins[owner])  # this run logged in for the account already
+    if session is not None:
+        return renewal_with(session, row, rule, now, patch, previous_error, activating, refused, validating)
     try:
-        # The row's own login, else (a row listed without it, as /take reads it) the newest stored for the account.
+        # The row's own login, else (a row listed without it) the newest stored for the account.
         refresh = refresh_token or (decrypt_credential(row["credential"]) if row.get("credential") else None)
-        bot = bot_from_refresh(refresh, row.get("owner"))
+        bot = bot_from_refresh(refresh, owner)
     except Exception as e:
         if is_outage(e):  # PayByPhone blocked or down: not the user's login, tried again in 30 minutes
             log.warning("renewal %s: PayByPhone unreachable at login: %s", row["id"], str(e)[:200])
@@ -1995,7 +2004,13 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
         patch["credential"] = encrypt_credential(bot.refresh_token)
     elif sealed_with_old(row.get("credential"), "credential"):
         patch["credential"] = encrypt_credential(refresh)
-    session = UserSession.for_bot(bot)
+    if logins is not None and owner:
+        logins[owner] = bot
+    return renewal_with(UserSession.for_bot(bot), row, rule, now, patch, previous_error, activating, refused, validating)
+
+
+def renewal_with(session, row, rule, now, patch, previous_error, activating, refused, validating):
+    """The renewal once logged in to PayByPhone: pay or extend if due, then store what happened. Never raises."""
     if len(row.get("locations") or []) > 1:
         return renew_zones(session, row, rule, now, patch, previous_error)
     outcome = "error"
@@ -2423,14 +2438,24 @@ def cron_renew(request: Request):
     # function's time limit; one failing never stops the others.
     rows = store("renewal_claim_due", p_limit=CLAIM_PER_RUN) or []
 
-    def safe(row):
+    def safe(row, logins):
         try:
-            return process_renewal(row)
+            return process_renewal(row, logins=logins)
         except Exception as e:
             log.warning("renewal %s not processed: %s", row.get("id"), type(e).__name__)
             return "error"
+
+    # One account's renewals one after the other, with one login: two logins at once with the same token make
+    # PayByPhone drop them all (« connexion expirée »). The accounts side by side.
+    accounts = {}
+    for row in rows:
+        accounts.setdefault(row.get("owner") or row.get("id"), []).append(row)
+
+    def account(group):
+        logins = {}
+        return [safe(row, logins) for row in group]
     with ThreadPoolExecutor(max_workers=4) as pool:
-        results = list(pool.map(safe, rows))
+        results = [r for done in pool.map(account, accounts.values()) for r in done]
     # Once an hour (the scheduler calls every 5 minutes): the e-mails of the grace week after a refused charge.
     dunned = run_dunning() if datetime.now(timezone.utc).minute < 5 else None
     check_capacity()
@@ -3864,7 +3889,7 @@ def add_autopilot(body: Autopilot, pbb_session: str = Cookie(None)):
             before = running_for(s, body.plate)
             # Pay now if it is due. Its tickets asked for at once: taken by the page right after (/take), so the
             # window closes at once and the card shows them coming (PayByPhone takes up to a minute each).
-            outcome = "waiting" if body.now and days else process_renewal(row, refresh_token=refresh, activating=True)
+            outcome = "waiting" if body.now and days else process_renewal(row, activating=True, session=s)
             stored = next((r for r in store("renewal_list", p_owner=owner_id(s.username)) if r["id"] == row["id"]), row)
             message = None
             if outcome in ("paid", "active", "waiting", "partial"):
@@ -5081,9 +5106,9 @@ def take_now(ap_id: str, pbb_session: str = Cookie(None)):
         row = guarded(row_of)
         if not row:
             raise HTTPException(404, "Ticket introuvable.")
-        # Its own stored login, never this page's: PayByPhone renews a login each time it is used and drops the old
-        # one, so the page's would be stale from the second call on (and the page's own login with it).
-        outcome = process_renewal({**row, "owner": owner_id(s.username)}, activating=True, first_now=True)
+        # This page's own session as it is: no new login, so no token replaced while the waves go (PayByPhone may
+        # drop all of a login's tokens when two uses meet).
+        outcome = process_renewal({**row, "owner": owner_id(s.username)}, activating=True, first_now=True, session=s)
         ap = stored_to_autopilot(guarded(row_of) or row)
     else:
         ap = s.autopilots.get(ap_id)
