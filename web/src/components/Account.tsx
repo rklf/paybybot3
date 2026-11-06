@@ -155,10 +155,11 @@ function AccountDialog({
           )}
 
           <p className="mt-3 text-sm text-ink/55">
-            Un véhicule manque ? Ajoutez-le dans l’application <PayByPhone /> : il apparaîtra ici.{' '}
-            {/* PayByPhone's own app link (as in the e-mails): the app when installed, else its store or site. */}
+            Un véhicule manque ? Ajoutez-le dans{' '}
+            {/* PayByPhone's own app link (as in the e-mails): on an iPhone it opens the app when installed (a universal
+                link), else its App Store page. */}
             <a href="https://paybyphone.onelink.me/ZQkh/" target="_blank" rel="noreferrer" className={ui.link}>
-              Ouvrir <PayByPhone />
+              l’application <PayByPhone />
             </a>
           </p>
         </section>
