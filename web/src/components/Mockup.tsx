@@ -194,3 +194,86 @@ function Status({ action = false }: { action?: boolean }) {
     </div>
   )
 }
+
+/** Development only (#/maquette-vide): the first-visit card (no resident car, nothing running), side by side. */
+export function EmptyVariants() {
+  const plates = ['GH-456-JK', 'LM-789-NP']
+  const title = 'Programmez un renouvellement automatique'
+  return (
+    <div className="min-h-dvh bg-background px-6 py-10 text-ink">
+      <div className="mx-auto grid max-w-[72rem] gap-10 md:grid-cols-2">
+        <Variant name="A · Actuelle : une liste">
+          <section className="overflow-hidden rounded-2xl border border-ink/10 bg-white">
+            <h2 className="px-5 pt-6 pb-5 font-heading text-[1.35rem] leading-tight font-bold">{title}</h2>
+            <ul className="divide-y divide-ink/[0.06] border-t border-ink/[0.06]">
+              {plates.map((p) => (
+                <li key={p} className="flex items-center justify-between gap-2 px-5 py-4">
+                  <Plate plate={p} size="sm" />
+                  <span className="font-semibold text-eu">Programmer ›</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </Variant>
+
+        <Variant name="B · Comme les cartes de ticket, interrupteur éteint">
+          <div className="space-y-3">
+            {plates.map((p) => (
+              <article key={p} className="overflow-hidden rounded-2xl border border-ink/10 bg-white">
+                <div className="flex items-center justify-between gap-4 px-5 py-4">
+                  <Plate plate={p} size="sm" />
+                  <span className="rounded-full border border-ink/10 px-3 py-1 text-sm text-ink/50">Non couvert</span>
+                </div>
+                <div className="flex items-center justify-between gap-4 border-t border-ink/[0.06] px-5 py-5">
+                  <span className="text-[1.05rem]">Renouvellement auto</span>
+                  <span className="h-7 w-12 shrink-0 rounded-full bg-ink/15 p-1">
+                    <span className="block size-5 rounded-full bg-white shadow" />
+                  </span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </Variant>
+
+        <Variant name="C · Une tuile par voiture, un bouton chacune">
+          <h2 className="mb-4 font-heading text-[1.35rem] leading-tight font-bold">{title}</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {plates.map((p) => (
+              <div key={p} className="flex flex-col items-center gap-4 rounded-2xl border border-ink/10 bg-white px-4 pt-6 pb-4">
+                <Plate plate={p} />
+                <button className={cn(ui.primary, 'h-11 text-base')}>Programmer</button>
+              </div>
+            ))}
+          </div>
+        </Variant>
+
+        <Variant name="D · Choisir la voiture, puis un seul bouton">
+          <section className="rounded-2xl border border-ink/10 bg-white px-5 py-6">
+            <h2 className="font-heading text-[1.35rem] leading-tight font-bold">{title}</h2>
+            <p className={cn(ui.label, 'mt-5')}>Véhicule</p>
+            <div className="flex flex-wrap gap-2">
+              {plates.map((p, i) => (
+                <span
+                  key={p}
+                  className={cn('rounded-xl border p-2', i === 0 ? 'border-[#4e9aa0] bg-[#4e9aa0]/[0.08] ring-1 ring-[#4e9aa0]' : 'border-ink/15 opacity-70')}
+                >
+                  <Plate plate={p} size="sm" />
+                </span>
+              ))}
+            </div>
+            <button className={cn(ui.primary, 'mt-6')}>Programmer</button>
+          </section>
+        </Variant>
+      </div>
+    </div>
+  )
+}
+
+function Variant({ name, children }: { name: string; children: React.ReactNode }) {
+  return (
+    <div className="mx-auto w-full max-w-[34rem]">
+      <p className="mb-3 text-xs font-bold tracking-wide text-ink/40 uppercase">{name}</p>
+      {children}
+    </div>
+  )
+}

@@ -27,6 +27,7 @@ const AdminPage = lazy(() => import('@/components/Admin').then((m) => ({ default
 const Welcome = lazy(() => import('@/components/Welcome').then((m) => ({ default: m.Welcome })))
 const SubscriptionDialog = lazy(() => import('@/components/Subscription').then((m) => ({ default: m.SubscriptionDialog })))
 const Mockup = lazy(() => import('@/components/Mockup').then((m) => ({ default: m.Mockup })))
+const EmptyVariants = lazy(() => import('@/components/Mockup').then((m) => ({ default: m.EmptyVariants })))
 
 type Route = 'faq' | 'comment-ca-marche' | 'qui-sommes-nous' | 'tarifs' | 'connexion' | 'inscription' | 'demo' | 'admin' | 'bienvenue' | 'valider' | null
 
@@ -318,6 +319,13 @@ export default function App() {
     return (
       <Suspense fallback={null}>
         <Mockup />
+      </Suspense>
+    )
+  // Development only: the first-visit card, side by side (#/maquette-vide).
+  if (import.meta.env.DEV && window.location.hash === '#/maquette-vide')
+    return (
+      <Suspense fallback={null}>
+        <EmptyVariants />
       </Suspense>
     )
   // Development only: « Mon abonnement » with a made-up subscription (#/apercu-abonnement).

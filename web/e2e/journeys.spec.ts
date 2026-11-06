@@ -69,6 +69,28 @@ test('programmer un ticket : véhicule choisi, zone de France reconnue', async (
   await expect(page.getByText('zone PayByPhone reconnue', { exact: false })).toBeVisible()
 })
 
+test('sans voiture résidente ni ticket : une carte par voiture, l’interrupteur ouvre le programme', async ({ page }) => {
+  const noResident = (v: { plate: string }) => !/AB.?123/.test(v.plate)
+  await page.route('**/api/overview', async (route) => {
+    const answer = await route.fetch()
+    const json = await answer.json()
+    if (!json.vehicles) return route.fulfill({ response: answer, json }) // not signed in yet
+    await route.fulfill({ json: { ...json, vehicles: json.vehicles.filter(noResident), sessions: [], autopilots: [] } })
+  })
+  await page.route('**/api/pricing', async (route) => {
+    const answer = await route.fetch()
+    const json = await answer.json()
+    if (!json.vehicles) return route.fulfill({ response: answer, json })
+    await route.fulfill({ json: { ...json, zone: null, vehicles: (json.vehicles ?? []).filter(noResident).map((v: object) => ({ ...v, zone: null })) } })
+  })
+  await demo(page)
+  await page.keyboard.press('Escape') // the wizard opens by itself on a first visit without a resident car
+  await expect(page.getByText('Non couvert')).toHaveCount(2)
+  await page.getByRole('switch', { name: /LM.?789.?NP/ }).click()
+  await expect(page.getByText(/Étape 1 sur 5/)).toBeVisible()
+  await expect(page.getByRole('button', { name: /LM-789-NP/ })).toHaveAttribute('aria-pressed', 'true')
+})
+
 test('programmer un ticket : une voiture résidente mène au renouvellement de la semaine', async ({ page }) => {
   await demo(page)
   await wizardButton(page).click()

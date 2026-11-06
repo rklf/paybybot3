@@ -630,6 +630,15 @@ export function Dashboard({
           </div>
         )}
 
+        {/* No resident car and nothing running or programmed: the page says what to do, car by car. */}
+        {data && !running.length && !shownDaily && residentPlates && data.vehicles.length > 0 &&
+          !data.vehicles.some((v) => residentPlates.has(plateKey(v.plate))) && (
+            <FirstTicket
+              plates={data.vehicles.map((v) => v.plate)}
+              onPick={(p) => (setBackPlate(p), setProgramAsked((n) => n + 1))}
+            />
+          )}
+
         {/* The renewal is the one action of the app: no one-off payment button. */}
         {/* The cars with neither a ticket nor a renewal: one card each, with its button. */}
         {data && <IdleVehicles data={data} onChanged={onRefresh} hosted={!!me.hosted} demo={me.demo} autoPlate={autoPlate} locked={locked} onLogout={onLogout} />}
@@ -693,6 +702,50 @@ export function Dashboard({
 
 /** « Renouveler un autre véhicule », under the cards: a car with the resident rate not renewed yet gets the resident
  *  renewal; otherwise the ticket wizard, for any other car. */
+/** A first visit without a resident car: one card per car, like the ticket cards, its switch off; turning it on
+ *  opens « Programmer un ticket » on that car. */
+function FirstTicket({ plates, onPick }: { plates: string[]; onPick: (plate: string) => void }) {
+  return (
+    <div className="mt-5 space-y-3">
+      {plates.map((plate) => (
+        <IdleCar key={plate} plate={plate} onPick={() => onPick(plate)} />
+      ))}
+    </div>
+  )
+}
+
+function IdleCar({ plate, onPick }: { plate: string; onPick: () => void }) {
+  const [pressed, setPressed] = useState(false)
+  return (
+    <article className="rise overflow-hidden rounded-2xl border border-ink/10 bg-white">
+      <div className="flex items-center justify-between gap-4 px-5 py-4">
+        <span className="shrink-0">
+          <Plate plate={plate} size="sm" />
+        </span>
+        <span className="rounded-full border border-ink/10 px-3 py-1 text-sm text-ink/50">Non couvert</span>
+      </div>
+      <div className="flex items-center justify-between gap-4 border-t border-ink/[0.06] px-5 py-5">
+        <span className="text-base text-ink sm:text-[1.05rem]">Renouvellement auto</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={pressed}
+          aria-label={`Programmer un renouvellement pour ${plate}`}
+          onClick={() => {
+            if (pressed) return
+            setPressed(true)
+            setTimeout(onPick, 280) // the knob slides to green, then the window opens
+            setTimeout(() => setPressed(false), 900) // off again behind it: on only once a ticket is programmed
+          }}
+          className={cn('relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200', pressed ? 'bg-[#4e9aa0]' : 'bg-ink/15 hover:bg-ink/20')}
+        >
+          <span className={cn('absolute top-1 left-1 size-5 rounded-full bg-white shadow transition-transform duration-200', pressed && 'translate-x-5')} />
+        </button>
+      </div>
+    </article>
+  )
+}
+
 /** PayByPhone's vehicle type, in French (unknown: as given). */
 function vehicleTypeLabel(type?: string) {
   if (!type) return null
