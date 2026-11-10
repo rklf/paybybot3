@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { ArrowRight, Eye, EyeOff, Loader2, Lock } from 'lucide-react'
+import { InputOTP, REGEXP_ONLY_DIGITS } from '@heroui/react'
 import { HostedFooter } from '@/components/Footer'
 import { PublicTopBar } from '@/components/TopBar'
 import { RemotePanel } from '@/components/RemoteScene'
@@ -10,6 +11,7 @@ import { trackLinkStep } from '@/lib/linkTrack'
 import { api, ApiError, isPending, type Me } from '@/lib/api'
 import { useTurnstile } from '@/lib/turnstile'
 import { cn } from '@/lib/utils'
+import { Notice } from '@/components/ui/notice'
 import { ui } from '@/lib/styles'
 import { emailProblem, frenchDigits, phoneProblem } from '@/lib/validate'
 
@@ -315,12 +317,12 @@ export function LoginView({
               </div>
             )}
             {accountExists && (
-              <p role="alert" className="rounded-xl bg-destructive/8 px-4 py-3 text-destructive">
+              <Notice>
                 {withPayByPhone(EXISTS)}{' '}
                 <a href="#/connexion" className="font-bold underline underline-offset-[3px]">
                   Se connecter
                 </a>
-              </p>
+              </Notice>
             )}
 
 
@@ -401,13 +403,13 @@ export function LoginView({
           )}
 
           {human.failed && !error && (
-            <p role="alert" className="mt-5 rounded-xl bg-destructive/8 px-4 py-3 text-destructive">
+            <Notice className="mt-5">
               {human.failed}
-            </p>
+            </Notice>
           )}
 
           {error && !accountExists && (
-            <p role="alert" className="mt-5 rounded-xl bg-destructive/8 px-4 py-3 text-destructive">
+            <Notice className="mt-5">
               {withPayByPhone(error)}
               {noAccount && (
                 <>
@@ -417,7 +419,7 @@ export function LoginView({
                   </a>
                 </>
               )}
-            </p>
+            </Notice>
           )}
 
           <button
@@ -468,6 +470,9 @@ export function LoginView({
 
 
 /** Sign-up, last step: the 6-digit code sent to the e-mail. */
+/** A digit's box: big and easy to read (40-50 year-olds, on a phone). */
+const OTP_SLOT = 'h-14 w-12 rounded-xl font-heading text-2xl font-semibold text-ink sm:h-16 sm:w-14 sm:text-3xl'
+
 function CodeStep({
   email,
   hosted,
@@ -532,25 +537,34 @@ function CodeStep({
             Nous avons envoyé un code à 6 chiffres à <strong className="font-semibold text-ink">{sentTo}</strong>.
             Saisissez-le pour finir votre inscription.
           </p>
-          <input
-            inputMode="numeric"
+          {/* One box per digit (HeroUI InputOTP): the code can be pasted at once; checked as soon as it is complete. */}
+          <InputOTP
+            maxLength={6}
+            pattern={REGEXP_ONLY_DIGITS}
             autoComplete="one-time-code"
             aria-label="Code à 6 chiffres"
-            placeholder="123 456"
             value={code}
-            maxLength={7}
             autoFocus
-            onChange={(e) => {
-              const digits = e.target.value.replace(/\D/g, '').slice(0, 6)
-              setCode(digits)
-              if (digits.length === 6 && !checking) check(digits)
-            }}
-            className="mt-8 h-16 w-full rounded-xl border border-ink/20 bg-white text-center font-heading text-3xl font-semibold tracking-[0.4em] text-ink tabular-nums outline-none placeholder:text-ink/20 focus:border-eu focus:ring-3 focus:ring-eu/15"
-          />
+            onChange={setCode}
+            onComplete={(digits) => !checking && check(digits)}
+            className="mt-8 justify-center"
+          >
+            <InputOTP.Group>
+              {[0, 1, 2].map((i) => (
+                <InputOTP.Slot key={i} index={i} className={OTP_SLOT} />
+              ))}
+            </InputOTP.Group>
+            <InputOTP.Separator />
+            <InputOTP.Group>
+              {[3, 4, 5].map((i) => (
+                <InputOTP.Slot key={i} index={i} className={OTP_SLOT} />
+              ))}
+            </InputOTP.Group>
+          </InputOTP>
           {error && (
-            <p role="alert" className="mt-4 rounded-xl bg-destructive/8 px-4 py-3 text-destructive">
+            <Notice className="mt-4">
               {withPayByPhone(error)}
-            </p>
+            </Notice>
           )}
           <button
             type="submit"

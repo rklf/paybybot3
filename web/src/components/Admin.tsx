@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { ui } from '@/lib/styles'
 import { ApiError } from '@/lib/api'
 import { TopBar } from '@/components/TopBar'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { api } from '@/lib/api'
 import { useTurnstile } from '@/lib/turnstile'
 import { markOwnerDevice, ownVisitor } from '@/lib/linkTrack'
@@ -31,8 +32,12 @@ function ServicePanel() {
   useEffect(() => {
     api.adminService().then(setState, (e) => setError((e as Error).message))
   }, [])
-  async function act(action: 'interrupt' | 'notify' | 'resume', question: string) {
-    if (!window.confirm(question)) return
+  // The action waiting for the owner's yes, and its question (a window, not the browser's confirm box).
+  const [asking, setAsking] = useState<{ action: 'interrupt' | 'notify' | 'resume'; question: string } | null>(null)
+  function act(action: 'interrupt' | 'notify' | 'resume', question: string) {
+    setAsking({ action, question })
+  }
+  async function run(action: 'interrupt' | 'notify' | 'resume') {
     setBusy(action)
     setError(null)
     try {
@@ -42,6 +47,7 @@ function ServicePanel() {
       setError((e as Error).message)
     } finally {
       setBusy(null)
+      setAsking(null)
     }
   }
   const on = !!state?.interrupted_at
@@ -101,6 +107,15 @@ function ServicePanel() {
         </div>
       </div>
       {state?.sent ? <p className="mt-3 text-sm text-ink/60">{state.sent} e-mail(s) envoyé(s).</p> : null}
+      <ConfirmDialog
+        open={!!asking}
+        onOpenChange={(o) => !o && setAsking(null)}
+        title={asking?.question ?? ''}
+        confirmLabel="Confirmer"
+        danger={asking?.action !== 'resume'}
+        onConfirm={() => (asking ? run(asking.action) : undefined)}
+        busy={!!busy}
+      />
       {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
     </section>
   )

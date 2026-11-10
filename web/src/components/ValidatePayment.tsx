@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Notice } from '@/components/ui/notice'
 import { Check, Loader2 } from 'lucide-react'
 import { TopBar } from '@/components/TopBar'
 import { api } from '@/lib/api'
@@ -70,7 +71,7 @@ export function ValidatePayment() {
           <>
             <h1 className={ui.title}>Validez votre paiement</h1>
             <p className={ui.subtitle}>Votre banque demande de confirmer le paiement de votre ticket (Face ID ou code).</p>
-            {error && <p role="alert" className="mt-5 rounded-xl border-l-4 border-destructive bg-destructive/8 px-4 py-3 text-sm text-destructive">{error}</p>}
+            {error && <Notice className="mt-5">{error}</Notice>}
             <button onClick={validate} disabled={state === 'busy' || !token} className={`mt-8 ${ui.primary}`}>
               {state === 'busy' ? <Loader2 className="size-5 animate-spin" /> : 'Valider mon paiement'}
             </button>

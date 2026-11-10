@@ -10,6 +10,7 @@ import { arrondissement, Plate, withPayByPhone } from '@/components/signs'
 import { api, ApiError, unitLabel, type Autopilot, type Money, type Overview, type Rate, type Unit } from '@/lib/api'
 import { ui } from '@/lib/styles'
 import { cn } from '@/lib/utils'
+import { TimeInput } from '@/components/ui/date-time-fields'
 
 /**
  * Tickets on precise days (visitor, Handi, pro…), for people without a resident rate or for other needs: a ticket
@@ -1216,12 +1217,7 @@ export function DailyWizard({
                   </div>
                   <div>
                     <p className={ui.label}>Heure de prise</p>
-                    <input
-                      type="time"
-                      value={start}
-                      onChange={(e) => setStart(e.target.value || nextHour())}
-                      className={ui.field}
-                    />
+                    <TimeInput label="Heure de prise" value={start} onChange={(v) => setStart(v || nextHour())} />
                     <p className="mt-2 text-xs text-ink/45">
                       {!chainFrom && (
                         <>

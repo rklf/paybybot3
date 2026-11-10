@@ -6,6 +6,7 @@ import { NoPayment } from '@/components/NoPayment'
 import { loadLast, PRESETS } from '@/components/PayWizard'
 import { Plate, ZonePlate, PayByPhone } from '@/components/signs'
 import { cn } from '@/lib/utils'
+import { Notice } from '@/components/ui/notice'
 import { choice, ui } from '@/lib/styles'
 import { api, ApiError, clock, money, until, unitLabel, type Money, type Overview, type Session, type Unit } from '@/lib/api'
 
@@ -184,9 +185,9 @@ export function ExtendDialog({
           )}
 
           {error && (
-            <p role="alert" className={ui.error}>
+            <Notice>
               {error}
-            </p>
+            </Notice>
           )}
 
           {locked ? (

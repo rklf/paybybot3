@@ -18,6 +18,17 @@ async function demo(page: Page) {
 const press = (page: Page, name: string | RegExp) =>
   page.locator('[data-slot=switch-content]').filter({ has: page.getByRole('switch', { name }) }).first().click()
 
+/** The hour field of the ticket wizard (HeroUI TimeField: one box for the hours, one for the minutes). */
+const hourBoxes = (page: Page) => page.getByRole('group', { name: 'Heure de prise' }).getByRole('spinbutton')
+async function setTime(page: Page, value: string) {
+  const [h, m] = value.split(':')
+  await hourBoxes(page).nth(0).click()
+  await page.keyboard.type(h)
+  await hourBoxes(page).nth(1).click()
+  await page.keyboard.type(m)
+}
+const timeShown = async (page: Page) => (await hourBoxes(page).allInnerTexts()).map((t) => t.trim()).join(':')
+
 /** The button that opens the ticket wizard (its name follows the offer: « Programmer un ticket », « Carte mobilité… »). */
 const wizardButton = (page: Page) =>
   page.getByRole('button', { name: /Programmer un ticket|Carte mobilité/ }).first()
@@ -158,6 +169,52 @@ test('accueil : activer l’interrupteur de l’exemple mène à l’inscription
   await expect(page.getByRole('switch', { name: 'Activer le renouvellement automatique' })).toHaveCount(0)
 })
 
+test('inscription : le code à 6 chiffres se colle d’un coup et se vérifie seul', async ({ page }) => {
+  await page.route('**/api/login', (r) => r.fulfill({ json: { pending: true, email: 'a@b.fr' } }))
+  const verified: string[] = []
+  await page.route('**/api/signup/verify', (r) => {
+    verified.push(JSON.parse(r.request().postData() ?? '{}').code)
+    return r.fulfill({ status: 400, json: { detail: 'Code incorrect.' } })
+  })
+  await page.goto(LINK + '#/inscription')
+  await page.getByPlaceholder('Numéro PayByPhone').fill('612345678')
+  await page.getByPlaceholder('Votre e-mail').fill('a@b.fr')
+  await page.getByPlaceholder('Mot de passe PayByPhone').fill('secret')
+  await page.getByRole('checkbox').first().check()
+  await page.getByRole('button', { name: /Continuer/ }).click()
+  await expect(page.getByRole('heading', { name: 'Vérifiez votre e-mail' })).toBeVisible()
+  await page.getByLabel('Code à 6 chiffres').fill('123456')
+  await expect.poll(() => verified).toEqual(['123456'])
+})
+
+test('pause : le calendrier ne propose pas les jours passés', async ({ page }) => {
+  await demo(page)
+  await press(page, /Renouvellement/)
+  await page.getByRole('dialog').getByRole('button', { name: /^Activer le renouvellement/ }).click()
+  await expect(page.getByRole('switch', { name: /Renouvellement/ }).first()).toBeChecked({ timeout: 15_000 })
+  await page.getByRole('button', { name: 'Pause' }).first().click()
+  await page.getByRole('button', { name: /Premier jour : ouvrir le calendrier/ }).click()
+  const yesterday = new Date(Date.now() - 86_400_000)
+  if (yesterday.getMonth() === new Date().getMonth()) {
+    const cell = page.getByRole('gridcell').filter({ hasText: new RegExp(`^${yesterday.getDate()}$`) }).first()
+    await expect(cell).toHaveAttribute('aria-disabled', 'true')
+  }
+})
+
+test('renouvellement : l’éteindre demande confirmation, « Annuler » le laisse actif', async ({ page }) => {
+  await demo(page)
+  await press(page, /Renouvellement/)
+  await page.getByRole('dialog').getByRole('button', { name: /^Activer le renouvellement/ }).click()
+  const renewal = page.getByRole('switch', { name: /Renouvellement/ }).first()
+  await expect(renewal).toBeChecked({ timeout: 15_000 })
+  await press(page, /Renouvellement/)
+  const ask = page.getByRole('alertdialog')
+  await expect(ask.getByText('Arrêter le renouvellement ?')).toBeVisible()
+  await ask.getByRole('button', { name: 'Annuler' }).click()
+  await expect(ask).toHaveCount(0)
+  await expect(renewal).toBeChecked()
+})
+
 test('bienvenue sans carte bancaire valide : croix rouge, on ne passe pas', async ({ page }) => {
   let payments: object[] = [{ id: 'c1', label: 'Visa •••• 4242 — exp. 10/26', kind: 'card', expired: true }]
   await page.route('**/api/overview', async (route) => {
@@ -277,15 +334,14 @@ test('programmer un ticket : une heure déjà passée est refusée', async ({ pa
   const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1)
   if (yesterday.getMonth() === today.getMonth()) await expect(page.getByRole('button', { name: label(yesterday), exact: true })).toBeDisabled()
   await page.getByRole('button', { name: label(today), exact: true }).click()
-  const time = page.locator('input[type=time]')
   const parisHour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', hour: '2-digit', hourCycle: 'h23' }).format(new Date()))
   const nextHour = `${String((parisHour + 1) % 24).padStart(2, '0')}:00`
-  await expect(time).toHaveValue(nextHour) // by default, the hour after this one
-  await time.fill('00:00')
+  await expect.poll(() => timeShown(page)).toBe(nextHour) // by default, the hour after this one
+  await setTime(page, '00:00')
   await expect(page.getByText('Cette heure est déjà passée')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Suivant', exact: true })).toBeDisabled()
-  if (parisHour < 23) await expect(time).toHaveValue(nextHour) // put right after a moment
-  await time.fill('23:59')
+  if (parisHour < 23) await expect.poll(() => timeShown(page)).toBe(nextHour) // put right after a moment
+  await setTime(page, '23:59')
   await expect(page.getByText('Cette heure est déjà passée')).toBeHidden()
   await expect(page.getByRole('button', { name: 'Suivant', exact: true })).toBeEnabled()
 })
@@ -358,7 +414,7 @@ test('programmer un ticket : un seul véhicule à la fois, sans paiement en plus
   await page.getByRole('button', { name: 'Suivant' }).click()
   await page.getByRole('button', { name: 'Date spécifique' }).click()
   await page.getByRole('button', { name: new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }), exact: true }).click()
-  await page.locator('input[type=time]').fill('23:59')
+  await setTime(page, '23:59')
   await page.getByRole('button', { name: 'Suivant', exact: true }).click()
   await page.getByRole('button', { name: 'Activer' }).click()
   await expect.poll(() => programmed.length).toBe(1)

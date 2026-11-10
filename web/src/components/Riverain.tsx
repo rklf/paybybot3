@@ -8,7 +8,10 @@ import { loadLast, saveLast } from '@/components/PayWizard'
 import { PlansDialog } from '@/components/Pricing'
 import { ShinyButton } from '@/components/ui/shiny-button'
 import { cn } from '@/lib/utils'
+import { Notice } from '@/components/ui/notice'
+import { DateInput } from '@/components/ui/date-time-fields'
 import { ToggleSwitch } from '@/components/ui/toggle-switch'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { choice, ui } from '@/lib/styles'
 import { emailProblem } from '@/lib/validate'
 import { api, ApiError, type Account, type Activation, type Autopilot, type Money, type Overview, type Parking, type Rate } from '@/lib/api'
@@ -228,12 +231,6 @@ export function RenewalActions({
   const [confirming, setConfirming] = useState(false)
   const { later, paused } = pauseState(ap)
 
-  useEffect(() => {
-    if (!confirming) return
-    const id = setTimeout(() => setConfirming(false), 5000)
-    return () => clearTimeout(id)
-  }, [confirming])
-
   const [busy, setBusy] = useState(false)
 
   async function resume() {
@@ -264,6 +261,7 @@ export function RenewalActions({
       toast.error((e as Error).message)
     }
     setBusy(false)
+    setConfirming(false)
     onChanged()
   }
 
@@ -272,20 +270,7 @@ export function RenewalActions({
     return (
       // The card's own text size, like the resident card's « Renouvellement auto ».
       <div className={cn('space-y-3', className)}>
-        {confirming ? (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span className="text-ink">{stopLabel} ?</span>
-            <span className="flex gap-2">
-              <button onClick={() => setConfirming(false)} className="rounded-lg px-3 py-1.5 text-sm font-semibold text-ink/70 hover:bg-ink/[0.05]">
-                Annuler
-              </button>
-              <button onClick={stop} disabled={busy} className="rounded-lg bg-destructive px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60">
-                Confirmer
-              </button>
-            </span>
-          </div>
-        ) : (
-          <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center justify-between gap-4">
             <span className="min-w-0">
               <span className="block text-[1.05rem] text-ink">{switchLabel}</span>
               {detail}
@@ -301,7 +286,15 @@ export function RenewalActions({
             )}
             <ToggleSwitch checked label={switchLabel} disabled={busy} busy={busy} onPress={() => setConfirming(true)} />
           </div>
-        )}
+        <ConfirmDialog
+          open={confirming}
+          onOpenChange={setConfirming}
+          title={`${stopLabel} ?`}
+          description="Le ticket en cours reste valable jusqu’à sa fin. Aucun nouveau ticket ne sera pris."
+          confirmLabel={stopLabel}
+          onConfirm={stop}
+          busy={busy}
+        />
         {later ? (
           <div className="flex items-center justify-between gap-3">
             <PlannedPause ap={ap} className="flex-1" />
@@ -337,19 +330,21 @@ export function RenewalActions({
             <Pause className="size-4" /> Programmer une pause
           </button>
         )}
-        {withStop && <button
-          onClick={() => (confirming ? stop() : setConfirming(true))}
-          disabled={busy}
-          className={cn(
-            actionBtn,
-            confirming
-              ? 'border-destructive bg-destructive text-white'
-              : 'border-destructive/30 text-destructive hover:border-destructive',
-          )}
-        >
-          {confirming ? 'Confirmer l’arrêt' : stopLabel}
-        </button>}
+        {withStop && (
+          <button onClick={() => setConfirming(true)} disabled={busy} className={cn(actionBtn, 'border-destructive/30 text-destructive hover:border-destructive')}>
+            {stopLabel}
+          </button>
+        )}
       </div>
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={`${stopLabel} ?`}
+        description="Le ticket en cours reste valable jusqu’à sa fin. Aucun nouveau ticket ne sera pris."
+        confirmLabel={stopLabel}
+        onConfirm={stop}
+        busy={busy}
+      />
       {pausing && <PauseDialog ap={ap} onClose={() => setPausing(false)} onDone={onChanged} />}
     </div>
   )
@@ -642,20 +637,6 @@ export function RenewalSwitch({
         trigger={(open, isOpen) => <OpeningSwitch open={open} isOpen={isOpen} />}
       />
     )
-  if (confirming)
-    return (
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="text-ink">Arrêter le renouvellement ?</span>
-        <span className="flex gap-2">
-          <button onClick={() => setConfirming(false)} className="rounded-lg px-3 py-1.5 text-sm font-semibold text-ink/70 hover:bg-ink/[0.05]">
-            Annuler
-          </button>
-          <button onClick={stop} disabled={busy} className="rounded-lg bg-destructive px-3 py-1.5 text-sm font-semibold text-white">
-            Arrêter
-          </button>
-        </span>
-      </div>
-    )
   return (
     <>
       {row(() =>
@@ -669,6 +650,15 @@ export function RenewalSwitch({
       )}
       {details}
       {pausing && <PauseDialog ap={ap} onClose={() => setPausing(false)} onDone={onChanged} />}
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title="Arrêter le renouvellement ?"
+        description="Le ticket en cours reste valable jusqu’à sa fin. Plus aucune semaine ne sera payée automatiquement."
+        confirmLabel="Arrêter le renouvellement"
+        onConfirm={stop}
+        busy={busy}
+      />
     </>
   )
 }
@@ -965,10 +955,10 @@ export function RiverainDialog({
 
           {!allCards.length && <NoPayment compact onRefresh={async () => onDone()} />}
           {allCards.length > 0 && !cards.length && (
-            <p role="alert" className="rounded-xl border-l-4 border-destructive bg-destructive/8 px-4 py-3 text-sm text-destructive">
+            <Notice>
               {allCards.length > 1 ? "Les cartes" : "La carte"} de votre compte PayByPhone {allCards.length > 1 ? 'ont' : 'a'} expiré (
               {allCards.map((p) => p.label.split('—').pop()!.trim()).join(', ')}). Ajoutez votre nouvelle carte dans l'application PayByPhone, puis rouvrez cette fenêtre.
-            </p>
+            </Notice>
           )}
 
           {cards.length > 1 && (
@@ -1043,12 +1033,12 @@ export function RiverainDialog({
           </div>
 
           {error && (
-            <p role="alert" className="rounded-xl border-l-4 border-destructive bg-destructive/8 px-4 py-3 text-sm whitespace-pre-line text-destructive">
+            <Notice className="whitespace-pre-line">
               {error}
               {cardRefused && cards.length > 1 && (
                 <span className="mt-2 block font-semibold">Vous pouvez aussi choisir votre autre carte ci-dessus, puis réessayer.</span>
               )}
-            </p>
+            </Notice>
           )}
 
           {/* After a refusal: retry on purpose (once the card is checked or changed in PayByPhone, or with the other
@@ -1287,9 +1277,9 @@ function EmailDialog({ ap, demo, onClose, onDone }: { ap: Autopilot; demo: boole
             className={ui.field}
           />
           {error && (
-            <p role="alert" className={ui.error}>
+            <Notice>
               {error}
-            </p>
+            </Notice>
           )}
           <button type="submit" disabled={saving || email.trim() === (ap.email ?? '')} className={ui.primary}>
             {saving ? <Loader2 className="size-5 animate-spin" /> : 'Enregistrer'}
@@ -1346,21 +1336,14 @@ function PauseDialog({ ap, onClose, onDone }: { ap: Autopilot; onClose: () => vo
             <ZonePlate zone={ap.location} />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="space-y-1.5">
+            <div className="space-y-1.5">
               <span className={ui.label}>Premier jour</span>
-              <input type="date" min={today} value={start} onChange={(e) => setStart(e.target.value)} className={cn(ui.field, 'h-12 text-base')} />
-            </label>
-            <label className="space-y-1.5">
+              <DateInput label="Premier jour" min={today} value={start} onChange={setStart} />
+            </div>
+            <div className="space-y-1.5">
               <span className={ui.label}>Dernier jour</span>
-              <input
-                type="date"
-                min={start}
-                value={end}
-                disabled={noEnd}
-                onChange={(e) => setEnd(e.target.value)}
-                className={cn(ui.field, 'h-12 text-base disabled:opacity-40')}
-              />
-            </label>
+              <DateInput label="Dernier jour" min={start} value={end} disabled={noEnd} onChange={setEnd} className="data-[disabled=true]:opacity-40" />
+            </div>
           </div>
           <label className="flex cursor-pointer items-center gap-3">
             <input type="checkbox" checked={noEnd} onChange={(e) => setNoEnd(e.target.checked)} className="size-5 accent-[var(--eu)]" />
@@ -1373,7 +1356,7 @@ function PauseDialog({ ap, onClose, onDone }: { ap: Autopilot; onClose: () => vo
                 ? `En pause du ${dayText(new Date(start + 'T12:00').getTime())} au ${dayText(new Date(end + 'T12:00').getTime())} inclus. Reprise automatique le lendemain.`
                 : 'Choisissez le dernier jour de pause.'}
           </p>
-          {error && <p role="alert" className="rounded-lg border-l-4 border-destructive bg-destructive/10 px-4 py-3 text-destructive">{error}</p>}
+          {error && <Notice>{error}</Notice>}
           <button onClick={save} disabled={!valid || saving} className={ui.primary}>
             {saving ? <Loader2 className="size-5 animate-spin" /> : 'Mettre en pause'}
           </button>

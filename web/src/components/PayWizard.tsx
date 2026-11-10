@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { NoPayment } from '@/components/NoPayment'
 import { Plate, ZonePlate, PayByPhone } from '@/components/signs'
 import { cn } from '@/lib/utils'
+import { Notice } from '@/components/ui/notice'
 import { choice, ui } from '@/lib/styles'
 import { api, ApiError, clock, money, unitLabel, type Money, type Overview, type Parking, type Rate, type Unit } from '@/lib/api'
 
@@ -397,9 +398,9 @@ export function PayWizard({
         )}
 
         {error && (
-          <p role="alert" className={cn('mt-6', ui.error)}>
+          <Notice className="mt-6">
             {error}
-          </p>
+          </Notice>
         )}
       </main>
 
