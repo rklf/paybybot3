@@ -289,3 +289,13 @@ input:-webkit-autofill::first-line {
 }
 .trial-bar { overflow: hidden; animation: trial-bar-in .5s ease-out both; }
 @media (prefers-reduced-motion: reduce) { .trial-bar { animation: none; } }
+
+/* HeroUI's Switch with its own theme colors: shadcn's tokens of the same names (--accent, --default…) would paint it
+   otherwise (a black knob once on). Values from @heroui/styles' default theme, kept to the switch only. */
+.switch {
+  --accent: oklch(0.6204 0.195 253.83);
+  --accent-foreground: oklch(0.9911 0 0);
+  --accent-hover: color-mix(in oklab, var(--accent) 90%, var(--accent-foreground) 10%);
+  --default: oklch(94% 0.001 286.375);
+  --default-foreground: oklch(0.2103 0.0059 285.89);
+}

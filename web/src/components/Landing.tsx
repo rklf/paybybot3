@@ -292,8 +292,9 @@ export function SampleTicket({ className, interactive }: { className?: string; i
               }}
             />
           ) : (
-            <span className="relative h-6 w-11 rounded-full bg-[#4e9aa0]" aria-hidden>
-              <span className="absolute top-1 right-1 size-4 rounded-full bg-white" />
+            // The same switch, on, as a picture: inert, so it cannot be pressed nor reached with the keyboard.
+            <span inert aria-hidden className="pointer-events-none">
+              <ToggleSwitch checked label="Renouvellement auto (exemple)" onPress={() => {}} />
             </span>
           )}
         </div>
