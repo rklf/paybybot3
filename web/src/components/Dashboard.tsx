@@ -14,6 +14,7 @@ import { HostedFooter } from '@/components/Footer'
 import { CheckoutDone } from '@/components/CheckoutDone'
 import { ActivateRenewal, CardGate, OpeningSwitch, RenewalActions, RenewalNote, RenewalSwitch, RiverainDialog, pauseState, nextRenewal, when, ZoneTag, RiverainCard, WEEKLY_LABEL, renewalOf, runPendingRenewals } from '@/components/Riverain'
 import { RippleButton } from '@/components/ui/ripple-button'
+import { ToggleSwitch } from '@/components/ui/toggle-switch'
 import { api, type Account, type Me, type Overview, type Session } from '@/lib/api'
 
 function useNow(interval = 1000) {
@@ -171,16 +172,7 @@ function Ticket({
       {daily && !renewal && !data.autopilots.some((ap) => ap.enabled && sameCar(ap.plate, session.plate)) && (
         <div className="flex items-center justify-between gap-4 border-t border-ink/[0.06] px-5 py-4">
           <span className="text-[1.05rem] text-ink">Renouvellement auto</span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={renewing}
-            aria-label="Renouvellement auto"
-            onClick={() => setRenewing(true)}
-            className={cn('relative h-7 w-12 shrink-0 rounded-full transition-colors', renewing ? 'bg-[#4e9aa0]' : 'bg-ink/15')}
-          >
-            <span className={cn('absolute top-1 size-5 rounded-full bg-white shadow transition-all', renewing ? 'left-6' : 'left-1')} />
-          </button>
+          <ToggleSwitch checked={renewing} label="Renouvellement auto" onPress={() => setRenewing(true)} />
         </div>
       )}
     </article>
@@ -620,13 +612,18 @@ export function Dashboard({
           </div>
         )}
 
-        {/* As soon as a ticket runs: another car's renewal (resident) or ticket (any other). Not when every car of
-            the account has its ticket already: there is no other car to pick. */}
-        {data && running.length > 0 && data.vehicles.some((v) => !running.some((s) => sameCar(s.plate, v.plate))) && (
+        {/* The page's call to action, always: any car, any ticket (the wizard asks the car first, then the resident
+            renewal or the vehicle type). It replaces « Renouveler un autre véhicule », which did the same. */}
+        {data && data.vehicles.length > 0 && (
           <div className="mt-6">
-            {/* Any car, any ticket: the wizard asks the car first, then resident options or the vehicle type. */}
-            <RippleButton onClick={() => (setBackPlate(undefined), setProgramAsked((n) => n + 1))} rippleColor="#ADD8E6" className={ui.primaryGray}>
-              Renouveler un autre véhicule
+            <RippleButton
+              onClick={() => (setBackPlate(undefined), setProgramAsked((n) => n + 1))}
+              rippleColor="#ADD8E6"
+              className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-eu text-lg font-bold text-white shadow-[0_6px_20px_-8px_rgb(29_78_163/0.55)] transition hover:bg-[#173f86] active:scale-[0.99]"
+            >
+              <span className="inline-flex items-center gap-2">
+                <Plus className="size-5" /> Programmer un stationnement
+              </span>
             </RippleButton>
           </div>
         )}
@@ -679,21 +676,16 @@ function IdleCar({ plate, onPick }: { plate: string; onPick: () => void }) {
       </div>
       <div className="flex items-center justify-between gap-4 border-t border-ink/[0.06] px-5 py-5">
         <span className="text-base text-ink sm:text-[1.05rem]">Renouvellement auto</span>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={pressed}
-          aria-label={`Programmer un renouvellement pour ${plate}`}
-          onClick={() => {
+        <ToggleSwitch
+          checked={pressed}
+          label={`Programmer un renouvellement pour ${plate}`}
+          onPress={() => {
             if (pressed) return
             setPressed(true)
             setTimeout(onPick, 280) // the knob slides to green, then the window opens
             setTimeout(() => setPressed(false), 900) // off again behind it: on only once a ticket is programmed
           }}
-          className={cn('relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200', pressed ? 'bg-[#4e9aa0]' : 'bg-ink/15 hover:bg-ink/20')}
-        >
-          <span className={cn('absolute top-1 left-1 size-5 rounded-full bg-white shadow transition-transform duration-200', pressed && 'translate-x-5')} />
-        </button>
+        />
       </div>
     </article>
   )

@@ -14,6 +14,10 @@ async function demo(page: Page) {
   await expect(page.getByRole('button', { name: 'Déconnexion' }).first()).toBeVisible()
 }
 
+/** Turns a switch on the way a person does: on its visible part (HeroUI's input itself is hidden). */
+const press = (page: Page, name: string | RegExp) =>
+  page.locator('[data-slot=switch-content]').filter({ has: page.getByRole('switch', { name }) }).first().click()
+
 /** The button that opens the ticket wizard (its name follows the offer: « Programmer un ticket », « Carte mobilité… »). */
 const wizardButton = (page: Page) =>
   page.getByRole('button', { name: /Programmer un ticket|Carte mobilité/ }).first()
@@ -86,7 +90,7 @@ test('sans voiture résidente ni ticket : une carte par voiture, l’interrupteu
   await demo(page)
   await page.keyboard.press('Escape') // the wizard opens by itself on a first visit without a resident car
   await expect(page.getByText('Non couvert')).toHaveCount(2)
-  await page.getByRole('switch', { name: /LM.?789.?NP/ }).click()
+  await press(page, /LM.?789.?NP/)
   await expect(page.getByText(/Étape 1 sur 5/)).toBeVisible()
   await expect(page.getByRole('button', { name: /LM-789-NP/ })).toHaveAttribute('aria-pressed', 'true')
 })
@@ -106,18 +110,12 @@ async function oneTicket(page: Page, keep: (v: { plate: string }) => boolean) {
   })
 }
 
-test('un seul véhicule, déjà couvert : pas de bouton « Renouveler un autre véhicule »', async ({ page }) => {
+test('tableau de bord : le gros bouton « Programmer un stationnement » ouvre l’assistant', async ({ page }) => {
   await oneTicket(page, (v) => /AB.?123.?CD/.test(v.plate))
   await demo(page)
-  await expect(page.getByText(/Couvert jusqu’au/).first()).toBeVisible()
   await expect(page.getByRole('button', { name: 'Renouveler un autre véhicule' })).toHaveCount(0)
-})
-
-test('un autre véhicule sans ticket : le bouton « Renouveler un autre véhicule » reste', async ({ page }) => {
-  await oneTicket(page, () => true)
-  await demo(page)
-  await expect(page.getByText(/Couvert jusqu’au/).first()).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Renouveler un autre véhicule' })).toBeVisible()
+  await page.getByRole('button', { name: 'Programmer un stationnement' }).click()
+  await expect(page.getByRole('dialog').getByText(/Étape 1 sur/)).toBeVisible()
 })
 
 test('sans abonnement : « Programmer un ticket » ouvert avant le tarif résident n’est pas recouvert par le renouvellement', async ({ page }) => {
@@ -147,6 +145,17 @@ test('sans abonnement : « Programmer un ticket » ouvert avant le tarif réside
   await page.waitForTimeout(800)
   await expect(page.getByRole('dialog').getByText('Pris automatiquement les jours choisis')).toBeVisible()
   await expect(page.getByText('Renouvellement hebdomadaire')).toHaveCount(0)
+})
+
+test('accueil : activer l’interrupteur de l’exemple mène à l’inscription', async ({ page }) => {
+  await page.goto(LINK)
+  await expect(home(page)).toBeVisible()
+  const sample = page.getByRole('switch', { name: 'Activer le renouvellement automatique' })
+  await expect(sample).not.toBeChecked()
+  await press(page, 'Activer le renouvellement automatique')
+  await expect(page).toHaveURL(/#\/inscription/)
+  // The same card beside the sign-up and sign-in forms is a picture: nothing to press.
+  await expect(page.getByRole('switch', { name: 'Activer le renouvellement automatique' })).toHaveCount(0)
 })
 
 test('bienvenue sans carte bancaire valide : croix rouge, on ne passe pas', async ({ page }) => {
@@ -294,10 +303,10 @@ test('retour de paiement : un ticket programmé n’affiche pas « automatisé �
 
 test('renouvellement résident : s’active depuis la carte du véhicule', async ({ page }) => {
   await demo(page)
-  await page.getByRole('switch', { name: /Renouvellement/ }).first().click() // the switch alone, off, opens it
+  await press(page, /Renouvellement/) // the switch alone, off, opens it
   await page.getByRole('dialog').getByRole('button', { name: /^Activer le renouvellement/ }).click()
   // Under the switch: « Activé » or the next renewal, depending on the ticket.
-  await expect(page.getByRole('switch', { name: /Renouvellement/ }).first()).toHaveAttribute('aria-checked', 'true', { timeout: 15_000 })
+  await expect(page.getByRole('switch', { name: /Renouvellement/ }).first()).toBeChecked({ timeout: 15_000 })
 })
 
 test('mon compte : la carte bancaire et sa date de fin', async ({ page }) => {

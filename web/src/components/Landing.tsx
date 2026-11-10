@@ -5,6 +5,7 @@ import { HostedFooter } from '@/components/Footer'
 import { PublicTopBar } from '@/components/TopBar'
 import { PlanCards } from '@/components/Pricing'
 import { cn } from '@/lib/utils'
+import { ToggleSwitch } from '@/components/ui/toggle-switch'
 import { TRY_LABEL, ui } from '@/lib/styles'
 import { brandNodes, PayByBot, PayByPhone, Plate, withBrands, withPayByPhone } from '@/components/signs'
 
@@ -252,11 +253,17 @@ export function Home({ hosted }: { hosted: boolean }) {
 }
 
 /** The home page's example: a ticket card as on the dashboard, renewal on, with made-up data (no real account). */
-export function SampleTicket({ className }: { className?: string }) {
+/** The ticket card of the home page. `interactive`: its switch starts off, and turning it on leads to the sign-up. */
+export function SampleTicket({ className, interactive }: { className?: string; interactive?: boolean }) {
+  const [on, setOn] = useState(false)
   return (
     <div
-      role="img"
-      aria-label="Exemple : renouvellement automatique actif, prochain renouvellement jeudi à 20h, rien à faire de votre côté"
+      role={interactive ? 'group' : 'img'}
+      aria-label={
+        interactive
+          ? 'Exemple de renouvellement automatique : activez-le pour créer votre compte'
+          : 'Exemple : renouvellement automatique actif, prochain renouvellement jeudi à 20h, rien à faire de votre côté'
+      }
       className={cn(
         'w-full max-w-[26rem] overflow-hidden rounded-2xl border border-ink/10 bg-white text-left shadow-[0_30px_60px_-28px_rgb(11_16_36/0.3),0_8px_18px_-10px_rgb(11_16_36/0.1)]',
         className,
@@ -274,9 +281,21 @@ export function SampleTicket({ className }: { className?: string }) {
       <div className="border-t border-ink/[0.06] px-5 py-4">
         <div className="flex items-center justify-between">
           <span className="text-ink">Renouvellement auto</span>
-          <span className="relative h-6 w-11 rounded-full bg-[#4e9aa0]" aria-hidden>
-            <span className="absolute top-1 right-1 size-4 rounded-full bg-white" />
-          </span>
+          {interactive ? (
+            <ToggleSwitch
+              checked={on}
+              label="Activer le renouvellement automatique"
+              onPress={() => {
+                if (on) return
+                setOn(true)
+                setTimeout(() => (window.location.hash = '#/inscription'), 350) // the knob slides, then the sign-up
+              }}
+            />
+          ) : (
+            <span className="relative h-6 w-11 rounded-full bg-[#4e9aa0]" aria-hidden>
+              <span className="absolute top-1 right-1 size-4 rounded-full bg-white" />
+            </span>
+          )}
         </div>
         <dl className="mt-3 space-y-1 text-sm">
           <div className="flex justify-between gap-4">
@@ -343,7 +362,7 @@ export function Landing({ hosted, heroOnly = false, lean = false }: { hosted: bo
             </>
           )}
         </div>
-        {heroOnly && <SampleTicket className="mx-auto lg:mx-0 lg:justify-self-end lg:origin-right lg:scale-[1.15] xl:scale-[1.25] 2xl:scale-[1.35]" />}
+        {heroOnly && <SampleTicket interactive className="mx-auto lg:mx-0 lg:justify-self-end lg:origin-right lg:scale-[1.15] xl:scale-[1.25] 2xl:scale-[1.35]" />}
         </div>
       </section>
 

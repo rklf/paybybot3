@@ -8,6 +8,7 @@ import { loadLast, saveLast } from '@/components/PayWizard'
 import { PlansDialog } from '@/components/Pricing'
 import { ShinyButton } from '@/components/ui/shiny-button'
 import { cn } from '@/lib/utils'
+import { ToggleSwitch } from '@/components/ui/toggle-switch'
 import { choice, ui } from '@/lib/styles'
 import { emailProblem } from '@/lib/validate'
 import { api, ApiError, type Account, type Activation, type Autopilot, type Money, type Overview, type Parking, type Rate } from '@/lib/api'
@@ -298,19 +299,7 @@ export function RenewalActions({
                 Pause
               </button>
             )}
-            <button
-              type="button"
-              role="switch"
-              aria-checked
-              aria-label={switchLabel}
-              disabled={busy}
-              onClick={() => setConfirming(true)}
-              className="relative h-7 w-12 shrink-0 rounded-full bg-[#4e9aa0] transition-colors disabled:opacity-60"
-            >
-              <span className="absolute top-1 left-1 grid size-5 translate-x-5 place-items-center rounded-full bg-white shadow transition-transform">
-                {busy && <Loader2 className="size-3 animate-spin text-ink/50" />}
-              </span>
-            </button>
+            <ToggleSwitch checked label={switchLabel} disabled={busy} busy={busy} onPress={() => setConfirming(true)} />
           </div>
         )}
         {later ? (
@@ -561,20 +550,15 @@ export function OpeningSwitch({ open, isOpen, on = false }: { open: () => void; 
   return (
     <div className="flex items-center justify-between gap-4">
       <SwitchLabel on={checked} />
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label="Renouvellement résident automatique"
-        onClick={() => {
+      <ToggleSwitch
+        checked={checked}
+        label="Renouvellement résident automatique"
+        onPress={() => {
           if (pressed || isOpen) return
           setPressed(true)
           setTimeout(open, 280) // the knob slides to green, then the window opens
         }}
-        className={cn('relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200', checked ? 'bg-[#4e9aa0]' : 'bg-ink/15 hover:bg-ink/20')}
-      >
-        <span className={cn('absolute top-1 left-1 size-5 rounded-full bg-white shadow transition-transform duration-200', checked && 'translate-x-5')} />
-      </button>
+      />
     </div>
   )
 }
@@ -640,19 +624,7 @@ export function RenewalSwitch({
           <Pause className="size-3.5" /> Pause
         </button>
       )}
-      <button
-        type="button"
-        role="switch"
-        aria-checked={on}
-        aria-label="Renouvellement résident automatique"
-        disabled={busy}
-        onClick={onClick}
-        className={cn('relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-60', on ? 'bg-[#4e9aa0]' : 'bg-ink/15')}
-      >
-        <span className={cn('absolute top-1 left-1 grid size-5 place-items-center rounded-full bg-white shadow transition-transform', on && 'translate-x-5')}>
-          {busy && <Loader2 className="size-3 animate-spin text-ink/50" />}
-        </span>
-      </button>
+      <ToggleSwitch checked={on} label="Renouvellement résident automatique" disabled={busy} busy={busy} onPress={onClick} />
     </div>
   )
 
