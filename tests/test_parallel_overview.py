@@ -21,11 +21,13 @@ def slow(value):
 class ParallelOverview(unittest.TestCase):
     """The dashboard's calls (PayByPhone and the database) go out together, not one after the other."""
 
+    def setUp(self):
+        web.BUNDLE_REFUSED.clear()
+
     def test_overview_waits_for_the_slowest_call_only(self):
         session = web.UserSession.for_bot(MagicMock(), "+33612345678")
-        session.bot.get_vehicles.side_effect = slow([{"licensePlate": "AB-123-CD"}])
-        session.bot.get_payment_accounts.side_effect = slow({})
-        session.bot.get_parking_sessions.side_effect = slow([])
+        # PayByPhone's three reads in one request (get_overview), beside the database's.
+        session.bot.get_overview.side_effect = slow(([{"licensePlate": "AB-123-CD"}], {}, []))
         with patch.object(web, "current", return_value=session), patch.object(web, "HOSTED", True), \
                 patch.dict(os.environ, {"PAYBYBOT_SECRET": "t"}), patch.object(web, "load_account", side_effect=slow({})), \
                 patch.object(web, "store", side_effect=slow([])):
@@ -33,7 +35,8 @@ class ParallelOverview(unittest.TestCase):
             data = web.overview(pbb_session="x")
             took = time.monotonic() - start
         self.assertEqual([v["plate"] for v in data["vehicles"]], ["AB-123-CD"])
-        self.assertLess(took, 3 * SLOW)  # one after the other: 5 x SLOW
+        self.assertLess(took, 2.5 * SLOW)  # one after the other: 3 x SLOW
+        session.bot.get_vehicles.assert_not_called()  # not asked again separately
 
 
 class OneRefreshAtATime(unittest.TestCase):

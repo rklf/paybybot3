@@ -1699,12 +1699,28 @@ def valid_invite(code):
     return bool(re.fullmatch(r"[0-9a-f]{14}", code)) and hmac.compare_digest(invite_code(code[:8]), code)
 
 
-def encrypt_credential(refresh_token):
-    return _fernet("credential").encrypt(refresh_token.encode()).decode()
+KEEP_ACCESS_MARGIN = 300  # seconds: a kept PayByPhone access token is not used in its last 5 minutes
+
+
+def encrypt_credential(refresh_token, bot=None):
+    """The stored PayByPhone login: the refresh token, and with a freshly logged-in `bot` its access token and when it
+    ends, so the next renewal run uses it instead of logging in again."""
+    if bot is not None and getattr(bot, "authorization", None) and getattr(bot, "expires_in", None):
+        value = json.dumps({"r": refresh_token, "a": bot.authorization, "x": int(time.time()) + int(bot.expires_in)})
+    else:
+        value = refresh_token
+    return _fernet("credential").encrypt(value.encode()).decode()
+
+
+def read_credential(value):
+    """{"r": refresh token, "a": access token, "x": its end (epoch)}; a credential stored before holds the refresh
+    token alone."""
+    text = _fernet("credential").decrypt(value.encode()).decode()
+    return json.loads(text) if text.startswith("{") else {"r": text}
 
 
 def decrypt_credential(value):
-    return _fernet("credential").decrypt(value.encode()).decode()
+    return read_credential(value)["r"]
 
 
 def sealed_with_old(value, purpose):
@@ -1720,24 +1736,30 @@ def sealed_with_old(value, purpose):
         return True
 
 
-def stored_refresh(owner):
-    """The PayByPhone refresh token kept with this account's renewals, if any."""
+def stored_login(owner):
+    """The PayByPhone login kept with this account's renewals (see read_credential), or None."""
     if not owner:
         return None
     try:
         value = store("renewal_get_credential", p_owner=owner)
-        return decrypt_credential(value) if value else None
+        return read_credential(value) if value else None
     except Exception as e:
         log.warning("stored PayByPhone token unreadable: %s", type(e).__name__)
         return None
 
 
-def share_refresh(owner, refresh):
-    """PayByPhone may replace the refresh token at each use: the account's renewals keep the newest one."""
+def stored_refresh(owner):
+    """The PayByPhone refresh token kept with this account's renewals, if any."""
+    return (stored_login(owner) or {}).get("r")
+
+
+def share_refresh(owner, refresh, bot=None):
+    """PayByPhone may replace the refresh token at each use: the account's renewals keep the newest one (and, with
+    the bot that just logged in, its access token)."""
     if not (owner and refresh):
         return
     try:
-        store("renewal_put_credential", p_owner=owner, p_credential=encrypt_credential(refresh))
+        store("renewal_put_credential", p_owner=owner, p_credential=encrypt_credential(refresh, bot))
     except Exception as e:
         log.warning("could not store the new PayByPhone token: %s", type(e).__name__)
 
@@ -1753,10 +1775,22 @@ def refusal(e):
     return "%s %s" % (e.response.status_code, code or "")
 
 
-def bot_from_refresh(refresh, owner=None):
-    """PayByPhone login without the password. The login cookie and the renewals each hold a refresh token, and
-    using one may replace it: if this one is refused, the newest stored for the account is tried, and the token
-    PayByPhone hands back is stored for all."""
+def bot_from_refresh(refresh, owner=None, kept=True):
+    """PayByPhone login without the password. The access token kept from the last login is used while it is valid
+    (`kept`; no request then). Else the login cookie and the renewals each hold a refresh token, and using one may
+    replace it: if this one is refused, the newest stored for the account is tried, and the tokens PayByPhone hands
+    back are stored for all. A bot on a kept token logs in again by itself if PayByPhone refuses it."""
+    login = stored_login(owner) if kept else None
+    if login and login.get("a") and login.get("x", 0) - KEEP_ACCESS_MARGIN > time.time():
+        bot = Bot.__new__(Bot)
+        bot.authorization, bot.refresh_token, bot.expires_in = login["a"], login["r"], None
+
+        def reauth():
+            fresh = bot_from_refresh(bot.refresh_token, owner, kept=False)
+            bot.authorization, bot.refresh_token = fresh.authorization, fresh.refresh_token
+            log.info("kept PayByPhone access token refused: logged in again")
+        bot._reauth = reauth
+        return bot
     tried, error = set(), None
     # The newest stored for the account first: a copy already replaced (this page's, a renewal's) only if it fails,
     # never sent before it (PayByPhone may drop every token of a login when it is shown one already replaced).
@@ -1771,8 +1805,7 @@ def bot_from_refresh(refresh, owner=None):
             log.warning("PayByPhone refresh token refused: %s", refusal(e))
             error = e
             continue
-        if bot.refresh_token and bot.refresh_token != token:
-            share_refresh(owner, bot.refresh_token)
+        share_refresh(owner, bot.refresh_token or token, bot)  # the newest refresh token, and the access token
         return bot
     # Several requests of one page found the access token expired at once: one of them got the new tokens and stores
     # them a moment later. Its token, once there, instead of « connexion expirée » for the others.
@@ -1785,8 +1818,7 @@ def bot_from_refresh(refresh, owner=None):
             except requests.HTTPError as e:
                 log.warning("PayByPhone refresh token refused after waiting: %s", refusal(e))
                 raise
-            if bot.refresh_token and bot.refresh_token != token:
-                share_refresh(owner, bot.refresh_token)
+            share_refresh(owner, bot.refresh_token or token, bot)
             log.info("PayByPhone token taken from a request refreshed at the same time")
             return bot
     raise error or ValueError("no PayByPhone refresh token")
@@ -2066,7 +2098,9 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
         if previous_error != RELOGIN:
             notify(row, "problem", message=RELOGIN)
         return "relogin"
-    if bot.refresh_token and bot.refresh_token != refresh:
+    if bot.refresh_token and bot.refresh_token != refresh and getattr(bot, "expires_in", None):
+        patch["credential"] = encrypt_credential(bot.refresh_token, bot)  # a login just done: its tokens
+    elif bot.refresh_token and bot.refresh_token != refresh:
         patch["credential"] = encrypt_credential(bot.refresh_token)
     elif sealed_with_old(row.get("credential"), "credential"):
         patch["credential"] = encrypt_credential(refresh)
@@ -3170,6 +3204,27 @@ def guarded(fn):
         raise HTTPException(error_status(e), friendly_error(e))
 
 
+# The dashboard's three reads as one request (Bot.get_overview). Refused once by PayByPhone (a field it no longer knows):
+# the three separate reads from then on, for this process, without asking again.
+BUNDLE_REFUSED = set()
+
+
+def read_overview(s):
+    """Vehicles, payment accounts and current tickets in one PayByPhone request; None when it cannot be used (the demo,
+    or PayByPhone refusing it), and the page then reads them separately. A login refused or PayByPhone down is raised
+    as for the separate reads."""
+    if s.demo or BUNDLE_REFUSED or not hasattr(s.bot, "get_overview"):
+        return None
+    try:
+        return s.call("get_overview")
+    except (RuntimeError, requests.HTTPError) as e:
+        if isinstance(e, requests.HTTPError) and (e.response is None or e.response.status_code != 400):
+            raise  # not a refusal of the request itself (expired login, PayByPhone busy or down)
+        BUNDLE_REFUSED.add(True)
+        log.warning("one-request overview refused by PayByPhone, separate reads from now on: %s", str(e)[:300])
+        return None
+
+
 @app.get("/api/overview")
 def overview(pbb_session: str = Cookie(None)):
     s = current(pbb_session)
@@ -3190,12 +3245,20 @@ def overview(pbb_session: str = Cookie(None)):
                 return [with_next_ticket(stored_to_autopilot(r)) for r in store("renewal_list", p_owner=owner_id(s.username))]
             return [with_next_ticket(a) for a in s.autopilots.values()]
 
-        # The five reads go out together: the page waits for the slowest one, not for their sum.
-        jobs = {"vehicles": lambda: s.call("get_vehicles"), "accounts": lambda: s.call("get_payment_accounts"),
-                "sessions": lambda: s.call("get_parking_sessions"), "kept": kept_zones, "renewals": renewals}
+        # The reads go out together: the page waits for the slowest one, not for their sum. PayByPhone's three in one
+        # request when it takes it, else separately.
+        jobs = {"bundle": lambda: read_overview(s), "kept": kept_zones, "renewals": renewals}
         with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
             futures = {k: pool.submit(contextvars.copy_context().run, f) for k, f in jobs.items()}
             got = {k: f.result() for k, f in futures.items()}
+        if got.pop("bundle") is not None:
+            got["vehicles"], got["accounts"], got["sessions"] = futures["bundle"].result()
+        else:
+            separate = {"vehicles": lambda: s.call("get_vehicles"), "accounts": lambda: s.call("get_payment_accounts"),
+                        "sessions": lambda: s.call("get_parking_sessions")}
+            with ThreadPoolExecutor(max_workers=len(separate)) as pool:
+                futures = {k: pool.submit(contextvars.copy_context().run, f) for k, f in separate.items()}
+                got.update({k: f.result() for k, f in futures.items()})
         vehicles = [v for v in got["vehicles"] if not v.get("archived")]
         accounts = got["accounts"] or {}
         payments = normalize_accounts(accounts)

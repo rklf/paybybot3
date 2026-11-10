@@ -180,7 +180,8 @@ class RefreshRace(unittest.TestCase):
                 patch.object(web, "share_refresh") as share:
             bot = web.bot_from_refresh("old", "owner")
         self.assertEqual(bot.refresh_token, "newer")
-        share.assert_called_once_with("owner", "newer")
+        share.assert_called_once()
+        self.assertEqual(share.call_args[0][:2], ("owner", "newer"))  # and the bot, for its access token
 
     def test_still_refused_when_nothing_new_was_stored(self):
         refused = requests.HTTPError(response=SimpleNamespace(status_code=400, json=lambda: {"error": "invalid_grant"}))

@@ -288,13 +288,22 @@ export default function App() {
     refresh()
   }, [me, refresh])
 
+  // Something about to change: a ticket ending within half an hour (or just ended), or a renewal with a problem. Then
+  // the page looks again every minute; else every 5 minutes is enough (and the tab coming back in front looks at once).
+  const lively = !!data && (
+    data.sessions.some((s) => {
+      const left = new Date(s.expire).getTime() - Date.now()
+      return left < 30 * 60_000 && left > -10 * 60_000
+    }) || data.autopilots.some((ap) => ap.enabled && !!ap.lastError)
+  )
+
   useEffect(() => {
     if (!me) return
-    // A tab in the background asks nothing: each refresh costs PayByBot 3 calls to PayByPhone, and hundreds of tabs
+    // A tab in the background asks nothing: each refresh costs PayByBot a call to PayByPhone, and hundreds of tabs
     // left open would add up (the dashboard refreshes anyway as soon as the tab is back in front).
     const tick = () => (document.visibilityState === 'visible' ? refresh() : undefined)
     if (!renewing) {
-      const id = setInterval(tick, 60_000)
+      const id = setInterval(tick, lively ? 60_000 : 5 * 60_000)
       return () => clearInterval(id)
     }
     let left = 36
@@ -304,7 +313,7 @@ export default function App() {
       clearInterval(id)
       clearInterval(slow)
     }
-  }, [me, refresh, renewing])
+  }, [me, refresh, renewing, lively])
 
   async function logout() {
     await api.logout().catch(() => {})

@@ -86,7 +86,9 @@ class Bot:
 
     def _graphql(self, query, variables=None):
         # 429 (too many requests): PayByPhone did not process it, so it is sent again after a short wait, twice.
-        for attempt in range(3):
+        # 401 on a kept access token (see web.bot_from_refresh): logged in again once (_reauth), then sent again.
+        reauth = getattr(self, "_reauth", None)
+        for attempt in range(4):
             r = requests.post(
                 self.GRAPHQL_URL,
                 headers={
@@ -99,7 +101,11 @@ class Bot:
                 json={"operationName": None, "variables": variables or {}, "query": query},
                 timeout=45,
             )
-            if r.status_code != 429 or attempt == 2:
+            if r.status_code == 401 and reauth:
+                reauth()
+                reauth = None
+                continue
+            if r.status_code != 429 or attempt >= 2:
                 break
             try:
                 wait = min(float(r.headers.get("Retry-After") or 0), 5.0)
@@ -114,18 +120,20 @@ class Bot:
             raise RuntimeError("GraphQL error: %s" % json.dumps(j["errors"]))
         return j["data"]
 
-    def get_vehicles(self):
-        query = """query GetVehiclesV3($input: GetVehiclesInput!) {
-  getVehiclesV3(input: $input) {
+    _VEHICLE_FIELDS = """
     vehicleId
     legacyVehicleId
     licensePlate
     country
     jurisdiction
     type
-    archived
+    archived"""
+
+    def get_vehicles(self):
+        query = """query GetVehiclesV3($input: GetVehiclesInput!) {
+  getVehiclesV3(input: $input) {%s
   }
-}"""
+}""" % self._VEHICLE_FIELDS
         return self._graphql(query, {"input": {"profileName": "PayByPhone"}})[
             "getVehiclesV3"
         ]
@@ -150,7 +158,18 @@ class Bot:
 
     def _read_sessions(self, periodType, limit, extra):
         query = """query GetParkingSessionsV1($input: GetParkingSessionsInput!) {
-  getParkingSessionsV1(input: $input) {
+  getParkingSessionsV1(input: $input) {%s%%s
+  }
+}""" % self._SESSION_FIELDS
+        sessions = self._graphql(
+            query % extra, {"input": {"periodType": periodType, "offset": 0, "limit": limit}}
+        )["getParkingSessionsV1"]
+        for s in sessions:
+            s["startTime"] = _parse_dt(s.get("startTime"))
+            s["expireTime"] = _parse_dt(s.get("expireTime"))
+        return sessions
+
+    _SESSION_FIELDS = """
     parkingSessionId
     status
     type
@@ -172,16 +191,7 @@ class Bot:
     totalCost {
       amount
       currency
-    }%s
-  }
-}""" % extra
-        sessions = self._graphql(
-            query, {"input": {"periodType": periodType, "offset": 0, "limit": limit}}
-        )["getParkingSessionsV1"]
-        for s in sessions:
-            s["startTime"] = _parse_dt(s.get("startTime"))
-            s["expireTime"] = _parse_dt(s.get("expireTime"))
-        return sessions
+    }"""
 
     def get_parking_sessions(self, licensePlate=None, locationId=None):
         def pred(p):
@@ -211,7 +221,36 @@ class Bot:
 
     def get_payment_accounts(self):
         query = """query GetPaymentAccountsV1($input: GetPaymentAccountsInput!) {
-  getPaymentAccountsV1(input: $input) {
+  getPaymentAccountsV1(input: $input) {%s
+  }
+}""" % self._ACCOUNT_FIELDS
+        return self._graphql(query, {"input": {"mandateCountryCode": "FR"}})[
+            "getPaymentAccountsV1"
+        ]
+
+    def get_overview(self):
+        """Vehicles, payment accounts and current tickets in one GraphQL request (three fields of one query) instead of
+        three: what the dashboard reads on every visit. Raises like the separate reads if PayByPhone refuses it."""
+        query = """query GetOverview($vehicles: GetVehiclesInput!, $accounts: GetPaymentAccountsInput!, $sessions: GetParkingSessionsInput!) {
+  getVehiclesV3(input: $vehicles) {%s
+  }
+  getPaymentAccountsV1(input: $accounts) {%s
+  }
+  getParkingSessionsV1(input: $sessions) {%s%s
+  }
+}""" % (self._VEHICLE_FIELDS, self._ACCOUNT_FIELDS, self._SESSION_FIELDS, self._STOP_FIELDS)
+        got = self._graphql(query, {
+            "vehicles": {"profileName": "PayByPhone"},
+            "accounts": {"mandateCountryCode": "FR"},
+            "sessions": {"periodType": "CURRENT", "offset": 0, "limit": 50},
+        })
+        sessions = got["getParkingSessionsV1"]
+        for x in sessions:
+            x["startTime"] = _parse_dt(x.get("startTime"))
+            x["expireTime"] = _parse_dt(x.get("expireTime"))
+        return got["getVehiclesV3"], got["getPaymentAccountsV1"], sessions
+
+    _ACCOUNT_FIELDS = """
     paymentCards {
       cardType
       maskedCardNumber
@@ -232,12 +271,7 @@ class Bot:
       accountType
       paymentAccountId
       paymentScope
-    }
-  }
-}"""
-        return self._graphql(query, {"input": {"mandateCountryCode": "FR"}})[
-            "getPaymentAccountsV1"
-        ]
+    }"""
 
     def get_receipts(self, parkingSessionId):
         """Receipts of a parking session, with the card it was paid with (brand and last four digits)."""

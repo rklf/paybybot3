@@ -123,3 +123,34 @@ class AdminKept(unittest.TestCase):
             ("GH456JK", "Actif", "PayByPhone ne répond pas."),
             ("LM789NP", None, None),  # no ticket and nothing from PayByBot: no problem
         ])
+
+
+class OverviewInOneRequest(unittest.TestCase):
+    """The dashboard's three PayByPhone reads (vehicles, cards, tickets) go out as one GraphQL request."""
+
+    def setUp(self):
+        web.BUNDLE_REFUSED.clear()
+
+    def test_the_three_reads_are_one_request(self):
+        answer = {"getVehiclesV3": [{"licensePlate": "AB123CD"}],
+                  "getPaymentAccountsV1": {"paymentCards": []},
+                  "getParkingSessionsV1": [{"parkingSessionId": "1", "startTime": "2026-11-10T10:00:00Z",
+                                            "expireTime": "2026-11-17T10:00:00Z", "vehicle": {"licensePlate": "AB123CD"}}]}
+        with patch.object(Bot, "_graphql", return_value=answer) as graphql:
+            vehicles, accounts, sessions = bare_bot().get_overview()
+        self.assertEqual(graphql.call_count, 1)
+        query = graphql.call_args[0][0]
+        for field in ("getVehiclesV3", "getPaymentAccountsV1", "getParkingSessionsV1"):
+            self.assertIn(field, query)
+        self.assertEqual(vehicles[0]["licensePlate"], "AB123CD")
+        self.assertEqual(accounts, {"paymentCards": []})
+        self.assertEqual(sessions[0]["expireTime"].year, 2026)  # dates read as for the separate call
+
+    def test_refused_once_the_separate_reads_take_over_and_it_is_not_asked_again(self):
+        b = bare_bot()
+        with patch.object(Bot, "_graphql", side_effect=RuntimeError("GraphQL error: unknown field")):
+            self.assertIsNone(web.read_overview(web.UserSession.for_bot(b, "u")))
+        self.assertTrue(web.BUNDLE_REFUSED)
+        with patch.object(Bot, "_graphql") as graphql:
+            self.assertIsNone(web.read_overview(web.UserSession.for_bot(b, "u")))
+        graphql.assert_not_called()
