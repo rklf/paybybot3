@@ -435,6 +435,11 @@ export function Dashboard({
   const residentPlates =
     pricedResidents || residentTickets.length ? new Set([...(pricedResidents ?? []), ...residentTickets]) : null
   const renewing = !!data?.autopilots.some((ap) => ap.label === WEEKLY_LABEL)
+  // The opening after the welcome page is used once: once a renewal ran, stopping it must not open the window again.
+  const [autoUsed, setAutoUsed] = useState(false)
+  useEffect(() => {
+    if (renewing) setAutoUsed(true)
+  }, [renewing])
   // Something left to programme: a car without the resident rate (tickets on chosen days), or a resident one whose
   // weekly renewal is not on yet. Only resident cars, all renewed: « Programmer… » would lead nowhere, so it is hidden.
   const programmable =
@@ -475,7 +480,7 @@ export function Dashboard({
   // No offer yet and no resident car: the ticket wizard opens by itself, but can be closed (the page stays usable);
   // its « Activer » leads to the offer, and the server refuses any ticket without one.
   const offerDaily = needsOffer && !!data && data.vehicles.length > 0 && !data.autopilots.length && !!residentPlates && !residentPlate
-  const autoPlate = (autoRenew || locked) && data && !renewing ? (residentPlate ?? data.vehicles[0]?.plate ?? null) : null
+  const autoPlate = ((autoRenew && !autoUsed) || locked) && data && !renewing ? (residentPlate ?? data.vehicles[0]?.plate ?? null) : null
 
   // Fresh data when coming back to the tab (it also refreshes every minute).
   useEffect(() => {

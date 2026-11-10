@@ -23,8 +23,8 @@ const FEATURE_ICONS = [RefreshCw, Pause, BellRing, Headset]
 
 const STEP_ICONS = [Link2, RefreshCw, ShieldCheck]
 
-/** Each step's screen (demo account, captured at one size: 1040 × 1100). */
-const STEP_SHOTS = ['/how/1-connexion.png', '/how/2-activation.png', '/how/3-tableau-de-bord.png']
+/** Each step's screen (demo account, captured at one size: 1040 × 940). */
+const STEP_SHOTS = ['/how/1-connexion.png?v=10', '/how/2-activation.png?v=10', '/how/3-tableau-de-bord.png?v=10']
 const STEP_MS = 3500
 
 const STEPS = [
@@ -129,7 +129,7 @@ export function HowItWorks({ page = false }: { page?: boolean }) {
             <span className="size-2.5 rounded-full bg-ink/15" />
             <span className="ml-3 truncate text-xs text-ink/40">paybybot.fr</span>
           </div>
-          <div className="relative aspect-[1040/1100]">
+          <div className="relative aspect-[1040/940]">
             {STEP_SHOTS.map((src, i) => (
               <img
                 key={src}
@@ -140,10 +140,51 @@ export function HowItWorks({ page = false }: { page?: boolean }) {
                 className={cn('absolute inset-0 size-full object-cover object-top transition-opacity duration-500', i === active ? 'opacity-100' : 'opacity-0')}
               />
             ))}
+            {/* Step 2: the picture's switch turns on before step 3 shows it on. */}
+            <ShotSwitch play={active === 1} auto={auto} />
           </div>
         </div>
       </div>
     </section>
+  )
+}
+
+/** The real switch laid over step 2's picture, at the same place and scale (the picture: a 520 × 470 window, the
+ *  switch 48 × 24 at 427, 223), turning on just as step 3 comes. Only a picture: not focusable, not read. */
+function ShotSwitch({ play, auto }: { play: boolean; auto: boolean }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [scale, setScale] = useState(1)
+  const [on, setOn] = useState(false)
+  useEffect(() => {
+    const box = ref.current?.parentElement
+    if (!box) return
+    const fit = () => setScale(box.clientWidth / 520)
+    fit()
+    const watch = new ResizeObserver(fit)
+    watch.observe(box)
+    return () => watch.disconnect()
+  }, [])
+  useEffect(() => {
+    // Off again once hidden (after step 3 has faded in over it), so the step comes back with it off.
+    if (!play) {
+      const id = setTimeout(() => setOn(false), 600)
+      return () => clearTimeout(id)
+    }
+    setOn(false) // back within the 600 ms (a quick click)
+    // Taking turns: it turns on as step 3 comes (its slide ending as the picture changes); shown by a click, a moment after.
+    const id = setTimeout(() => setOn(true), auto ? STEP_MS - 250 : 1200)
+    return () => clearTimeout(id)
+  }, [play, auto])
+  return (
+    <div
+      ref={ref}
+      aria-hidden
+      inert
+      className={cn('pointer-events-none absolute top-[47.47%] left-[82.12%] origin-top-left rounded-full bg-white transition-opacity duration-500', play ? 'opacity-100' : 'opacity-0')}
+      style={{ transform: `scale(${scale})` }}
+    >
+      <ToggleSwitch checked={on} label="" onPress={() => {}} />
+    </div>
   )
 }
 

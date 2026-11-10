@@ -1,9 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { ArrowRight, Car, Check, CreditCard, Loader2, Minus, Phone, RefreshCw, Ticket, UserRound, X } from 'lucide-react'
-import { LoadingLine } from '@/components/Loading'
+import { ArrowRight, Loader2, Mail, Phone, type LucideIcon } from 'lucide-react'
 import { RemotePanel } from '@/components/RemoteScene'
-import { arrondissement, PayByBot, PayByPhone, Plate, withPayByPhone, Wordmark, ZonePlate } from '@/components/signs'
-import { api, until, type Me, type Overview, type PricedVehicle } from '@/lib/api'
+import { PayByBot, PayByPhone, Plate, withPayByPhone, Wordmark } from '@/components/signs'
+import { api, type Me, type Overview, type PricedVehicle } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { ui } from '@/lib/styles'
 
@@ -13,56 +12,23 @@ function phoneText(username: string) {
   return m ? `+33 ${m.slice(1).join(' ')}` : username
 }
 
-const samePlate = (a: string, b: string) => a.replace(/[^0-9a-z]/gi, '').toUpperCase() === b.replace(/[^0-9a-z]/gi, '').toUpperCase()
-
-function Row({
-  icon,
-  label,
-  children,
-  delay,
-  found = true,
-  loading = false,
-  highlight = false,
-  missing = false,
-}: {
-  icon: ReactNode
-  label: string
-  children: ReactNode
-  delay: number
-  found?: boolean
-  /** Still looking: a small spinner instead of the check or the dash. */
-  loading?: boolean
-  /** The resident vehicle, what the whole service is about: framed in blue. */
-  highlight?: boolean
-  /** Required and absent (no valid card): a red cross, and the next step waits for it. */
-  missing?: boolean
-}) {
+/** One line of the welcome page: the label on the left, the value on the right. */
+function Line({ label, icon: Icon, children }: { label: string; icon?: LucideIcon; children: ReactNode }) {
   return (
-    <li
-      className={cn('rise flex items-start gap-4 py-3', highlight && '-mx-4 my-2 rounded-2xl border-2 border-eu bg-eu/[0.03] px-[14px]')}
-      style={{ animationDelay: `${delay}ms` }}
-    >
-      <span className="grid size-10 shrink-0 place-items-center rounded-full bg-eu/[0.08] text-eu">{icon}</span>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm text-ink/55">{label}</p>
-        <div className="mt-1 text-ink">{children}</div>
-      </div>
-      {loading ? (
-        <span className="mt-2.5 size-6 shrink-0 rounded-full bg-ink/[0.05]" aria-hidden />
-      ) : missing ? (
-        <span className="mt-2.5 grid size-6 shrink-0 place-items-center rounded-full bg-destructive/10 text-destructive">
-          <X className="size-3.5" strokeWidth={3} />
-        </span>
-      ) : found ? (
-        <span className="mt-2.5 grid size-6 shrink-0 place-items-center rounded-full bg-[#e7f6ec] text-[#1a9a4a]">
-          <Check className="size-3.5" strokeWidth={3} />
-        </span>
-      ) : (
-        <span className="mt-2.5 grid size-6 shrink-0 place-items-center rounded-full bg-ink/[0.06] text-ink/40">
-          <Minus className="size-3.5" strokeWidth={3} />
-        </span>
-      )}
-    </li>
+    <div className="flex items-start justify-between gap-6 py-3.5">
+      {/* An icon in place of the label (the label kept for screen readers), as in « Mon compte ». */}
+      <dt className="pt-0.5 text-ink/55">
+        {Icon ? (
+          <>
+            <Icon className="mt-0.5 size-[1.15rem] text-ink/45" aria-hidden />
+            <span className="sr-only">{label}</span>
+          </>
+        ) : (
+          label
+        )}
+      </dt>
+      <dd className="min-w-0 text-right text-ink">{children}</dd>
+    </div>
   )
 }
 
@@ -100,161 +66,131 @@ export function Welcome({
     // The pricing lists the vehicles with their resident zone; when it lists none (or fails), the account's
     // vehicles as PayByPhone gives them, without a zone: every vehicle shows, resident or not.
     const fallback = () =>
-      data.vehicles.map((v): PricedVehicle => ({ plate: v.plate, type: v.type, zone: null, monthly: 0, yearly: 0, renewed: false }))
+      data.vehicles.map((v): PricedVehicle => ({
+        plate: v.plate,
+        type: v.type,
+        zone: null,
+        monthly: 0,
+        yearly: 0,
+        renewed: false,
+      }))
     api.pricing(reloads ? 0 : undefined).then(
       (p) => setVehicles(p.vehicles?.length ? p.vehicles : fallback()),
       () => setVehicles(fallback()),
     )
   }, [me.demo, reloads])
 
-  // Without a resident rate, the pricing lists every vehicle with no zone: they take non-resident tickets.
-  const residents = vehicles?.some((v) => v.zone) ?? false
+  // The e-mail PayByBot writes to (as in « Mon compte »); undefined: looking, '' : none.
+  const [email, setEmail] = useState<string | undefined>(undefined)
+  useEffect(() => {
+    api.account().then(
+      (a) => setEmail(a.email ?? ''),
+      () => setEmail(''),
+    )
+  }, [])
   const n = vehicles?.length ?? 0
-  // Only the vehicles with a resident rate are called « résident »: 3 vehicles, 1 of them resident, says so.
-  const r = vehicles?.filter((v) => v.zone).length ?? 0
-  const vehiclesLabel =
-    r && r === n
-      ? n > 1 ? `${n} véhicules résidents` : 'Véhicule résident'
-      : r
-        ? `${n} véhicules, dont ${r} résident${r > 1 ? 's' : ''}`
-        : n > 1 ? `${n} véhicules` : 'Véhicule'
+  const zones = [...new Set((vehicles ?? []).flatMap((v) => (v.zone ? [v.zone] : [])))]
 
   // PayByBot pays with a card saved on PayByPhone (not Apple Pay, Google Pay or PayPal), not expired: without one
   // the next step waits, and « Rafraîchir » looks again once it is added.
   const cards = data.payments.filter((p) => p.kind === 'card')
   const valid = cards.filter((p) => !p.expired)
 
-  const step = 140
-  let i = 0
-  const next = () => ++i * step
-
   return (
     <div className="grid min-h-dvh bg-background lg:grid-cols-[1.05fr_1fr]">
       <div className="flex flex-col px-6 pt-5 pb-10 sm:px-10 lg:px-[clamp(2.5rem,7vw,7rem)] lg:pb-6">
         <Wordmark />
-        <div className="mx-auto w-full max-w-lg lg:my-auto lg:pt-2">
-          <h1 className={cn(ui.title, 'rise mt-10 lg:mt-0')}>
-            Bienvenue{me.firstName ? `, ${me.firstName}` : ''}.
-          </h1>
-          <p className={cn(ui.subtitle, 'rise')}>
-            Voici ce que <PayByBot /> a retrouvé dans votre compte <PayByPhone />. Vérifiez que tout est juste.
+        <div className="rise mx-auto w-full max-w-lg lg:my-auto lg:pt-2">
+          <h1 className={cn(ui.title, 'mt-10 lg:mt-0')}>Bienvenue{me.firstName ? `, ${me.firstName}` : ''}.</h1>
+          <p className={ui.subtitle}>
+            Vos informations <PayByPhone />.
           </p>
 
-          <ul className="mt-5 divide-y divide-ink/10 border-y border-ink/10">
-            <Row icon={<Phone className="size-5" />} label="Compte PayByPhone" delay={next()}>
-              <span className="font-semibold tabular-nums">{phoneText(me.username)}</span>
-              <span className="ml-2 text-sm text-ink/55">connecté</span>
-            </Row>
-            {me.firstName && (
-              <Row icon={<UserRound className="size-5" />} label="Titulaire" delay={next()}>
-                <span className="font-semibold">{me.firstName}</span>
-              </Row>
+          {/* Three lines, the label on the left and what PayByPhone gave on the right: nothing else. */}
+          <dl className="mt-8 divide-y divide-ink/10 border-y border-ink/10">
+            <Line label="Compte" icon={Phone}>
+              <span className="font-heading font-medium tabular-nums">{phoneText(me.username)}</span>
+            </Line>
+            {email !== '' && (
+              <Line label="E-mail" icon={Mail}>
+                {email === undefined ? <Loader2 className="ml-auto size-4 animate-spin text-ink/40" /> : <span className="block truncate font-heading font-medium">{email}</span>}
+              </Line>
             )}
-            <Row
-              icon={<Car className="size-5" />}
-              label={vehiclesLabel}
-              delay={next()}
-              found={!!vehicles?.length}
-              loading={vehicles === undefined}
-              highlight
-            >
+            <Line label={n > 1 ? 'Véhicules' : 'Véhicule'}>
               {vehicles === undefined ? (
-                // Looking for the vehicles on PayByPhone (a few seconds): the app's loading bar, and what is happening.
-                <LoadingLine className="pt-1.5" label={<>Recherche de vos véhicules sur <PayByPhone />…</>} />
+                <Loader2 className="ml-auto size-4 animate-spin text-ink/40" aria-label="Recherche de vos véhicules" />
               ) : vehicles.length ? (
-                <span className="flex flex-col gap-1.5 pt-0.5">
-                  {vehicles.map((v) => {
-                    // Its running ticket, if any, right under the car.
-                    const ticket = data.sessions.find((s) => samePlate(s.plate, v.plate) && new Date(s.expire).getTime() > Date.now())
-                    return (
-                      <span key={v.plate} className="flex flex-col gap-1">
-                        <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                          <Plate plate={v.plate} size="sm" />
-                          {arrondissement(v.zone) && <span className="font-semibold">{arrondissement(v.zone)}</span>}
-                          <ZonePlate zone={v.zone} />
-                        </span>
-                        {ticket && (
-                          <span className="flex items-start gap-1.5 text-sm text-ink/70">
-                            <Ticket className="mt-0.5 size-4 shrink-0 text-eu" /> Ticket en cours {until(ticket.expire)}
-                          </span>
-                        )}
-                      </span>
-                    )
-                  })}
-                  {!residents && (
-                    <span className="text-sm leading-relaxed text-ink/60">
-                      Pas de tarif résident sur {withPayByPhone('PayByPhone')} : <PayByBot /> prendra vos tickets
-                      non-résident les jours choisis.
-                    </span>
-                  )}
+                <span className="inline-flex flex-col items-end gap-1.5">
+                  {vehicles.map((v) => (
+                    <Plate key={v.plate} plate={v.plate} size="sm" />
+                  ))}
                 </span>
               ) : (
-                <span className="text-ink/60">
-                  {data.vehicles.length
-                    ? 'Aucun véhicule au tarif résident.'
-                    : withPayByPhone('Aucun véhicule : ajoutez-le dans l’application PayByPhone.')}
-                </span>
+                <span className="text-ink/60">Aucun</span>
               )}
-            </Row>
-            <Row
-              icon={<CreditCard className="size-5" />}
-              label={cards.length > 1 ? 'Cartes bancaires' : 'Carte bancaire'}
-              delay={next()}
-              found={valid.length > 0}
-              missing={!valid.length}
-            >
-              {cards.length > 0 && (
-                <span className="flex flex-col gap-0.5 font-semibold">
-                  {cards.map((p) => (
-                    <span key={p.id} className={cn(p.expired && 'text-ink/45 line-through decoration-ink/30')}>
-                      {p.label}
-                      {p.expired && <span className="ml-2 text-sm font-normal text-destructive no-underline">expirée</span>}
+            </Line>
+            {/* Its own line: the zone(s) where PayByPhone gives the resident rate (« 75001 »). */}
+            {zones.length > 0 && (
+              <Line label="Résidence">
+                <span className="flex flex-col items-end gap-0.5">
+                  {zones.map((z) => (
+                    <span key={z} className="font-heading font-medium">
+                      {z}
                     </span>
                   ))}
                 </span>
-              )}
-              {!valid.length && (
-                <span className={cn('block text-sm leading-relaxed text-destructive', cards.length > 0 && 'mt-2')}>
-                  {withPayByPhone(
-                    cards.length
-                      ? 'Carte expirée : ajoutez une carte bancaire valide dans l’application PayByPhone, puis touchez « Rafraîchir ».'
-                      : 'Aucune carte bancaire : ajoutez-en une dans l’application PayByPhone, puis touchez « Rafraîchir ».',
-                  )}
-                  <span className="mt-1 block text-ink/55">
-                    Apple Pay, Google Pay et PayPal ne fonctionnent pas avec <PayByBot /> : seule une carte bancaire convient.
+              </Line>
+            )}
+            {/* The card only when it blocks (none valid): a card number on the welcome page alarms more than it helps. */}
+            {!valid.length && (
+              <Line label={cards.length > 1 ? 'Cartes' : 'Carte'}>
+                {cards.length ? (
+                  <span className="flex flex-col items-end gap-0.5 font-heading font-medium">
+                    {cards.map((p) => (
+                      <span key={p.id} className={cn(p.expired && 'text-ink/45 line-through decoration-ink/30')}>
+                        {p.label.replace(/ — exp\..*$/, '')}
+                        {p.expired && <span className="ml-2 text-sm font-normal text-destructive">expirée</span>}
+                      </span>
+                    ))}
                   </span>
+                ) : (
+                  <span className="font-heading font-medium text-destructive">Aucune</span>
+                )}
+              </Line>
+            )}
+          </dl>
+
+          {/* Only when something blocks: what to do, in one place. */}
+          {vehicles !== undefined && (!vehicles.length || !valid.length) && (
+            <p role="alert" className="mt-4 text-sm leading-relaxed text-destructive">
+              {withPayByPhone(
+                !vehicles.length
+                  ? 'Aucun véhicule : ajoutez-le dans l’application PayByPhone, puis touchez « Rafraîchir ».'
+                  : cards.length
+                    ? 'Carte expirée : ajoutez une carte bancaire valide dans l’application PayByPhone, puis touchez « Rafraîchir ».'
+                    : 'Aucune carte bancaire : ajoutez-en une dans l’application PayByPhone, puis touchez « Rafraîchir ».',
+              )}
+              {vehicles.length > 0 && (
+                <span className="mt-1 block text-ink/55">
+                  Apple Pay, Google Pay et PayPal ne fonctionnent pas avec <PayByBot /> : seule une carte bancaire convient.
                 </span>
               )}
-            </Row>
-          </ul>
+            </p>
+          )}
 
-          <p className="rise mt-4 text-sm leading-relaxed text-ink/55" style={{ animationDelay: `${next()}ms` }}>
-            Rien n’a été modifié dans votre compte <PayByPhone />, et votre mot de passe n’est pas enregistré. Un véhicule
-            ou une carte à changer ? Faites-le dans l’application <PayByPhone />, puis touchez « Rafraîchir ».
-          </p>
-          <button
-            onClick={refresh}
-            disabled={refreshing}
-            className={cn('rise mt-3 gap-2', ui.pillGray)}
-            style={{ animationDelay: `${next()}ms` }}
-          >
-            {refreshing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Rafraîchir
+          <button onClick={onContinue} disabled={!vehicles?.length || !valid.length} className={cn(ui.primary, 'mt-8')}>
+            C’est bien moi, continuer <ArrowRight className="size-5" />
           </button>
-
-          {/* The animation on a wrapper: on the button itself its opacity would hide the greyed-out state. */}
-          <div className="rise mt-5" style={{ animationDelay: `${next()}ms` }}>
-            <button onClick={onContinue} disabled={!vehicles?.length || !valid.length} className={ui.primary}>
-              C’est bien moi, continuer <ArrowRight className="size-5" />
+          <p className="mt-4 flex flex-wrap justify-center gap-x-5 gap-y-2 text-sm text-ink/55">
+            <button onClick={refresh} disabled={refreshing} className={cn('inline-flex items-center gap-1.5', ui.link)}>
+              {refreshing && <Loader2 className="size-3.5 animate-spin" />} Rafraîchir
             </button>
             {onLogout && (
-              <p className="mt-4 text-center text-sm text-ink/55">
-                Ce n’est pas votre compte ?{' '}
-                <button onClick={onLogout} className={ui.link}>
-                  Se déconnecter
-                </button>
-              </p>
+              <button onClick={onLogout} className={ui.link}>
+                Se déconnecter
+              </button>
             )}
-          </div>
+          </p>
         </div>
       </div>
 

@@ -622,3 +622,18 @@ test.describe('téléphone réglé sur une autre heure que Paris', () => {
     await expect(page.getByText(/Couvert jusqu’au mardi 15 décembre, 12h/)).toBeVisible()
   })
 })
+
+test('impasses : arrêter le renouvellement juste après la bienvenue ne rouvre pas la fenêtre', async ({ page }) => {
+  await demo(page)
+  await page.goto(LINK + '#/bienvenue')
+  await page.getByRole('button', { name: /C’est bien moi/ }).click()
+  await page.getByRole('dialog').getByRole('button', { name: /^Activer le renouvellement/ }).click()
+  const renewal = page.getByRole('switch', { name: /Renouvellement/ }).first()
+  await expect(renewal).toBeChecked({ timeout: 15_000 })
+  await press(page, /Renouvellement/)
+  const ask = page.getByRole('alertdialog')
+  await ask.getByRole('button', { name: 'Arrêter le renouvellement' }).click()
+  await expect(page.getByText('Renouvellement arrêté.')).toBeVisible()
+  await page.waitForTimeout(1500)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+})
