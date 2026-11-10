@@ -201,6 +201,26 @@ function CardBanner({ payments }: { payments: Overview['payments'] }) {
   )
 }
 
+/** The PayByPhone account has no car yet: add one there, then come back. */
+function NoVehicle({ onRefresh }: { onRefresh: () => void }) {
+  return (
+    <div className="mt-5 rounded-2xl border border-ink/10 bg-white p-5">
+      <p className="font-semibold text-ink">Aucun véhicule sur votre compte <PayByPhone /></p>
+      <p className="mt-1 text-ink/65">
+        Ajoutez votre véhicule dans l’application <PayByPhone />, puis rafraîchissez cette page.
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <a href="https://paybyphone.onelink.me/ZQkh/" target="_blank" rel="noreferrer" className={cn(ui.pillBlue, 'h-10')}>
+          Ouvrir <PayByPhone />
+        </a>
+        <button onClick={onRefresh} className={cn(ui.pillGray, 'h-10')}>
+          Rafraîchir
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /** The cars with no ticket: plate, type and zone, one card each. */
 const plateKey = (p: string) => p.replace(/[^0-9a-z]/gi, '').toUpperCase()
 const sameCar = (a: string, b: string) => a.replace(/[^0-9a-z]/gi, '').toUpperCase() === b.replace(/[^0-9a-z]/gi, '').toUpperCase()
@@ -415,6 +435,17 @@ export function Dashboard({
   const residentPlates =
     pricedResidents || residentTickets.length ? new Set([...(pricedResidents ?? []), ...residentTickets]) : null
   const renewing = !!data?.autopilots.some((ap) => ap.label === WEEKLY_LABEL)
+  // Something left to programme: a car without the resident rate (tickets on chosen days), or a resident one whose
+  // weekly renewal is not on yet. Only resident cars, all renewed: « Programmer… » would lead nowhere, so it is hidden.
+  const programmable =
+    !data ||
+    (data.vehicles.length > 0 &&
+    (!residentPlates ||
+    data.vehicles.some(
+      (v) =>
+        !residentPlates.has(plateKey(v.plate)) ||
+        !data.autopilots.some((ap) => ap.label === WEEKLY_LABEL && plateKey(ap.plate) === plateKey(v.plate)),
+    )))
   // Right after the welcome page, nothing renewed yet: the renewal of the car with a ticket (else the first car)
   // opens by itself, then the offer comes when it is activated.
   // Online, no offer chosen yet: PayByBot is not usable before choosing one. With a resident vehicle, its renewal
@@ -443,7 +474,7 @@ export function Dashboard({
   const locked = needsOffer && !renewing && !!residentPlates && !!residentPlate && !programAsked
   // No offer yet and no resident car: the ticket wizard opens by itself, but can be closed (the page stays usable);
   // its « Activer » leads to the offer, and the server refuses any ticket without one.
-  const offerDaily = needsOffer && !!data && !data.autopilots.length && !!residentPlates && !residentPlate
+  const offerDaily = needsOffer && !!data && data.vehicles.length > 0 && !data.autopilots.length && !!residentPlates && !residentPlate
   const autoPlate = (autoRenew || locked) && data && !renewing ? (residentPlate ?? data.vehicles[0]?.plate ?? null) : null
 
   // Fresh data when coming back to the tab (it also refreshes every minute).
@@ -516,6 +547,7 @@ export function Dashboard({
         )}
         {/* Inviting a friend: always offered to a signed-in account (word of mouth is the only way in). */}
         {/* Programming a non-resident ticket: a sober button beside the invitation, no card in the page. */}
+{programmable && (
         <button
           onClick={() => (setBackPlate(undefined), setProgramAsked((n) => n + 1))}
           disabled={!data}
@@ -524,6 +556,7 @@ export function Dashboard({
         >
           <Plus className="size-4" /> <span className="hidden sm:inline">Programmer un ticket</span>
         </button>
+        )}
         {!me.demo && <InviteButton disabled={!data} />}
         <AccountButton data={data} onDeleted={onDeleted ?? onLogout} demo={me.demo} />
         <button onClick={onLogout} className={ui.navText} aria-label="Déconnexion">
@@ -610,15 +643,17 @@ export function Dashboard({
 
         {/* Every car's card has its own button: this block only lists renewals without a ticket (or offers one
             when PayByPhone lists no car). */}
-        {(renewing || !data?.vehicles.length) && (
-          <div className={renewing ? 'mt-6' : 'mt-10 border-t border-border pt-8'}>
+        {renewing && (
+          <div className="mt-6">
             <RiverainCard data={data} onChanged={onRefresh} hosted={!!me.hosted} demo={me.demo} />
           </div>
         )}
+        {/* No car on the PayByPhone account: nothing to renew or programme yet, said plainly, with the way to add one. */}
+        {data && !data.vehicles.length && <NoVehicle onRefresh={onRefresh} />}
 
         {/* The page's call to action, always: any car, any ticket (the wizard asks the car first, then the resident
             renewal or the vehicle type). It replaces « Renouveler un autre véhicule », which did the same. */}
-        {data && data.vehicles.length > 0 && (
+        {data && data.vehicles.length > 0 && programmable && (
           <div className="mt-6">
             <RippleButton
               onClick={() => (setBackPlate(undefined), setProgramAsked((n) => n + 1))}

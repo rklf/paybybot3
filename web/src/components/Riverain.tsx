@@ -648,6 +648,12 @@ export function RenewalSwitch({
             })(),
       )}
       {details}
+      {/* In error, the switch only relaunches (pays again): stopping it is offered here. */}
+      {ap.enabled && ap.lastError && (
+        <button onClick={() => setConfirming(true)} disabled={busy} className={cn('mt-3 text-sm', ui.link)}>
+          Arrêter le renouvellement
+        </button>
+      )}
       {pausing && <PauseDialog ap={ap} onClose={() => setPausing(false)} onDone={onChanged} />}
       <ConfirmDialog
         open={confirming}
@@ -711,6 +717,36 @@ export function ActivateRenewal({
 type Found = { rate: Rate | null; quote: Quote | null; error: string | null }
 type Quote = { cost: Money | null; afterCurrent?: boolean; currentExpire?: string | null; priceSource?: 'history' | 'paris' | null }
 
+/** Nothing ticked in the renewal window, and why: the car already renewed, PayByPhone not giving its resident rate
+ *  right now (« Réessayer »), or only « tick one » when there is a choice. */
+function EmptyReason({ plates, plate, covered, onRetry }: { plates: string[] | null; plate?: string; covered: Set<string>; onRetry: () => void }) {
+  const key = (p: string) => p.replace(/[^0-9a-z]/gi, '').toUpperCase()
+  const has = (set: Iterable<string>, p: string) => [...set].some((x) => key(x) === key(p))
+  const retry = (
+    <button onClick={onRetry} className="mt-2 inline-flex items-center gap-1.5 rounded-[10px] bg-ink/[0.06] px-3 py-1.5 text-sm font-semibold text-ink transition hover:bg-ink/[0.1]">
+      <RotateCw className="size-4" /> Réessayer
+    </button>
+  )
+  if (plates === null) return <p className="text-muted-foreground">Recherche de vos véhicules résidents…</p>
+  if (plate && has(covered, plate)) return <p className="text-muted-foreground">Ce véhicule a déjà son renouvellement hebdomadaire.</p>
+  if (plate && !has(plates, plate))
+    return (
+      <div className="text-muted-foreground">
+        <p>PayByPhone n’a pas confirmé le tarif résident de ce véhicule pour l’instant.</p>
+        {retry}
+      </div>
+    )
+  if (!plates.length)
+    return (
+      <div className="text-muted-foreground">
+        <p>Aucun véhicule au tarif résident trouvé sur votre compte PayByPhone.</p>
+        {retry}
+      </div>
+    )
+  if (plates.every((p) => has(covered, p))) return <p className="text-muted-foreground">Tous vos véhicules résidents ont déjà leur renouvellement.</p>
+  return <p className="text-muted-foreground">Cochez au moins un véhicule.</p>
+}
+
 export function RiverainDialog({
   open,
   onOpenChange,
@@ -738,6 +774,7 @@ export function RiverainDialog({
 }) {
   const [plates, setPlates] = useState<string[] | null>(null) // the « riverain » vehicles (null: looking)
   const [selected, setSelected] = useState<string[]>([])
+  const [lookAgain, setLookAgain] = useState(0) // « Réessayer » when PayByPhone gave no resident rate to tick
   const [zones, setZones] = useState<Record<string, string>>({}) // each riverain vehicle's arrondissement, from PayByPhone
   const [knownRates, setKnownRates] = useState<Record<string, Rate | null>>({}) // each one's resident rate, from the prices
   const [weeks, setWeeks] = useState<Record<string, number | null>>({}) // the resident week's price, in cents
@@ -794,7 +831,7 @@ export function RiverainDialog({
       )
     // Only when it opens: a refresh of the account behind it must not wipe the price or a message on screen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
+  }, [open, lookAgain])
 
   useEffect(() => {
     if (open && !payment && cards[0]) setPayment(cards[0].id)
@@ -984,7 +1021,7 @@ export function RiverainDialog({
           {/* Summary: one line per ticked vehicle */}
           <div className="rounded-xl border border-ink/10 p-4" aria-live="polite">
             {!selected.length ? (
-              <p className="text-muted-foreground">Cochez au moins un véhicule.</p>
+              <EmptyReason plates={plates} plate={plate} covered={covered} onRetry={() => setLookAgain((n) => n + 1)} />
             ) : loading ? (
               <p className="flex items-center gap-2 text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" /> Recherche du tarif résident…

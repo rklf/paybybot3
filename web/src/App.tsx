@@ -438,6 +438,7 @@ export default function App() {
             setOnboarding(false)
             setAutoRenew(true)
           }}
+          onLogout={logout}
         />
       ) : (
         <>

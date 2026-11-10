@@ -5,11 +5,12 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { NoPayment } from '@/components/NoPayment'
 import { PlansDialog } from '@/components/Pricing'
 import { periodDays, periodText, RangeCalendar } from '@/components/RangeCalendar'
-import { clearPending, pauseState, RenewalActions, savePending, when as longWhen, ZoneTag, type PendingRenewal } from '@/components/Riverain'
+import { clearPending, pauseState, RenewalActions, RenewalNote, savePending, when as longWhen, WEEKLY_LABEL, ZoneTag, type PendingRenewal } from '@/components/Riverain'
 import { arrondissement, Plate, withPayByPhone } from '@/components/signs'
 import { api, ApiError, unitLabel, type Autopilot, type Money, type Overview, type Rate, type Unit } from '@/lib/api'
 import { ui } from '@/lib/styles'
 import { cn } from '@/lib/utils'
+import { Notice } from '@/components/ui/notice'
 import { hourText as hourInParis, paris as inParis, parisMs, TZ } from '@/lib/paris'
 import { TimeInput } from '@/components/ui/date-time-fields'
 
@@ -373,7 +374,13 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
             {now.total > 1 ? `Prise des tickets : ${Math.max(now.covered, live.length)} / ${now.total} arrondissements` : 'Prise du ticket en cours…'}
           </p>
         ) : (
-          ap.lastError && !finished && <p className={cn('text-sm text-destructive', !ap.cmis && 'mt-3')}>{ap.lastError}</p>
+          // The error with its way out: « Valider mon paiement » when the bank waits, else « Réessayer » (which also
+          // turns a suspended ticket back on).
+          ap.lastError && !finished && (
+            <p className={cn('text-sm', !ap.cmis && 'mt-3')}>
+              <RenewalNote ap={ap} onChanged={onChanged} />
+            </p>
+          )
         )}
       </div>
       )}
@@ -621,11 +628,16 @@ export function DailyWizard({
   const [step, setStep] = useState(1)
   // Step 1 in two screens: the vehicle (one), then its type; a car being changed or renewed already has its vehicle.
   const [typing, setTyping] = useState(!!editing || !!initialTicket)
+  // A resident car whose weekly renewal is already on: shown, but not to pick (it would only lead to a renewal
+  // with nothing left to tick). Non-resident cars and resident ones without renewal are offered.
+  const renewedAlready = (p: string) =>
+    !!isResidentPlate?.(p) && data.autopilots.some((ap) => ap.label === WEEKLY_LABEL && keyOf(ap.plate) === keyOf(p))
+  const offered = data.vehicles.filter((v) => !renewedAlready(v.plate))
   // One vehicle or several, the same ticket for each; the first one chosen is the one the rates are looked up for.
   const [picked, setPicked] = useState<string[]>(() => {
     const first =
       editing?.plate ??
-      data.vehicles.find((v) => initialPlate && keyOf(v.plate) === keyOf(initialPlate))?.plate ?? data.vehicles[0]?.plate
+      offered.find((v) => initialPlate && keyOf(v.plate) === keyOf(initialPlate))?.plate ?? offered[0]?.plate
     return first ? [first] : []
   })
   const plate = picked[0] ?? ''
@@ -1030,23 +1042,43 @@ export function DailyWizard({
               <div>
                 <p className={ui.label}>Véhicule</p>
                 <div className="flex flex-wrap gap-2">
-                  {data.vehicles.filter((v) => !editing || keyOf(v.plate) === keyOf(editing.plate)).map((v) => (
-                    <button
-                      key={v.plate}
-                      onClick={() => !editing && pick(v.plate)}
-                      aria-pressed={picked.some((p) => keyOf(p) === keyOf(v.plate))}
-                      className={cn(
-                        'rounded-xl border p-2 transition',
-                        picked.some((p) => keyOf(p) === keyOf(v.plate))
-                          ? 'border-[#4e9aa0] bg-[#4e9aa0]/[0.08] ring-1 ring-[#4e9aa0]'
-                          : 'border-ink/15 opacity-70 hover:opacity-100',
-                      )}
-                    >
-                      <Plate plate={v.plate} size="sm" />
-                    </button>
-                  ))}
+                  {data.vehicles.filter((v) => !editing || keyOf(v.plate) === keyOf(editing.plate)).map((v) =>
+                    !editing && renewedAlready(v.plate) ? (
+                      <button key={v.plate} disabled className="inline-flex flex-col items-center gap-1 rounded-xl border border-ink/10 p-2 opacity-60">
+                        <Plate plate={v.plate} size="sm" />
+                        <span className="text-xs text-ink/55">Déjà renouvelé</span>
+                      </button>
+                    ) : (
+                      <button
+                        key={v.plate}
+                        onClick={() => !editing && pick(v.plate)}
+                        aria-pressed={picked.some((p) => keyOf(p) === keyOf(v.plate))}
+                        className={cn(
+                          'rounded-xl border p-2 transition',
+                          picked.some((p) => keyOf(p) === keyOf(v.plate))
+                            ? 'border-[#4e9aa0] bg-[#4e9aa0]/[0.08] ring-1 ring-[#4e9aa0]'
+                            : 'border-ink/15 opacity-70 hover:opacity-100',
+                        )}
+                      >
+                        <Plate plate={v.plate} size="sm" />
+                      </button>
+                    ),
+                  )}
                 </div>
               </div>
+              {/* No card PayByPhone can charge: nothing could be priced nor paid, said at once with the way to fix it. */}
+              {!cards.length && (
+                <Notice>
+                  {data.payments.some((p) => p.kind === 'card')
+                    ? 'Votre carte bancaire PayByPhone a expiré.'
+                    : 'Aucune carte bancaire sur votre compte PayByPhone.'}{' '}
+                  Ajoutez-en une dans l’application{' '}
+                  <a href="https://paybyphone.onelink.me/ZQkh/" target="_blank" rel="noreferrer" className={ui.link}>
+                    PayByPhone
+                  </a>
+                  , puis rouvrez cette fenêtre.
+                </Notice>
+              )}
             </>
           )}
           {step === 1 && typing && (
@@ -1435,7 +1467,7 @@ export function DailyWizard({
               </button>
             )}
             {step === 1 && (
-              <button onClick={typing ? () => setStep(2) : nextFromVehicle} disabled={!plate} className={cn(ui.primary, 'flex-[2]')}>
+              <button onClick={typing ? () => setStep(2) : nextFromVehicle} disabled={!plate || !cards.length} className={cn(ui.primary, 'flex-[2]')}>
                 Suivant
               </button>
             )}

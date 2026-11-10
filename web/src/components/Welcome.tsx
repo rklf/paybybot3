@@ -72,10 +72,13 @@ export function Welcome({
   data,
   onContinue,
   onRefresh,
+  onLogout,
 }: {
   me: Me
   data: Overview
   onContinue: () => void
+  /** Not this PayByPhone account: back to the sign-in (else the only ways out were a greyed-out button and a reload). */
+  onLogout?: () => void
   /** Read the PayByPhone account again (a vehicle or a card changed in the PayByPhone app meanwhile). */
   onRefresh?: () => Promise<void>
 }) {
@@ -243,6 +246,14 @@ export function Welcome({
             <button onClick={onContinue} disabled={!vehicles?.length || !valid.length} className={ui.primary}>
               C’est bien moi, continuer <ArrowRight className="size-5" />
             </button>
+            {onLogout && (
+              <p className="mt-4 text-center text-sm text-ink/55">
+                Ce n’est pas votre compte ?{' '}
+                <button onClick={onLogout} className={ui.link}>
+                  Se déconnecter
+                </button>
+              </p>
+            )}
           </div>
         </div>
       </div>

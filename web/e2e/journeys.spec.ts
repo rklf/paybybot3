@@ -129,6 +129,34 @@ test('tableau de bord : le gros bouton « Programmer un stationnement » ouvre l
   await expect(page.getByRole('dialog').getByText(/Étape 1 sur/)).toBeVisible()
 })
 
+test('un seul véhicule, résident et déjà renouvelé : aucun bouton qui mène à une impasse', async ({ page }) => {
+  await page.route('**/api/overview', async (route) => {
+    const answer = await route.fetch()
+    const json = await answer.json()
+    if (!json.vehicles) return route.fulfill({ response: answer, json })
+    await route.fulfill({ json: { ...json, vehicles: json.vehicles.filter((v: { plate: string }) => /AB.?123.?CD/.test(v.plate)) } })
+  })
+  await demo(page)
+  await press(page, /Renouvellement/)
+  await page.getByRole('dialog').getByRole('button', { name: /^Activer le renouvellement/ }).click()
+  await expect(page.getByRole('switch', { name: /Renouvellement/ }).first()).toBeChecked({ timeout: 15_000 })
+  // Nothing left to programme: neither the big button nor the top bar's.
+  await expect(page.getByRole('button', { name: 'Programmer un stationnement' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Programmer un ticket' })).toHaveCount(0)
+})
+
+test('assistant : une voiture résidente déjà renouvelée se voit, mais ne se choisit pas', async ({ page }) => {
+  await demo(page)
+  await press(page, /Renouvellement/)
+  await page.getByRole('dialog').getByRole('button', { name: /^Activer le renouvellement/ }).click()
+  await expect(page.getByRole('switch', { name: /Renouvellement/ }).first()).toBeChecked({ timeout: 15_000 })
+  await page.getByRole('button', { name: 'Programmer un stationnement' }).click()
+  const wizard = page.getByRole('dialog')
+  await expect(wizard.getByRole('button', { name: /AB-123-CD/ })).toBeDisabled()
+  await expect(wizard.getByText('Déjà renouvelé')).toBeVisible()
+  await expect(wizard.getByRole('button', { name: /GH-456-JK/ })).toHaveAttribute('aria-pressed', 'true')
+})
+
 test('sans abonnement : « Programmer un ticket » ouvert avant le tarif résident n’est pas recouvert par le renouvellement', async ({ page }) => {
   // Online, no subscription yet, a resident car without renewal: once its resident rate is known, its renewal opens
   // by itself. The owner clicked « Programmer un ticket » before that: the wizard stays, nothing opens over it.
@@ -213,6 +241,46 @@ test('renouvellement : l’éteindre demande confirmation, « Annuler » le lais
   await ask.getByRole('button', { name: 'Annuler' }).click()
   await expect(ask).toHaveCount(0)
   await expect(renewal).toBeChecked()
+})
+
+test('impasses : compte sans véhicule, une carte claire au lieu de fenêtres vides', async ({ page }) => {
+  await page.route('**/api/overview', async (route) => {
+    const answer = await route.fetch()
+    const json = await answer.json()
+    if (!json.vehicles) return route.fulfill({ response: answer, json })
+    await route.fulfill({ json: { ...json, vehicles: [], sessions: [], autopilots: [] } })
+  })
+  await demo(page)
+  await expect(page.getByText(/Aucun véhicule sur votre compte/)).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Rafraîchir' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Programmer un stationnement' })).toHaveCount(0)
+})
+
+test('impasses : carte expirée, l’assistant le dit dès le choix du véhicule', async ({ page }) => {
+  await page.route('**/api/overview', async (route) => {
+    const r = await route.fetch()
+    const json = await r.json()
+    if (json.payments) json.payments = json.payments.map((p: { kind: string }) => (p.kind === 'card' ? { ...p, expired: true } : p))
+    await route.fulfill({ response: r, json })
+  })
+  await demo(page)
+  await page.getByRole('button', { name: 'Programmer un stationnement' }).click()
+  const wizard = page.getByRole('dialog')
+  await expect(wizard.getByText('Votre carte bancaire PayByPhone a expiré.', { exact: false })).toBeVisible()
+  await expect(wizard.getByRole('button', { name: 'Suivant', exact: true })).toBeDisabled()
+})
+
+test('impasses : la page « Valider mon paiement » sans son lien explique quoi faire', async ({ page }) => {
+  await page.goto(LINK + '#/valider')
+  await expect(page.getByRole('heading', { name: 'Lien incomplet' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Ouvrir PayByBot' })).toBeVisible()
+})
+
+test('impasses : la page de bienvenue permet de se déconnecter', async ({ page }) => {
+  await demo(page)
+  await page.goto(LINK + '#/bienvenue')
+  await page.getByRole('button', { name: 'Se déconnecter' }).click()
+  await expect(page.getByRole('button', { name: 'Déconnexion' })).toHaveCount(0)
 })
 
 test('bienvenue sans carte bancaire valide : croix rouge, on ne passe pas', async ({ page }) => {
