@@ -532,3 +532,25 @@ test('carte bancaire qui expire ce mois-ci : bannière rouge, partie avec une ca
   await expect(page.getByText('Votre stationnement', { exact: false }).or(page.getByText('Vos tickets', { exact: false })).first()).toBeVisible()
   await expect(page.getByRole('alert').filter({ hasText: 'expire ce mois-ci' })).toHaveCount(0)
 })
+
+
+test.describe('téléphone réglé sur une autre heure que Paris', () => {
+  test.use({ timezoneId: 'Asia/Jerusalem' }) // Paris + 1 h in winter
+
+  test('la fin du ticket s’affiche à l’heure de Paris', async ({ page }) => {
+    const ticket = {
+      id: 'e2e-ticket', location: '75105', plate: 'AB123CD', start: '2026-12-08T11:00:00Z',
+      // 12h in Paris (UTC+1 in December), 13h in Jerusalem
+      expire: '2026-12-15T11:00:00Z', rate: '101', resident: true,
+      cost: { amount: 9.5, currency: 'EUR' }, stoppable: false, stopped: false,
+    }
+    await page.route('**/api/overview', async (route) => {
+      const answer = await route.fetch()
+      const json = await answer.json()
+      if (!json.vehicles) return route.fulfill({ response: answer, json })
+      await route.fulfill({ json: { ...json, sessions: [ticket] } })
+    })
+    await demo(page)
+    await expect(page.getByText(/Couvert jusqu’au mardi 15 décembre, 12h/)).toBeVisible()
+  })
+})

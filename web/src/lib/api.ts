@@ -1,3 +1,4 @@
+import { paris, parisMs, TZ } from '@/lib/paris'
 
 export type Money = { amount: number; currency: string }
 
@@ -290,18 +291,19 @@ export function money(m?: Money | null) {
   return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: m.currency || 'EUR' }).format(m.amount)
 }
 
+/** The day and hour of an instant, at Paris time (« demain », « 21h56 »). */
 function dayAndTime(iso: string) {
   const d = new Date(iso)
-  const today = new Date()
-  const time = `${d.getHours()}h${String(d.getMinutes()).padStart(2, '0')}`
-  const tomorrow = new Date(today)
-  tomorrow.setDate(today.getDate() + 1)
+  const p = paris(d.getTime())
+  const time = `${p.h}h${String(p.mi).padStart(2, '0')}`
+  const today = paris(Date.now())
+  const tomorrow = paris(parisMs(today.y, today.mo, today.d + 1, 12, 0))
   const day =
-    d.toDateString() === today.toDateString()
+    p.iso === today.iso
       ? null
-      : d.toDateString() === tomorrow.toDateString()
+      : p.iso === tomorrow.iso
         ? 'demain'
-        : d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
+        : d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: TZ })
   return { day, time }
 }
 

@@ -4,12 +4,13 @@ import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { NoPayment } from '@/components/NoPayment'
 import { PlansDialog } from '@/components/Pricing'
-import { isoDay, periodDays, periodText, RangeCalendar } from '@/components/RangeCalendar'
+import { periodDays, periodText, RangeCalendar } from '@/components/RangeCalendar'
 import { clearPending, pauseState, RenewalActions, savePending, when as longWhen, ZoneTag, type PendingRenewal } from '@/components/Riverain'
 import { arrondissement, Plate, withPayByPhone } from '@/components/signs'
 import { api, ApiError, unitLabel, type Autopilot, type Money, type Overview, type Rate, type Unit } from '@/lib/api'
 import { ui } from '@/lib/styles'
 import { cn } from '@/lib/utils'
+import { hourText as hourInParis, paris as inParis, parisMs, TZ } from '@/lib/paris'
 import { TimeInput } from '@/components/ui/date-time-fields'
 
 /**
@@ -155,28 +156,29 @@ function nextTicket(days: number[], start: string, after?: Date | null, period?:
   const [h, m] = start.split(':').map(Number)
   // Renewing a running ticket: not before it ends (the next one follows on from it).
   const from = Math.max(Date.now(), after ? after.getTime() - 60_000 : 0)
-  const d = new Date(from)
+  const d = inParis(from) // the days and the start time are Paris ones, as the server takes them
   // Chosen on the calendar: only between the first and the last day (ISO days compare as text).
   const first = period?.from ?? null
   const last = period?.to ?? first
   for (let i = 0; i < (first ? 400 : 15); i++) {
-    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate() + i, h, m)
-    const wd = (day.getDay() + 6) % 7
-    const iso = isoDay(day)
+    const t = parisMs(d.y, d.mo, d.d + i, h, m)
+    const { wd, iso } = inParis(t)
     if (first && iso < first) continue
     if (last && iso > last) return null
-    if (days.includes(wd) && day.getTime() > from) return day
+    if (days.includes(wd) && t > from) return new Date(t)
   }
   return null
 }
 
+/** « lun. 16 nov. à 20h », at Paris time. */
 export function when(t: Date) {
   const day = t.toLocaleDateString('fr-FR', {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
+    timeZone: TZ,
   })
-  return `${day} à ${t.getHours()}h${t.getMinutes() ? String(t.getMinutes()).padStart(2, '0') : ''}`
+  return `${day} à ${hourInParis(t.getTime())}`
 }
 
 /** The rate's name without PayByPhone's zone suffix: « Visiteur - Véhicule léger - 75012-75020 » → « Visiteur ». */
@@ -210,13 +212,13 @@ export function ruleState(ap: Autopilot, now = Date.now()) {
   const running = !!last && last.getTime() + ruleLength(ap) > now
   // Today's ticket being taken right now (its window started, not paid yet: the scheduler is on it).
   const [h, m] = startOf(ap).split(':').map(Number)
-  const today = new Date()
-  const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), h, m)
-  const todayIso = isoDay(today)
+  const today = inParis(now) // today and its start time in Paris, as the server takes tickets
+  const startToday = new Date(parisMs(today.y, today.mo, today.d, h, m))
+  const todayIso = today.iso
   const dueToday =
     ap.enabled &&
-    daysOf(ap).includes((today.getDay() + 6) % 7) &&
-    !(isParis(ap.location) && today.getDay() === 0) &&
+    daysOf(ap).includes(today.wd) &&
+    !(isParis(ap.location) && today.wd === 6) &&
     (!period || (period.from <= todayIso && todayIso <= period.to)) &&
     startToday.getTime() <= now &&
     now < startToday.getTime() + ruleLength(ap) &&
@@ -666,8 +668,8 @@ export function DailyWizard({
   // Renewing a running ticket: the next one is taken by default at the time this one ends (not when it began).
   const chainStart = initialTicket
     ? (() => {
-        const end = new Date(initialTicket.expire)
-        return `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`
+        const end = inParis(new Date(initialTicket.expire).getTime())
+        return `${String(end.h).padStart(2, '0')}:${String(end.mi).padStart(2, '0')}`
       })()
     : null
   const [start, setStart] = useState(chainStart ?? nextHour())

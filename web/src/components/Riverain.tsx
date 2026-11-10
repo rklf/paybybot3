@@ -8,6 +8,7 @@ import { loadLast, saveLast } from '@/components/PayWizard'
 import { PlansDialog } from '@/components/Pricing'
 import { ShinyButton } from '@/components/ui/shiny-button'
 import { cn } from '@/lib/utils'
+import { hourText, paris, parisMs, TZ } from '@/lib/paris'
 import { PlateBone } from '@/components/Skeletons'
 import { Notice } from '@/components/ui/notice'
 import { DateInput } from '@/components/ui/date-time-fields'
@@ -500,20 +501,18 @@ export function ZoneTag({ zone, resident = true, kind }: { zone: string; residen
   )
 }
 
-/** « mardi 3 novembre, 23h54 » (minutes only when not on the hour). */
+/** « mardi 3 novembre, 23h54 » at Paris time (minutes only when not on the hour). */
 export function when(t: number) {
-  const d = new Date(t)
-  const day = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
-  return `${day}, ${d.getHours()}h${d.getMinutes() ? String(d.getMinutes()).padStart(2, '0') : ''}`
+  const day = new Date(t).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: TZ })
+  return `${day}, ${hourText(t)}`
 }
 
 /** When this week will be renewed: the rule the server follows (20h the day before the end, never more than 24
  *  hours before it), or its next look when that comes later (a retry). An earlier look only checks the card. */
 export function nextRenewal(nextCheck: string | null | undefined, expire: string) {
   const end = new Date(expire).getTime()
-  const dayBefore = new Date(end - 86_400_000)
-  dayBefore.setHours(20, 0, 0, 0)
-  const rule = Math.max(dayBefore.getTime(), end - 86_400_000 + 60_000)
+  const before = paris(end - 86_400_000) // 20h in Paris the day before, as the server counts
+  const rule = Math.max(parisMs(before.y, before.mo, before.d, 20, 0), end - 86_400_000 + 60_000)
   const planned = nextCheck ? new Date(nextCheck).getTime() : NaN
   return planned > Date.now() && planned > rule && planned <= end + 60_000 ? planned : rule
 }
@@ -1221,11 +1220,12 @@ export function ZoneField({
 }
 
 function dayText(ms: number) {
-  return new Date(ms).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
+  return new Date(ms).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', timeZone: TZ })
 }
 
+/** The day in Paris, « 2026-11-14 ». */
 function isoDay(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return paris(d.getTime()).iso
 }
 
 /** Vacation pause: no payment between two days (Paris time), or from a day with no end yet. */

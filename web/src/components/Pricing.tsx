@@ -233,7 +233,7 @@ export function PlansDialog({
                   <span>
                     <span className="block font-heading text-lg leading-tight font-bold">{trialStarted ? 'Reste de votre mois offert' : '1er mois offert'}</span>
                     <span className="block text-sm text-[#14703a]/80">
-                      Rien à payer avant le {trialEnd.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}.
+                      Rien à payer avant le {trialEnd.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', timeZone: 'Europe/Paris' })}.
                     </span>
                   </span>
                 </div>
