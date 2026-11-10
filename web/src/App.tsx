@@ -1,4 +1,5 @@
 import { Loading } from '@/components/Loading'
+import { DashboardSkeleton } from '@/components/Skeletons'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Toaster } from '@/components/ui/sonner'
@@ -410,6 +411,15 @@ export default function App() {
         ) : (
           <Home hosted={hosted} />
         )
+      ) : !onboarding && !data && !loadError ? (
+        // The account loading: the dashboard's own shapes in grey, not a blank page.
+        <DashboardSkeleton
+          onLogout={logout}
+          onRetry={() => {
+            setLoadError(null)
+            refresh()
+          }}
+        />
       ) : (onboarding && (!data || !zoneReady)) || !data ? (
         <Loading
           label={onboarding ? <>Récupération de vos paramètres <PayByPhone />…</> : <>Chargement de votre compte <PayByPhone />…</>}

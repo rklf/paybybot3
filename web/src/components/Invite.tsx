@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { api } from '@/lib/api'
 import { ui } from '@/lib/styles'
 import { cn } from '@/lib/utils'
-import { LoadingLine } from '@/components/Loading'
+import { LineBone } from '@/components/Skeletons'
 
 // The message sent with the link (copied or shared), in the user's own voice.
 const MESSAGE =
@@ -120,7 +120,7 @@ export function InviteShare({ withLink = false, className }: { withLink?: boolea
       {withLink && (
         <div className="mt-4 flex items-center gap-3 rounded-xl bg-ink/[0.04] py-2 pr-2 pl-4">
           <span className="min-w-0 flex-1 truncate text-left text-sm text-ink/70">
-            {url ? url.replace(/^https?:\/\//, '') : <LoadingLine className="py-1.5" />}
+            {url ? url.replace(/^https?:\/\//, '') : <LineBone className="my-1 w-52" />}
           </span>
           <button onClick={copy} disabled={!url} className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-ink shadow-[0_1px_2px_rgb(0_0_0/0.08)]">
             {copied ? 'Copié' : 'Copier'}

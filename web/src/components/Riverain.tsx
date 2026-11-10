@@ -8,6 +8,7 @@ import { loadLast, saveLast } from '@/components/PayWizard'
 import { PlansDialog } from '@/components/Pricing'
 import { ShinyButton } from '@/components/ui/shiny-button'
 import { cn } from '@/lib/utils'
+import { PlateBone } from '@/components/Skeletons'
 import { Notice } from '@/components/ui/notice'
 import { DateInput } from '@/components/ui/date-time-fields'
 import { ToggleSwitch } from '@/components/ui/toggle-switch'
@@ -15,7 +16,6 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { choice, ui } from '@/lib/styles'
 import { emailProblem } from '@/lib/validate'
 import { api, ApiError, type Account, type Activation, type Autopilot, type Money, type Overview, type Parking, type Rate } from '@/lib/api'
-import { LoadingLine } from '@/components/Loading'
 
 export const WEEKLY_LABEL = 'Riverain hebdo'
 
@@ -918,8 +918,12 @@ export function RiverainDialog({
           <div>
             <p className={ui.label}>{plates && plates.length > 1 ? 'Véhicules résidents' : 'Véhicule résident'}</p>
             {plates === null ? (
-              <div className="grid h-12 place-items-center rounded-xl border border-ink/10">
-                <LoadingLine className="items-center" />
+              <div className="flex flex-wrap gap-2">
+                {[0, 1].map((i) => (
+                  <span key={i} className="rounded-xl border border-ink/10 p-2">
+                    <PlateBone />
+                  </span>
+                ))}
               </div>
             ) : (
               <div className="flex flex-wrap gap-2">

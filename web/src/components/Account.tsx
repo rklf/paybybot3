@@ -5,8 +5,8 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { arrondissement, PayByBot, PayByPhone, Plate, ZonePlate } from '@/components/signs'
 import { api, clock, type Account, type Overview, type PricedVehicle } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { LineBone, PlateBone } from '@/components/Skeletons'
 import { ui } from '@/lib/styles'
-import { LoadingLine } from '@/components/Loading'
 
 /** "Mon compte" in the top bar: what PayByBot reads from the PayByPhone account, the home zone and e-mail. */
 export function AccountButton({
@@ -100,7 +100,13 @@ function AccountDialog({
           <Section title={vehicles && vehicles.length > 1 ? `Vos véhicules · ${vehicles.length}` : 'Votre véhicule'}>
             <Rows>
               {vehicles === undefined ? (
-                <LoadingLine className="px-4 py-4" />
+                // The rows' own shapes while PayByPhone answers (as many as the account's cars).
+                (data.vehicles.length ? data.vehicles : [null]).map((_, i) => (
+                  <li key={i} className={rowClass}>
+                    <PlateBone />
+                    <LineBone className="w-28" />
+                  </li>
+                ))
               ) : vehicles.length ? (
                 vehicles.map((v) => {
                   const zone = arrondissement(v.zone)

@@ -10,6 +10,7 @@ import { AccountButton } from '@/components/Account'
 import { PlansDialog, TrialBanner } from '@/components/Pricing'
 import { ui } from '@/lib/styles'
 import { cn } from '@/lib/utils'
+import { LineBone } from '@/components/Skeletons'
 import { HostedFooter } from '@/components/Footer'
 import { CheckoutDone } from '@/components/CheckoutDone'
 import { ActivateRenewal, CardGate, OpeningSwitch, RenewalActions, RenewalNote, RenewalSwitch, RiverainDialog, pauseState, nextRenewal, when, ZoneTag, RiverainCard, WEEKLY_LABEL, renewalOf, runPendingRenewals } from '@/components/Riverain'
@@ -243,11 +244,14 @@ function IdleVehicles({ data, onChanged, hosted, demo, autoPlate, locked, onLogo
                   <dd className="inline text-ink">{vehicleTypeLabel(v.type)}</dd>
                 </div>
               )}
-              {v.zone && (
+              {/* The zone comes a moment after the card: its line holds its place meanwhile. */}
+              {v.zone ? (
                 <div>
                   <dt className="inline">Zone : </dt>
                   <dd className="inline text-ink">{place ? `${place} (${v.zone})` : v.zone}</dd>
                 </div>
+              ) : (
+                <LineBone className="mx-auto mt-1.5 h-[1.15rem] w-44" />
               )}
             </dl>
             {/* « Renouvellement auto » switch, off: turning it on opens the renewal setup (same as the ticket card). */}
