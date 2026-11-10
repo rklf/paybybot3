@@ -89,8 +89,7 @@ function AccountDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className={ui.dialog}>
         <div className="px-6 pt-7">
-          {/* The same weight as the section titles below. */}
-          <DialogTitle className={cn(ui.dialogTitle, 'font-semibold')}>Mon compte</DialogTitle>
+          <DialogTitle className={ui.dialogTitle}>Mon compte</DialogTitle>
           <DialogDescription className="mt-1 text-ink/60">
             Ce que <PayByBot /> lit dans votre compte <PayByPhone />.
           </DialogDescription>

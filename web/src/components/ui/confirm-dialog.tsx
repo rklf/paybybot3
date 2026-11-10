@@ -30,7 +30,7 @@ export function ConfirmDialog({
         <AlertDialog.Dialog className="sm:max-w-[26rem]">
           <AlertDialog.Header>
             <AlertDialog.Icon status={danger ? 'danger' : 'accent'} />
-            <AlertDialog.Heading className="font-heading text-xl font-semibold tracking-tight text-ink">{title}</AlertDialog.Heading>
+            <AlertDialog.Heading className={ui.dialogTitle}>{title}</AlertDialog.Heading>
           </AlertDialog.Header>
           {description && (
             <AlertDialog.Body>

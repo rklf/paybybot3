@@ -905,7 +905,7 @@ export function RiverainDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={cn(ui.dialog, 'sm:max-w-lg')}>
         <div className="px-6 pt-7">
-          <DialogTitle className={cn(ui.dialogTitle, 'font-semibold')}>Renouvellement hebdomadaire</DialogTitle>
+          <DialogTitle className={ui.dialogTitle}>Renouvellement hebdomadaire</DialogTitle>
           {/* Opened from a car's card: the button says what to do, no sentence needed. */}
           <DialogDescription className={plate ? 'sr-only' : 'mt-1 text-ink/60'}>
             {plate ? 'Vérifiez, puis activez. On s’occupe du reste.' : "Choisissez les véhicules à renouveler, vérifiez, puis activez. On s'occupe du reste."}

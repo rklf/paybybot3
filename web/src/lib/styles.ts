@@ -33,7 +33,8 @@ export const ui = {
   subtitle: 'mt-3 text-[1.05rem] leading-relaxed text-ink/60',
   /** Dialog content shell and its plain header. */
   dialog: 'max-h-[calc(100dvh-1.5rem)] gap-0 overflow-y-auto rounded-2xl bg-white p-0 sm:max-w-md',
-  dialogTitle: 'font-heading text-2xl font-bold tracking-tight text-ink',
+  /** Every window's title (« Mon compte », « Programmer un ticket », « Inviter un proche »…): one size, one weight. */
+  dialogTitle: 'font-heading text-2xl font-semibold tracking-tight text-ink',
   error: 'rounded-xl bg-destructive/8 px-4 py-3 text-destructive',
   note: 'rounded-xl bg-muted px-4 py-3 text-ink/70',
 }
