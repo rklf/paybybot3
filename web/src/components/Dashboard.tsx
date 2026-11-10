@@ -628,8 +628,9 @@ export function Dashboard({
           </div>
         )}
 
-        {/* As soon as a ticket runs, always: another car's renewal (resident) or ticket (any other). */}
-        {data && running.length > 0 && (
+        {/* As soon as a ticket runs: another car's renewal (resident) or ticket (any other). Not when every car of
+            the account has its ticket already: there is no other car to pick. */}
+        {data && running.length > 0 && data.vehicles.some((v) => !running.some((s) => sameCar(s.plate, v.plate))) && (
           <div className="mt-6">
             {/* Any car, any ticket: the wizard asks the car first, then resident options or the vehicle type. */}
             <RippleButton onClick={() => (setBackPlate(undefined), setProgramAsked((n) => n + 1))} rippleColor="#ADD8E6" className={ui.primaryGray}>

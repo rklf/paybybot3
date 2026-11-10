@@ -91,6 +91,35 @@ test('sans voiture résidente ni ticket : une carte par voiture, l’interrupteu
   await expect(page.getByRole('button', { name: /LM-789-NP/ })).toHaveAttribute('aria-pressed', 'true')
 })
 
+/** The demo account with one resident ticket running on AB-123-CD, and only the cars kept by `keep`. */
+async function oneTicket(page: Page, keep: (v: { plate: string }) => boolean) {
+  const ticket = {
+    id: 'e2e-ticket', location: '75105', plate: 'AB123CD', start: new Date().toISOString(),
+    expire: new Date(Date.now() + 3 * 86_400_000).toISOString(), rate: '101', resident: true,
+    cost: { amount: 9.5, currency: 'EUR' }, stoppable: false, stopped: false,
+  }
+  await page.route('**/api/overview', async (route) => {
+    const answer = await route.fetch()
+    const json = await answer.json()
+    if (!json.vehicles) return route.fulfill({ response: answer, json })
+    await route.fulfill({ json: { ...json, vehicles: json.vehicles.filter(keep), sessions: [ticket] } })
+  })
+}
+
+test('un seul véhicule, déjà couvert : pas de bouton « Renouveler un autre véhicule »', async ({ page }) => {
+  await oneTicket(page, (v) => /AB.?123.?CD/.test(v.plate))
+  await demo(page)
+  await expect(page.getByText(/Couvert jusqu’au/).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Renouveler un autre véhicule' })).toHaveCount(0)
+})
+
+test('un autre véhicule sans ticket : le bouton « Renouveler un autre véhicule » reste', async ({ page }) => {
+  await oneTicket(page, () => true)
+  await demo(page)
+  await expect(page.getByText(/Couvert jusqu’au/).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Renouveler un autre véhicule' })).toBeVisible()
+})
+
 test('bienvenue sans carte bancaire valide : croix rouge, on ne passe pas', async ({ page }) => {
   let payments: object[] = [{ id: 'c1', label: 'Visa •••• 4242 — exp. 10/26', kind: 'card', expired: true }]
   await page.route('**/api/overview', async (route) => {
@@ -317,8 +346,13 @@ test('admin : les dates de fin des cartes des clients', async ({ page }) => {
   }
   await page.route('**/api/admin/*', (route) => route.fulfill({ json: replies[new URL(route.request().url()).pathname.split('/').pop()!] ?? {} }))
   await page.goto(LINK + '#/admin')
+  // The overview alone first: the other sections open from « Pilotage ».
+  await expect(page.getByText('Revenu mensuel récurrent')).toBeVisible()
+  await expect(page.getByText('1 client avec carte expirée')).toBeHidden()
+  await page.getByRole('button', { name: /^À traiter/ }).click()
   await expect(page.getByText('1 client avec carte expirée')).toBeVisible()
   await expect(page.getByText('1 carte à renouveler sous 60 jours')).toBeVisible()
+  await page.getByRole('button', { name: /^Clients/ }).click()
   await expect(page.getByRole('cell', { name: 'Paris 5e' }).first()).toBeVisible()
   await expect(page.getByRole('cell', { name: 'Suspendu' }).first()).toBeVisible()
   await page.getByRole('combobox', { name: 'Filtrer : Carte' }).selectOption('Expirée')

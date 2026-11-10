@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'motion/react'
 import { arrondissement, Plate, Wordmark } from '@/components/signs'
-import { Activity, ArrowUpRight, Check, ChevronDown, ChevronRight, LayoutGrid, Loader2, LogOut, Search, Users, X } from 'lucide-react'
+import { Activity, ArrowUpRight, CalendarClock, Check, ChevronDown, ChevronRight, LayoutGrid, ListChecks, Loader2, LogOut, Search, Users, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ui } from '@/lib/styles'
 import { ApiError } from '@/lib/api'
@@ -567,7 +567,7 @@ function Todo({ rows, onShow }: { rows: Row[]; onShow: (names: string[]) => void
     { tone: 'amber' as const, text: `${plural(soon.length, 'carte')} à renouveler sous 60 jours`, hint: 'Rappel envoyé à 30 et 7 jours', rows: soon },
   ].filter((x) => x.rows.length)
   return (
-    <Card i={6} className="pb-2">
+    <Card className="pb-2">
       <CardHead title="À traiter" note={items.length ? undefined : 'Rien à faire pour l’instant.'}>
         {items.length > 0 && <span className="rounded-full bg-destructive/[0.08] px-2 py-0.5 text-xs font-semibold text-destructive tabular-nums">{items.length}</span>}
       </CardHead>
@@ -612,7 +612,7 @@ function Upcoming({ clients, onShow }: { clients: AdminClient[]; onShow: (names:
     .sort((a, b) => a.trialEnd!.localeCompare(b.trialEnd!))
   const total = next.reduce((n, c) => n + (c.price ?? 0), 0)
   return (
-    <Card i={7} className="pb-2">
+    <Card className="pb-2">
       <CardHead title="Premiers prélèvements" note={next.length ? `${euros(total)} attendus sous 30 jours` : 'Aucun mois offert en cours.'} />
       <ul className="mt-3">
         {next.slice(0, 5).map((c) => {
@@ -752,7 +752,7 @@ function ClientTable({ rows, focus, onClearFocus }: { rows: Row[]; focus: string
   const vehicles = rows.reduce((n, r) => n + (r.vehicles?.length ?? 0), 0)
 
   return (
-    <Card i={8} id="clients" className="overflow-hidden">
+    <Card className="overflow-hidden">
       <CardHead title="Clients" note={`${plural(rows.length, 'compte')} · ${plural(vehicles, 'véhicule')}`}>
         <Segmented
           label="Segment"
@@ -911,9 +911,21 @@ function ClientTable({ rows, focus, onClearFocus }: { rows: Row[]; focus: string
 
 const NAV = [
   ['overview', 'Vue d’ensemble', LayoutGrid],
+  ['todo', 'À traiter', ListChecks],
+  ['upcoming', 'Premiers prélèvements', CalendarClock],
   ['clients', 'Clients', Users],
   ['activity', 'Activité', Activity],
 ] as const
+type View = (typeof NAV)[number][0]
+
+/** The lines of « À traiter » that have someone in them (the same four checks as the card). */
+const todoLines = (rows: Row[]) =>
+  [
+    rows.some((r) => r.status === 'alert'),
+    rows.some((r) => (r.vehicles ?? []).some((v) => v.renewal === 'Suspendu')),
+    rows.some((r) => r.cardState === 'Expirée'),
+    rows.some((r) => r.cardState === 'Bientôt'),
+  ].filter(Boolean).length
 
 export function AdminPage(_: { signedIn?: boolean }) {
   const [stats, setStats] = useState<AdminStats | null>(null)
@@ -922,6 +934,8 @@ export function AdminPage(_: { signedIn?: boolean }) {
   const [clients, setClients] = useState<AdminClient[] | null>(null)
   const [activity, setActivity] = useState<AdminActivity[] | null>(null)
   const [focus, setFocus] = useState<string[] | null>(null)
+  // One section at a time, picked in « Pilotage ».
+  const [view, setView] = useState<View>('overview')
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 60_000)
@@ -974,12 +988,21 @@ export function AdminPage(_: { signedIn?: boolean }) {
     setNeedsLogin(true)
   }
 
-  const go = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   const rows = useMemo(() => (clients ? rowsOf(clients, now) : []), [clients, now])
-  const show = (emails: string[]) => {
-    setFocus(emails)
-    requestAnimationFrame(() => go('clients'))
+  const open = (v: View) => {
+    setView(v)
+    setFocus(null)
+    window.scrollTo({ top: 0 })
   }
+  // A line of « À traiter » or « Premiers prélèvements »: the clients it is about, in « Clients ».
+  const show = (emails: string[]) => {
+    setView('clients')
+    setFocus(emails)
+    window.scrollTo({ top: 0 })
+  }
+  const badge: Partial<Record<View, number>> = clients
+    ? { todo: todoLines(rows), upcoming: clients.filter((c) => inFreeMonth(c, now) && new Date(c.trialEnd!).getTime() - now < 30 * DAY).length, clients: clients.length }
+    : {}
 
   if (needsLogin) {
     return (
@@ -994,31 +1017,33 @@ export function AdminPage(_: { signedIn?: boolean }) {
   const ready = stats && clients && activity
 
   return (
-    <div className="min-h-dvh bg-[#f6f6f4] lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]">
-      <aside className="sticky top-0 hidden h-dvh flex-col border-r border-ink/[0.07] bg-white/70 px-4 py-5 backdrop-blur lg:flex">
+    <div className="min-h-dvh bg-[#f6f6f4] lg:grid lg:grid-cols-[16.5rem_minmax(0,1fr)]">
+      <aside className="sticky top-0 hidden h-dvh flex-col border-r border-ink/[0.07] bg-white px-4 py-5 lg:flex">
         <a href="#/" aria-label="PayByBot, accueil" className="px-2">
           <Wordmark />
         </a>
         <p className="mt-8 px-2 text-[11px] font-semibold tracking-[0.08em] text-ink/35 uppercase">Pilotage</p>
         <nav className="mt-2 space-y-0.5" aria-label="Sections">
           {NAV.map(([id, label, Icon]) => (
-            <button key={id} onClick={() => go(id)} className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2 text-sm font-medium text-ink/65 transition hover:bg-ink/[0.04] hover:text-ink">
-              <Icon className="size-4 text-ink/40" /> {label}
+            <button
+              key={id}
+              onClick={() => open(id)}
+              aria-current={view === id ? 'page' : undefined}
+              className={cn(
+                'flex h-9 w-full items-center gap-2.5 rounded-lg px-2 text-sm font-medium transition',
+                view === id ? 'bg-ink/[0.06] text-ink' : 'text-ink/60 hover:bg-ink/[0.04] hover:text-ink',
+              )}
+            >
+              <Icon className={cn('size-4', view === id ? 'text-eu' : 'text-ink/40')} />
+              <span className="flex-1 text-left whitespace-nowrap">{label}</span>
+              {!!badge[id] && (
+                <span className={cn('rounded-md px-1.5 text-xs font-semibold tabular-nums', id === 'todo' ? 'bg-destructive/[0.09] text-destructive' : 'text-ink/40')}>{badge[id]}</span>
+              )}
             </button>
           ))}
         </nav>
-        <div className="mt-auto rounded-xl border border-ink/[0.07] bg-white p-3">
-          <p className="flex items-center gap-2 text-xs font-medium text-ink/70">
-            <span className="relative flex size-2">
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-go opacity-40" />
-              <span className="relative inline-flex size-2 rounded-full bg-go" />
-            </span>
-            En direct
-          </p>
-          <p className="mt-1 text-xs text-ink/45">Mis à jour toutes les 30 secondes</p>
-        </div>
         {stats && (
-          <button onClick={logout} className="mt-3 flex h-9 items-center gap-2.5 rounded-lg px-2 text-sm font-medium text-ink/55 transition hover:bg-ink/[0.04] hover:text-ink">
+          <button onClick={logout} className="mt-auto flex h-9 items-center gap-2.5 rounded-lg px-2 text-sm font-medium text-ink/55 transition hover:bg-ink/[0.04] hover:text-ink">
             <LogOut className="size-4 text-ink/40" /> Se déconnecter
           </button>
         )}
@@ -1033,11 +1058,24 @@ export function AdminPage(_: { signedIn?: boolean }) {
             </button>
           )}
         </TopBar>
-        <main id="overview" className="mx-auto max-w-[84rem] scroll-mt-6 px-4 pt-8 pb-20 sm:px-8 lg:pt-10">
+        {/* Small screens: « Pilotage » as a row of tabs under the bar. */}
+        <nav aria-label="Sections" className="flex gap-1 overflow-x-auto border-b border-ink/[0.07] bg-white/70 px-4 py-2 lg:hidden">
+          {NAV.map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => open(id)}
+              aria-current={view === id ? 'page' : undefined}
+              className={cn('h-9 shrink-0 rounded-lg px-3 text-sm font-medium whitespace-nowrap transition', view === id ? 'bg-ink/[0.06] text-ink' : 'text-ink/55')}
+            >
+              {label}
+              {!!badge[id] && <span className={cn('ml-1.5 text-xs font-semibold tabular-nums', id === 'todo' ? 'text-destructive' : 'text-ink/40')}>{badge[id]}</span>}
+            </button>
+          ))}
+        </nav>
+        <main className="mx-auto max-w-[84rem] scroll-mt-6 px-4 pt-8 pb-20 sm:px-8 lg:pt-10">
           <header className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="text-sm text-ink/45 first-letter:uppercase">{today}</p>
-              <h1 className="mt-1 font-heading text-[2rem] leading-tight font-semibold tracking-[-0.035em] text-ink">Vue d’ensemble</h1>
             </div>
             {clients && (
               <p className="text-sm text-ink/50">
@@ -1056,23 +1094,22 @@ export function AdminPage(_: { signedIn?: boolean }) {
               <div className="h-80 animate-pulse rounded-2xl bg-ink/[0.04] sm:col-span-2 xl:col-span-4" />
             </div>
           ) : (
-            <div className="mt-8 space-y-4">
+            <div key={view} className="mt-8 space-y-4">
               <ServicePanel />
-              <Overview visitors={byPerson(activity.filter((r) => r.event === LINK_OPENED))} clients={clients} activity={activity} />
-              <div className="grid gap-4 lg:grid-cols-2">
-                <Todo rows={rows} onShow={show} />
-                <Upcoming clients={clients} onShow={show} />
-              </div>
-              {clients.length === 0 ? (
-                <Card i={8} id="clients" className="p-6 text-ink/50">
-                  Aucun client pour l’instant.
+              {view === 'overview' && <Overview visitors={byPerson(activity.filter((r) => r.event === LINK_OPENED))} clients={clients} activity={activity} />}
+              {view === 'todo' && <Todo rows={rows} onShow={show} />}
+              {view === 'upcoming' && <Upcoming clients={clients} onShow={show} />}
+              {view === 'clients' &&
+                (clients.length === 0 ? (
+                  <Card className="p-6 text-ink/50">Aucun client pour l’instant.</Card>
+                ) : (
+                  <ClientTable rows={rows} focus={focus} onClearFocus={() => setFocus(null)} />
+                ))}
+              {view === 'activity' && (
+                <Card className="pb-2">
+                  <ActivityList rows={activity} onDelete={removeActivity} />
                 </Card>
-              ) : (
-                <ClientTable rows={rows} focus={focus} onClearFocus={() => setFocus(null)} />
               )}
-              <Card i={9} id="activity" className="scroll-mt-6 pb-2">
-                <ActivityList rows={activity} onDelete={removeActivity} />
-              </Card>
             </div>
           )}
         </main>
