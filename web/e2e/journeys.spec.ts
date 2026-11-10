@@ -120,6 +120,35 @@ test('un autre véhicule sans ticket : le bouton « Renouveler un autre véhicul
   await expect(page.getByRole('button', { name: 'Renouveler un autre véhicule' })).toBeVisible()
 })
 
+test('sans abonnement : « Programmer un ticket » ouvert avant le tarif résident n’est pas recouvert par le renouvellement', async ({ page }) => {
+  // Online, no subscription yet, a resident car without renewal: once its resident rate is known, its renewal opens
+  // by itself. The owner clicked « Programmer un ticket » before that: the wizard stays, nothing opens over it.
+  for (const url of ['**/api/me', '**/api/login'])
+    await page.route(url, async (route) => {
+      const answer = await route.fetch()
+      const json = await answer.json()
+      await route.fulfill({ response: answer, json: json.username ? { ...json, demo: false, hosted: true } : json })
+    })
+  await page.route('**/api/account', (route) =>
+    route.fulfill({ json: { email: 'a@b.fr', zone: '75105', subscribed: false, trialEnd: new Date(Date.now() + 16 * 86_400_000).toISOString() } }),
+  )
+  let release = () => {}
+  const priced = new Promise<void>((r) => (release = r))
+  await page.route('**/api/pricing', async (route) => {
+    const answer = await route.fetch()
+    await priced // the resident rate arrives late
+    await route.fulfill({ response: answer })
+  })
+  await page.goto(LINK + '#demo')
+  await page.getByRole('button', { name: 'Programmer un ticket' }).first().click()
+  await expect(page.getByRole('dialog').getByText('Pris automatiquement les jours choisis')).toBeVisible()
+  release()
+  await page.waitForResponse('**/api/pricing')
+  await page.waitForTimeout(800)
+  await expect(page.getByRole('dialog').getByText('Pris automatiquement les jours choisis')).toBeVisible()
+  await expect(page.getByText('Renouvellement hebdomadaire')).toHaveCount(0)
+})
+
 test('bienvenue sans carte bancaire valide : croix rouge, on ne passe pas', async ({ page }) => {
   let payments: object[] = [{ id: 'c1', label: 'Visa •••• 4242 — exp. 10/26', kind: 'card', expired: true }]
   await page.route('**/api/overview', async (route) => {

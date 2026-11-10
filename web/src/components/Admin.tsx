@@ -709,6 +709,25 @@ function rowsOf(clients: AdminClient[], now: number): Row[] {
   })
 }
 
+/** A card's state in words: up to date means a card still valid for more than 60 days (its end date only: PayByPhone
+ *  does not say whether the bank still accepts it; a refusal shows as a PayByBot failure). */
+const CARD_TEXT: Record<CardState, string> = {
+  OK: 'À jour',
+  Bientôt: 'Expire bientôt',
+  Expirée: 'Expirée',
+  'Date inconnue': 'Date inconnue',
+  Aucune: 'Aucune carte',
+  Illisible: 'Illisible',
+}
+const CARD_STYLE: Record<CardState, string> = {
+  OK: 'bg-go/[0.09] text-go',
+  Bientôt: 'bg-amber/[0.16] text-[#7a5b00]',
+  Expirée: 'bg-destructive/[0.09] text-destructive',
+  'Date inconnue': 'bg-ink/[0.05] text-ink/50',
+  Aucune: 'bg-destructive/[0.09] text-destructive',
+  Illisible: 'bg-ink/[0.05] text-ink/45',
+}
+
 const SUB_STYLE: Record<Row['sub'], string> = {
   Payant: 'bg-go/[0.09] text-go',
   'Mois offert': 'bg-eu/[0.08] text-eu',
@@ -792,9 +811,9 @@ function ClientTable({ rows, focus, onClearFocus }: { rows: Row[]; focus: string
           className="h-10 rounded-[10px] border border-ink/10 bg-white px-3 text-sm text-ink outline-none focus:border-eu"
         >
           <option value="">Toutes les cartes</option>
-          {['Expirée', 'Bientôt', 'OK', 'Date inconnue', 'Aucune', 'Illisible'].map((c) => (
+          {(['Expirée', 'Bientôt', 'OK', 'Date inconnue', 'Aucune', 'Illisible'] as const).map((c) => (
             <option key={c} value={c}>
-              {c}
+              {CARD_TEXT[c]}
             </option>
           ))}
         </select>
@@ -811,7 +830,7 @@ function ClientTable({ rows, focus, onClearFocus }: { rows: Row[]; focus: string
             <tr className="[&>th]:px-3 [&>th]:py-2.5 [&>th]:font-medium [&>th:first-child]:pl-5 sm:[&>th:first-child]:pl-6 [&>th:last-child]:pr-5 sm:[&>th:last-child]:pr-6">
               <th>Client</th>
               <th>Abonnement</th>
-              <th className="min-w-[19rem]">Véhicules</th>
+              <th className="min-w-[17rem]">Véhicules</th>
               <th>Carte</th>
               <th>Arrivée</th>
               <th className="text-right">État</th>
@@ -857,14 +876,14 @@ function ClientTable({ rows, focus, onClearFocus }: { rows: Row[]; focus: string
                               </span>
                             </span>
                             {v.expire ? (
-                              <span className="block text-xs whitespace-nowrap text-ink tabular-nums">
+                              <span className="block text-xs text-ink tabular-nums">
                                 Ticket jusqu’au {ends(v.expire)} <span className="text-ink/45">· reste {v.left}</span>
                               </span>
                             ) : (
                               <span className="block text-xs text-ink/40">Aucun ticket</span>
                             )}
                             {v.failure && (
-                              <span className="mt-0.5 block max-w-[26rem] text-xs font-semibold text-destructive" title={v.failure}>
+                              <span className="mt-0.5 block max-w-[22rem] text-xs font-semibold text-destructive" title={v.failure}>
                                 Échec : <span className="font-normal">{v.failure}</span>
                               </span>
                             )}
@@ -875,10 +894,11 @@ function ClientTable({ rows, focus, onClearFocus }: { rows: Row[]; focus: string
                   )}
                 </td>
                 <td className="whitespace-nowrap tabular-nums">
-                  {r.card ? <span className="text-ink">{r.card}</span> : <span className="text-ink/35">—</span>}
-                  {r.cardState === 'Expirée' && <span className="mt-0.5 block text-xs font-semibold text-destructive">Expirée</span>}
-                  {r.cardState === 'Bientôt' && <span className="mt-0.5 block text-xs font-semibold text-[#9a6700]">Bientôt</span>}
-                  {(r.cardState === 'Illisible' || r.cardState === 'Date inconnue') && <span className="mt-0.5 block text-xs text-ink/45">{r.cardState}</span>}
+                  <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold', CARD_STYLE[r.cardState])}>
+                    <span className="size-1.5 rounded-full bg-current" />
+                    {CARD_TEXT[r.cardState]}
+                  </span>
+                  {r.card && <span className="mt-1 block text-xs text-ink/50">exp. {r.card}</span>}
                 </td>
                 <td className="whitespace-nowrap">
                   <span className="block text-ink/70 tabular-nums">{r.created}</span>

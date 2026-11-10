@@ -208,13 +208,12 @@ function CardBanner({ payments }: { payments: Overview['payments'] }) {
   )
 }
 
-/** The cars with no ticket: plate, type, zone and the resident week's price, one card each. */
+/** The cars with no ticket: plate, type and zone, one card each. */
 const plateKey = (p: string) => p.replace(/[^0-9a-z]/gi, '').toUpperCase()
 const sameCar = (a: string, b: string) => a.replace(/[^0-9a-z]/gi, '').toUpperCase() === b.replace(/[^0-9a-z]/gi, '').toUpperCase()
 
 function IdleVehicles({ data, onChanged, hosted, demo, autoPlate, locked, onLogout }: { data: Overview; onChanged: () => void; hosted: boolean; demo?: boolean; autoPlate?: string | null; locked?: boolean; onLogout?: () => void }) {
   const key = (p: string) => p.replace(/[^0-9a-z]/gi, '').toUpperCase()
-  const [weeks, setWeeks] = useState<Record<string, number | null>>({})
   // The vehicles with the resident rate on PayByPhone (a zone in the pricing); null while looking.
   const [residents, setResidents] = useState<Set<string> | null>(null)
   useEffect(() => {
@@ -222,7 +221,6 @@ function IdleVehicles({ data, onChanged, hosted, demo, autoPlate, locked, onLogo
     api.pricing().then(
       (p) => {
         if (cancelled) return
-        setWeeks(Object.fromEntries((p.vehicles ?? []).map((v) => [key(v.plate), v.weekly ?? null])))
         setResidents(new Set((p.vehicles ?? []).filter((v) => v.zone).map((v) => key(v.plate))))
       },
       () => {},
@@ -238,11 +236,9 @@ function IdleVehicles({ data, onChanged, hosted, demo, autoPlate, locked, onLogo
   const isResident = (v: { plate: string; zone?: string | null }) => (residents ? residents.has(key(v.plate)) : !!v.zone)
   const cars = data.vehicles.filter((v) => isResident(v) && !renewed.has(key(v.plate)) && !parked.has(key(v.plate)))
   if (!cars.length) return null
-  const euros = (cents: number) => (cents / 100).toFixed(2).replace('.', ',') + ' €'
   return (
     <div className="mt-5 space-y-3">
       {cars.map((v) => {
-        const week = weeks[key(v.plate)]
         const place = v.zone ? arrondissement(v.zone) : null
         return (
           <div key={v.plate} data-renewal-card className="flex flex-col items-center rounded-2xl border border-border p-5 text-center">
@@ -259,12 +255,6 @@ function IdleVehicles({ data, onChanged, hosted, demo, autoPlate, locked, onLogo
                 <div>
                   <dt className="inline">Zone : </dt>
                   <dd className="inline text-ink">{place ? `${place} (${v.zone})` : v.zone}</dd>
-                </div>
-              )}
-              {week != null && (
-                <div>
-                  <dt className="inline">Abonnement résident : </dt>
-                  <dd className="inline text-ink">{euros(week)} / semaine</dd>
                 </div>
               )}
             </dl>
@@ -452,7 +442,9 @@ export function Dashboard({
       live.find((s) => knownResident(s.plate))?.plate ??
       null)
     : null
-  const locked = needsOffer && !renewing && !!residentPlates && !!residentPlate
+  // Not once « Programmer un ticket » was asked: the wizard the owner opened is never covered by the renewal (the
+  // resident rate often arrives after the click). The wizard's « Activer » leads to the offer all the same.
+  const locked = needsOffer && !renewing && !!residentPlates && !!residentPlate && !programAsked
   // No offer yet and no resident car: the ticket wizard opens by itself, but can be closed (the page stays usable);
   // its « Activer » leads to the offer, and the server refuses any ticket without one.
   const offerDaily = needsOffer && !!data && !data.autopilots.length && !!residentPlates && !residentPlate
