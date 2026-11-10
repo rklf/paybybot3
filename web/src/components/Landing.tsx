@@ -52,8 +52,9 @@ const TESTIMONIALS: [string, string, string][] = [
 ]
 
 /** « Comment ça marche » : the three steps on the left, a line filling down the active one, and its screen on the
- *  right. The steps take turns every 3.5 seconds (not with reduced motion); a click shows one at once. */
-function HowItWorks() {
+ *  right. The steps take turns every 3.5 seconds (not with reduced motion); a click shows one at once. `page`: the
+ *  « Comment ça marche » page itself (its title a page title, not a window-high section). */
+export function HowItWorks({ page = false }: { page?: boolean }) {
   const [active, setActive] = useState(0)
   const [auto, setAuto] = useState(() => !window.matchMedia('(prefers-reduced-motion: reduce)').matches)
   useEffect(() => {
@@ -63,10 +64,17 @@ function HowItWorks() {
   }, [active, auto])
 
   return (
-    <section id="comment" className="flex scroll-mt-16 flex-col justify-center pt-24 pb-10 lg:min-h-[calc(100dvh-4rem)] lg:pt-20 lg:pb-12">
-      <h2 className="text-center font-heading text-[2rem] leading-[1.05] font-medium tracking-[-0.035em] text-ink sm:text-[2.6rem] lg:text-[3rem]">
-        Comment ça marche
-      </h2>
+    <section
+      id="comment"
+      className={cn('flex scroll-mt-16 flex-col justify-center', page ? '' : 'pt-24 pb-10 lg:min-h-[calc(100dvh-4rem)] lg:pt-20 lg:pb-12')}
+    >
+      {page ? (
+        <h1 className={ui.title}>Comment ça marche</h1>
+      ) : (
+        <h2 className="text-center font-heading text-[2rem] leading-[1.05] font-medium tracking-[-0.035em] text-ink sm:text-[2.6rem] lg:text-[3rem]">
+          Comment ça marche
+        </h2>
+      )}
       <div className="mt-12 grid items-center gap-10 lg:mt-16 lg:grid-cols-[1fr_1.05fr] lg:gap-16">
         <ol className="space-y-2">
           {STEPS.map(([title, text], i) => {

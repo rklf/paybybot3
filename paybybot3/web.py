@@ -1937,17 +1937,23 @@ def check_human(request, token):
         raise HTTPException(400, "La vérification anti-robot a échoué. Réessayez.")
 
 
-def cron_authorized(request):
-    """The scheduler sends a bearer token: Supabase's (checked by its SHA-256) or Vercel Cron's CRON_SECRET."""
+def cron_caller(request):
+    """Which scheduler calls, from its bearer token: "supabase" (checked by its SHA-256, every 5 minutes), "vercel"
+    (Vercel Cron's CRON_SECRET, once a day as a backup), or None."""
     auth = request.headers.get("authorization") or ""
     token = auth[7:] if auth.lower().startswith("bearer ") else ""
     if not token:
-        return False
+        return None
     expected_hash = os.environ.get("PAYBYBOT_CRON_TOKEN_SHA256", "")
     if expected_hash and hmac.compare_digest(hashlib.sha256(token.encode()).hexdigest(), expected_hash):
-        return True
+        return "supabase"
     vercel_secret = os.environ.get("CRON_SECRET", "")
-    return bool(vercel_secret) and hmac.compare_digest(token, vercel_secret)
+    return "vercel" if vercel_secret and hmac.compare_digest(token, vercel_secret) else None
+
+
+def cron_authorized(request):
+    """The scheduler sends a bearer token: Supabase's or Vercel Cron's (see cron_caller)."""
+    return cron_caller(request) is not None
 
 
 def store(fn, **params):
@@ -2556,8 +2562,11 @@ def cron_renew(request: Request):
         return [safe(row, logins) for row in group]
     with ThreadPoolExecutor(max_workers=4) as pool:
         results = [r for done in pool.map(account, accounts.values()) for r in done]
-    # Once an hour (the scheduler calls every 5 minutes): the e-mails of the grace week after a refused charge.
-    dunned = run_dunning() if datetime.now(timezone.utc).minute < 5 else None
+    # Once an hour (the scheduler calls every 5 minutes): the e-mails of the grace week after a refused charge. Only
+    # Supabase's calls send them when it is set up: Vercel's daily backup call comes at the same minute (5:00), and two
+    # runs side by side would both send the day's e-mail before either notes it as sent.
+    sender = cron_caller(request) == "supabase" or not os.environ.get("PAYBYBOT_CRON_TOKEN_SHA256")
+    dunned = run_dunning() if sender and datetime.now(timezone.utc).minute < 5 else None
     check_capacity()
     return {"processed": len(results), "outcomes": results, "dunning": dunned, "probe": run_probe()}
 

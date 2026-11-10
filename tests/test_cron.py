@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 import os
 import unittest
 from unittest.mock import patch
@@ -13,7 +14,7 @@ class Cron(unittest.TestCase):
                 patch.object(web, "process_renewal", side_effect=lambda row, **kw: {"b": RuntimeError("x")}.get(row["id"], "paid")
                              if row["id"] != "b" else (_ for _ in ()).throw(RuntimeError("x"))), \
                 patch.object(web, "run_dunning", return_value=0):
-            answer = web.cron_renew(None)
+            answer = web.cron_renew(SimpleNamespace(headers={}))
         self.assertEqual((answer["processed"], sorted(answer["outcomes"])), (3, ["error", "paid", "paid"]))
 
     def test_one_accounts_renewals_share_one_login(self):
@@ -27,7 +28,7 @@ class Cron(unittest.TestCase):
         with patch.dict(os.environ, {"PAYBYBOT_SECRET": "t"}), patch.object(web, "HOSTED", True), \
                 patch.object(web, "cron_authorized", return_value=True), patch.object(web, "store", return_value=rows), \
                 patch.object(web, "process_renewal", side_effect=renew), patch.object(web, "run_dunning", return_value=0):
-            web.cron_renew(None)
+            web.cron_renew(SimpleNamespace(headers={}))
         by_owner = {}
         for owner, logins in seen:
             by_owner.setdefault(owner, set()).add(logins)

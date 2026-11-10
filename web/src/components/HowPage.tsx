@@ -1,70 +1,41 @@
+import { BellRing, Pause, Power } from 'lucide-react'
 import { HostedFooter } from '@/components/Footer'
-import { PayByBot, PayByPhone } from '@/components/signs'
+import { HowItWorks } from '@/components/Landing'
 import { PublicTopBar } from '@/components/TopBar'
 import { TRY_LABEL, ui } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 
-const STEPS = [
-  [
-    'Connectez votre compte PayByPhone',
-    <>
-      Avec le numéro et le mot de passe de votre compte <PayByPhone />. Votre mot de passe n’est jamais enregistré : <PayByBot />{' '}
-      retrouve seul vos véhicules et votre zone résidentielle.
-    </>,
-  ],
-  [
-    'Activez le renouvellement',
-    <>
-      Un interrupteur par véhicule. <PayByBot /> vérifie d’abord que votre tarif résident est actif.
-    </>,
-  ],
-  [
-    'Votre ticket se renouvelle chaque semaine',
-    <>
-      La veille de la fin du ticket en cours, la semaine suivante est payée sur <PayByPhone />, au tarif habituel. Un e-mail confirme chaque paiement.
-    </>,
-  ],
-] as const
+const card = 'rounded-2xl border border-ink/10 bg-white'
 
 const CONTROL = [
-  ['Pause', 'Mettez le renouvellement en pause pendant vos vacances : il reprend seul à la date choisie.'],
-  ['Arrêt', 'Coupez l’interrupteur à tout moment. Le ticket en cours reste valable jusqu’à sa fin.'],
-  ['Alerte', 'Si un paiement échoue, vous êtes prévenu par e-mail avec la cause.'],
+  [Pause, 'Pause', 'Mettez le renouvellement en pause pendant vos vacances : il reprend seul à la date choisie.'],
+  [Power, 'Arrêt', 'Coupez l’interrupteur à tout moment. Le ticket en cours reste valable jusqu’à sa fin.'],
+  [BellRing, 'Alerte', 'Si un paiement échoue, vous êtes prévenu par e-mail avec la cause.'],
 ] as const
 
-/** « Comment ça marche », in the top bar: three numbered steps and what stays in the user's hands, text only. */
+/** « Comment ça marche », in the top bar: the three steps with their screens, then what stays in the user's hands. */
 export function HowPage({ hosted, signedIn = false }: { hosted: boolean; signedIn?: boolean }) {
   return (
     <div className="flex min-h-dvh flex-col bg-background text-ink">
       <PublicTopBar signedIn={signedIn} />
-      <main className="mx-auto w-full max-w-[40rem] flex-1 px-6 pt-16 pb-20 sm:pt-20">
-        <h1 className={ui.title}>Comment ça marche</h1>
-        <p className={ui.subtitle}>
-          Trois étapes, une seule fois. Ensuite, <PayByBot /> s’occupe de votre stationnement résident.
-        </p>
+      <main className="mx-auto w-full max-w-[64rem] flex-1 px-6 pt-16 pb-20 sm:pt-20">
+        {/* The three steps, a line filling down the one shown, and its screen beside it (as on the home page). */}
+        <HowItWorks page />
 
-        <ol className="mt-12 divide-y divide-ink/10 border-y border-ink/10">
-          {STEPS.map(([title, text], i) => (
-            <li key={title} className="flex items-baseline gap-6 py-7">
-              {/* On the title's baseline: the number and the title read as one line. */}
-              <span className="w-6 shrink-0 font-heading text-[1.6rem] leading-snug font-medium text-eu tabular-nums">{i + 1}</span>
-              <div>
-                <h2 className="font-heading text-[1.2rem] leading-snug font-semibold tracking-[-0.01em]">{title}</h2>
-                <p className="mt-2 leading-relaxed text-ink/65">{text}</p>
-              </div>
+        <h2 className="mt-16 font-heading text-[1.15rem] font-semibold tracking-[-0.01em]">Vous gardez la main</h2>
+        <ul className="mt-4 grid gap-4 md:grid-cols-3">
+          {CONTROL.map(([Icon, term, text]) => (
+            <li key={term} className={cn(card, 'flex gap-4 p-5')}>
+              <span className="grid size-9 shrink-0 place-items-center rounded-full bg-ink/[0.05] text-ink/60">
+                <Icon className="size-4" />
+              </span>
+              <span className="leading-relaxed">
+                <span className="block font-semibold">{term}</span>
+                <span className="mt-0.5 block text-ink/65">{text}</span>
+              </span>
             </li>
           ))}
-        </ol>
-
-        <h2 className="mt-14 text-sm font-semibold text-ink/50">Vous gardez la main</h2>
-        <dl className="mt-4 space-y-3">
-          {CONTROL.map(([term, text]) => (
-            <div key={term} className="leading-relaxed">
-              <dt className="inline font-semibold">{term}. </dt>
-              <dd className="inline text-ink/65">{text}</dd>
-            </div>
-          ))}
-        </dl>
+        </ul>
 
         {!signedIn && (
           <a href="#/inscription" className={cn(ui.primary, 'mt-14 h-12 w-full text-base sm:w-fit sm:px-8')}>
