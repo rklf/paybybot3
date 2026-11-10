@@ -253,11 +253,39 @@ export function Home({ hosted }: { hosted: boolean }) {
 }
 
 /** The home page's example: a ticket card as on the dashboard, renewal on, with made-up data (no real account). */
+/** The card's name in page transitions: the home page's card glides to the same card beside the sign-up form. */
+export const SAMPLE_TICKET_TRANSITION = 'sample-ticket'
+
+/** To the sign-up page, the home page's card gliding to its place there (View Transitions; a plain change of page where
+ *  the browser has none, or when the phone asks for less motion). */
+function toSignUp(card: HTMLElement | null) {
+  const go = () => {
+    window.location.hash = '#/inscription'
+  }
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (!document.startViewTransition || still) return go()
+  window.scrollTo({ top: 0 })
+  document.startViewTransition(
+    () =>
+      new Promise<void>((done) => {
+        go()
+        // The new page is in once the home page's card has left the page (React renders it a moment later). A timer,
+        // not requestAnimationFrame: the browser holds frames back while it waits for the new page.
+        const started = performance.now()
+        const wait = () => (!card?.isConnected || performance.now() - started > 600 ? done() : setTimeout(wait, 16))
+        wait()
+      }),
+  )
+}
+
 /** The ticket card of the home page. `interactive`: its switch starts off, and turning it on leads to the sign-up. */
 export function SampleTicket({ className, interactive }: { className?: string; interactive?: boolean }) {
   const [on, setOn] = useState(false)
+  const card = useRef<HTMLDivElement>(null)
   return (
     <div
+      ref={card}
+      style={{ viewTransitionName: SAMPLE_TICKET_TRANSITION }}
       role={interactive ? 'group' : 'img'}
       aria-label={
         interactive
@@ -288,7 +316,7 @@ export function SampleTicket({ className, interactive }: { className?: string; i
               onPress={() => {
                 if (on) return
                 setOn(true)
-                setTimeout(() => (window.location.hash = '#/inscription'), 350) // the knob slides, then the sign-up
+                setTimeout(() => toSignUp(card.current), 320) // the knob slides, then the card glides to the sign-up
               }}
             />
           ) : (
