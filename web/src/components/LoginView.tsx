@@ -439,23 +439,15 @@ export function LoginView({
             </div>
           )}
 
-          <p className="mt-6 lg:mt-4 text-center text-sm text-ink/50">
-            {signup ? (
-              <>
-                Déjà inscrit ?{' '}
-                <a href="#/connexion" className={link}>
-                  Se connecter
-                </a>
-              </>
-            ) : (
-              <>
-                Pas encore inscrit ?{' '}
-                <a href="#/inscription" className={link}>
-                  S'inscrire
-                </a>
-              </>
-            )}
-          </p>
+          {/* Signing up: no « Déjà inscrit ? » line, the top bar's « Se connecter » is there. */}
+          {!signup && (
+            <p className="mt-6 lg:mt-4 text-center text-sm text-ink/50">
+              Pas encore inscrit ?{' '}
+              <a href="#/inscription" className={link}>
+                S'inscrire
+              </a>
+            </p>
+          )}
 
         </form>
       </main>
