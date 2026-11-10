@@ -11,14 +11,14 @@ export function adminSample() {
       vehicles: [{ plate: 'FJ745AC', expire: at(2 * D + 4 * H), resident: '75116', renewal: 'Actif' }, { plate: 'GH456JK', expire: at(5 * D), resident: '75116', renewal: 'Actif' }],
       cards: [card('09/28', '2028-09-30T23:59:59Z')] },
     { name: 'Claire Dubois', email: 'claire.dubois@orange.fr', created: '2026-11-03T09:00:00Z', plan: 'monthly', subscribed: true, trialEnd: at(23 * D), price: 950, renewals: 3, origin: 'sans_parrainage',
-      vehicles: [{ plate: 'AB123CD', expire: at(6 * D), resident: '75005', renewal: 'Actif' }, { plate: 'EF789GH', expire: at(3 * H + 20 * 60e3), resident: '75005', renewal: 'Actif' }, { plate: 'KL012MN', expire: null, resident: '75005', renewal: 'Suspendu' }],
+      vehicles: [{ plate: 'AB123CD', expire: at(6 * D), resident: '75005', renewal: 'Actif' }, { plate: 'EF789GH', expire: at(3 * H + 20 * 60e3), resident: '75005', renewal: 'Actif' }, { plate: 'KL012MN', expire: null, resident: '75005', renewal: 'Suspendu', failure: 'Votre banque n’a pas accepté ce paiement automatique. Renouvellement suspendu.' }],
       cards: [card('12/26', at(20 * D))] },
     { name: 'Paul Martin', email: 'paul.martin@free.fr', created: '2026-10-25T09:00:00Z', plan: 'monthly', subscribed: true, trialEnd: '2026-11-01T09:00:00Z', price: 950, renewals: 1, origin: 'parrainage',
       vehicles: [{ plate: 'PQ345RS', expire: at(4 * D), resident: '75011', renewal: 'Actif' }], cards: [card('05/29', '2029-05-31T23:59:59Z')] },
     { name: 'Sophie Lambert', email: 's.lambert@gmail.com', created: '2026-10-12T09:00:00Z', plan: 'yearly', subscribed: true, trialEnd: '2026-10-19T09:00:00Z', price: 9120, renewals: 1, origin: null,
       vehicles: [{ plate: 'TU678VW', expire: at(D), resident: '75015', renewal: 'Actif' }], cards: [card('01/20', '2020-01-31T23:59:59Z', true)] },
     { name: 'Julien Roche', email: 'julien.roche@yahoo.fr', created: '2026-10-18T09:00:00Z', plan: 'monthly', subscribed: false, trialEnd: '2026-10-25T09:00:00Z', price: 950, renewals: 0, origin: 'parrainage',
-      vehicles: [{ plate: 'XY901ZA', expire: null, resident: '75020', renewal: null }], cards: [card('03/27', '2027-03-31T23:59:59Z')] },
+      vehicles: [{ plate: 'XY901ZA', expire: null, resident: '75020', renewal: 'Désactivé' }], cards: [card('03/27', '2027-03-31T23:59:59Z')] },
     { name: null, email: 'nadia.b@hotmail.fr', created: '2026-11-08T09:00:00Z', plan: null, subscribed: false, price: null, renewals: 0, origin: 'sans_parrainage', vehicles: null, cards: null },
   ]
   // A month of history: more clients, visitors and subscriptions spread over 30 days (always the same ones).

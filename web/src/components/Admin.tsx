@@ -138,7 +138,10 @@ export type AdminClient = {
         resident?: string | false | null
         /** In the subscription (ticked, or with a renewal). */
         covered?: boolean
-        renewal?: 'Actif' | 'Suspendu' | null
+        /** Its automations: on, stopped by a failure, or turned off. */
+        renewal?: 'Actif' | 'Suspendu' | 'Désactivé' | null
+        /** The last failure of one of its PayByBot automations (renewal or programmed ticket), still standing. */
+        failure?: string | null
       }[]
     | null
   /** When each of the client's cards ends (MM/AA); null if PayByPhone could not be read. */
@@ -556,13 +559,12 @@ function cardState(cards: AdminClient['cards'], now: number): CardState {
 
 /** What needs the owner, worst first; each line opens the clients it is about. */
 function Todo({ rows, onShow }: { rows: Row[]; onShow: (names: string[]) => void }) {
-  const noTicket = rows.filter((r) => r.status === 'alert')
-  const suspended = rows.filter((r) => (r.vehicles ?? []).some((v) => v.renewal === 'Suspendu'))
+  const failed = rows.filter((r) => r.status === 'alert')
+  const firstFailure = failed.flatMap((r) => r.vehicles ?? []).find((v) => v.failure)?.failure
   const expired = rows.filter((r) => r.cardState === 'Expirée')
   const soon = rows.filter((r) => r.cardState === 'Bientôt')
   const items: { tone: 'red' | 'amber'; text: string; hint: string; rows: Row[] }[] = [
-    { tone: 'red' as const, text: `${plural(noTicket.length, 'abonné')} avec un véhicule sans ticket`, hint: 'Risque d’amende', rows: noTicket },
-    { tone: 'red' as const, text: `${plural(suspended.length, 'renouvellement suspendu', 'renouvellements suspendus')}`, hint: 'Le client doit agir', rows: suspended },
+    { tone: 'red' as const, text: `${plural(failed.length, 'client')} avec un échec PayByBot`, hint: firstFailure ?? 'Renouvellement ou ticket programmé', rows: failed },
     { tone: 'red' as const, text: `${plural(expired.length, 'client')} avec carte expirée`, hint: 'Plus de paiement possible', rows: expired },
     { tone: 'amber' as const, text: `${plural(soon.length, 'carte')} à renouveler sous 60 jours`, hint: 'Rappel envoyé à 30 et 7 jours', rows: soon },
   ].filter((x) => x.rows.length)
@@ -576,7 +578,7 @@ function Todo({ rows, onShow }: { rows: Row[]; onShow: (names: string[]) => void
           <span className="grid size-8 place-items-center rounded-full bg-go/[0.09] text-go">
             <Check className="size-4" />
           </span>
-          Tous les abonnés ont un ticket en cours.
+          Aucun échec PayByBot, aucune carte à surveiller.
         </div>
       ) : (
         <ul className="mt-3">
@@ -644,10 +646,11 @@ function Upcoming({ clients, onShow }: { clients: AdminClient[]; onShow: (names:
 type VehicleLine = {
   plate: string
   resident: string
-  renewal: 'Actif' | 'Suspendu' | 'Aucun'
+  renewal: 'Actif' | 'Suspendu' | 'Désactivé' | 'Aucun'
   expire: string | null
   left: string | null
-  /** Subscribed and no ticket running: the one problem worth a red line. */
+  /** What went wrong with a renewal or a programmed ticket taken by PayByBot (a car without a ticket is not a problem). */
+  failure: string | null
   alert: boolean
 }
 
@@ -666,7 +669,7 @@ type Row = {
   vehicles: VehicleLine[] | null
   card: string
   cardState: CardState
-  /** ok: subscribed and every vehicle has a ticket; alert: subscribed and one has none (or unreadable); none: no subscription. */
+  /** alert: a PayByBot automation failed; ok: subscribed, nothing failed; none: no subscription. */
   status: 'ok' | 'alert' | 'none'
 }
 
@@ -683,7 +686,8 @@ function rowsOf(clients: AdminClient[], now: number): Row[] {
           renewal: v.renewal ?? 'Aucun',
           expire: rest ? v.expire : null,
           left: rest,
-          alert: c.subscribed && !rest,
+          failure: v.failure ?? null,
+          alert: !!v.failure,
         } as VehicleLine
       }) ?? null
     return {
@@ -700,7 +704,7 @@ function rowsOf(clients: AdminClient[], now: number): Row[] {
       vehicles,
       card: (c.cards ?? []).map((x) => x.exp ?? '?').join(', '),
       cardState: cardState(c.cards, now),
-      status: !c.subscribed ? 'none' : !vehicles || vehicles.some((v) => v.alert) ? 'alert' : 'ok',
+      status: vehicles?.some((v) => v.alert) ? 'alert' : c.subscribed ? 'ok' : 'none',
     }
   })
 }
@@ -737,7 +741,7 @@ function ClientTable({ rows, focus, onClearFocus }: { rows: Row[]; focus: string
     s === 'all' ||
     (s === 'paying' && r.sub === 'Payant') ||
     (s === 'trial' && r.sub === 'Mois offert') ||
-    (s === 'problems' && (r.status === 'alert' || r.cardState === 'Expirée' || (r.vehicles ?? []).some((v) => v.renewal === 'Suspendu'))) ||
+    (s === 'problems' && (r.status === 'alert' || r.cardState === 'Expirée' || r.cardState === 'Bientôt')) ||
     (s === 'none' && (r.sub === 'Arrêté' || r.sub === 'Sans abonnement'))
   const text = (r: Row) =>
     `${r.name} ${r.email} ${(r.vehicles ?? []).map((v) => `${v.plate} ${v.plate.replace(/[^0-9A-Z]/gi, '')} ${v.resident}`).join(' ')}`.toLowerCase()
@@ -843,7 +847,7 @@ function ClientTable({ rows, focus, onClearFocus }: { rows: Row[]; focus: string
                   ) : (
                     <ul className="divide-y divide-ink/[0.05]">
                       {r.vehicles.map((v) => (
-                        <li key={v.plate} className="flex items-center gap-3 py-1.5">
+                        <li key={v.plate} className="flex items-start gap-3 py-1.5">
                           <Plate plate={v.plate} size="sm" />
                           <span className="min-w-0 flex-1">
                             <span className="block text-xs text-ink/55">
@@ -857,7 +861,12 @@ function ClientTable({ rows, focus, onClearFocus }: { rows: Row[]; focus: string
                                 Ticket jusqu’au {ends(v.expire)} <span className="text-ink/45">· reste {v.left}</span>
                               </span>
                             ) : (
-                              <span className={cn('block text-xs', v.alert ? 'font-semibold text-destructive' : 'text-ink/40')}>Aucun ticket</span>
+                              <span className="block text-xs text-ink/40">Aucun ticket</span>
+                            )}
+                            {v.failure && (
+                              <span className="mt-0.5 block max-w-[26rem] text-xs font-semibold text-destructive" title={v.failure}>
+                                Échec : <span className="font-normal">{v.failure}</span>
+                              </span>
                             )}
                           </span>
                         </li>
@@ -918,11 +927,10 @@ const NAV = [
 ] as const
 type View = (typeof NAV)[number][0]
 
-/** The lines of « À traiter » that have someone in them (the same four checks as the card). */
+/** The lines of « À traiter » that have someone in them (the same three checks as the card). */
 const todoLines = (rows: Row[]) =>
   [
     rows.some((r) => r.status === 'alert'),
-    rows.some((r) => (r.vehicles ?? []).some((v) => v.renewal === 'Suspendu')),
     rows.some((r) => r.cardState === 'Expirée'),
     rows.some((r) => r.cardState === 'Bientôt'),
   ].filter(Boolean).length

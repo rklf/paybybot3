@@ -64,7 +64,7 @@ class AdminKept(unittest.TestCase):
             clients = web.admin_clients(None)
         self.assertEqual(logins, ["o1"])
         self.assertEqual(clients[0]["vehicles"], [{"plate": "AB123CD", "expire": None, "resident": None,
-                                                    "covered": False, "renewal": None}])
+                                                    "covered": False, "renewal": None, "failure": None}])
 
     def test_each_vehicle_says_its_resident_rate_coverage_and_renewal(self):
         import json
@@ -90,7 +90,36 @@ class AdminKept(unittest.TestCase):
             fernet.return_value.decrypt.side_effect = lambda b: texts[b]
             vehicles = web.admin_clients(None)[0]["vehicles"]
         self.assertEqual([(v["plate"], v["resident"], v["covered"], v["renewal"]) for v in vehicles], [
-            ("AB-123-CD", "75105", True, "Suspendu"),
+            ("AB-123-CD", "75105", True, "Désactivé"),
             ("GH456JK", False, False, None),
             ("LM789NP", None, False, None),
+        ])
+
+    def test_a_failed_automation_is_the_problem_not_a_car_without_ticket(self):
+        import json
+
+        class FakeBot:
+            def get_vehicles(self):
+                return [{"licensePlate": p} for p in ("AB123CD", "GH456JK", "LM789NP")]
+
+            def get_parking_sessions(self):
+                return []
+
+            def get_payment_accounts(self):
+                return {}
+        texts = {b"acc": b"{}", b"r1": json.dumps({"plate": "AB123CD"}).encode(),
+                 b"r2": json.dumps({"plate": "GH456JK"}).encode()}
+        answers = {"admin_accounts": [{"owner": "o1", "data": "acc", "renewals_active": 1}],
+                   "renewal_list": [{"id": "1", "enabled": False, "data": "r1", "last_error": "Carte refusée."},
+                                    {"id": "2", "enabled": True, "data": "r2", "last_error": "PayByPhone ne répond pas."}]}
+        with patch.object(web, "HOSTED", True), patch.object(web, "require_admin"), \
+                patch.object(web, "store", side_effect=lambda fn, **k: answers.get(fn)), \
+                patch.object(web, "bot_from_refresh", return_value=FakeBot()), \
+                patch.object(web, "_fernet") as fernet:
+            fernet.return_value.decrypt.side_effect = lambda b: texts[b]
+            vehicles = web.admin_clients(None)[0]["vehicles"]
+        self.assertEqual([(v["plate"], v["renewal"], v["failure"]) for v in vehicles], [
+            ("AB123CD", "Suspendu", "Carte refusée."),
+            ("GH456JK", "Actif", "PayByPhone ne répond pas."),
+            ("LM789NP", None, None),  # no ticket and nothing from PayByBot: no problem
         ])

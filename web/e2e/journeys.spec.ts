@@ -340,6 +340,11 @@ test('admin : les dates de fin des cartes des clients', async ({ page }) => {
       client('sereine', [{ exp: '04/99', validUntil: '2099-04-30T23:59:59+00:00', expired: false }]),
       client('bientot', [{ exp: '12/26', validUntil: soon, expired: false }]),
       client('perimee', [{ exp: '01/20', validUntil: '2020-01-31T23:59:59+00:00', expired: true }]),
+      // No ticket and nothing failed: not a problem. A refused renewal: one.
+      { ...client('sansticket', [{ exp: '04/99', validUntil: '2099-04-30T23:59:59+00:00', expired: false }]),
+        vehicles: [{ plate: 'GH456JK', expire: null, resident: '75005', covered: true, renewal: null }] },
+      { ...client('refuse', [{ exp: '04/99', validUntil: '2099-04-30T23:59:59+00:00', expired: false }]),
+        vehicles: [{ plate: 'LM789NP', expire: null, resident: '75005', covered: true, renewal: 'Suspendu', failure: 'Carte refusée par la banque.' }] },
     ],
     activity: [],
     service: { interrupted: false, customers: 0 },
@@ -352,7 +357,11 @@ test('admin : les dates de fin des cartes des clients', async ({ page }) => {
   await page.getByRole('button', { name: /^À traiter/ }).click()
   await expect(page.getByText('1 client avec carte expirée')).toBeVisible()
   await expect(page.getByText('1 carte à renouveler sous 60 jours')).toBeVisible()
+  await expect(page.getByText('1 client avec un échec PayByBot')).toBeVisible()
   await page.getByRole('button', { name: /^Clients/ }).click()
+  await expect(page.getByRole('row').filter({ hasText: 'sansticket' }).getByText('Problème')).toHaveCount(0)
+  await expect(page.getByRole('row').filter({ hasText: 'refuse@' }).getByText('Problème')).toBeVisible()
+  await expect(page.getByText('Carte refusée par la banque.')).toBeVisible()
   await expect(page.getByRole('cell', { name: 'Paris 5e' }).first()).toBeVisible()
   await expect(page.getByRole('cell', { name: 'Suspendu' }).first()).toBeVisible()
   await page.getByRole('combobox', { name: 'Filtrer : Carte' }).selectOption('Expirée')
