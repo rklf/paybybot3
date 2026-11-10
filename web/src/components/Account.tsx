@@ -97,7 +97,7 @@ function AccountDialog({
 
         <div className="space-y-6 px-6 pt-6 pb-7">
           {/* The vehicles, one row each: the plate on the left, the resident rate on the right. */}
-          <Section title={vehicles && vehicles.length > 1 ? `Vos véhicules · ${vehicles.length}` : 'Votre véhicule'}>
+          <Section>
             <Rows>
               {vehicles === undefined ? (
                 // The rows' own shapes while PayByPhone answers (as many as the account's cars).
@@ -180,10 +180,10 @@ function AccountDialog({
 const rowClass = 'flex min-h-14 items-center justify-between gap-4 px-4 py-3 text-[0.95rem]'
 const note = 'mt-2 px-1 text-sm text-ink/55'
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
     <section>
-      <h3 className="mb-2 px-1 text-[0.95rem] font-semibold text-ink">{title}</h3>
+      {title && <h3 className="mb-2 px-1 text-[0.95rem] font-semibold text-ink">{title}</h3>}
       {children}
     </section>
   )

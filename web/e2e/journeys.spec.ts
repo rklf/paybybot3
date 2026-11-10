@@ -386,7 +386,7 @@ test('mon compte : les véhicules sans prix ni choix à faire', async ({ page })
   await demo(page)
   await page.getByRole('button', { name: 'Mon compte' }).first().click()
   const dialog = page.getByRole('dialog')
-  await expect(dialog.getByText('Vos véhicules · 3')).toBeVisible()
+  await expect(dialog.getByText('Paiement et contact')).toBeVisible()
   await expect(dialog.getByText(/€/)).toHaveCount(0) // no price here, per vehicle or otherwise
   await expect(dialog.getByRole('switch')).toHaveCount(0)
   await expect(dialog.getByRole('checkbox')).toHaveCount(0)
