@@ -374,7 +374,7 @@ test('mon compte : la carte bancaire et sa date de fin', async ({ page }) => {
   await expect(app).toHaveAttribute('href', 'https://paybyphone.onelink.me/ZQkh/')
 })
 
-test('mon compte : un seul prix pour tous les véhicules, sans choix à faire', async ({ page }) => {
+test('mon compte : les véhicules sans prix ni choix à faire', async ({ page }) => {
   const vehicle = (plate: string) => ({ plate, zone: '75105', monthly: 950, yearly: 9120, renewed: false })
   await page.route('**/api/account', (route) =>
     route.fulfill({ json: { email: 'a@b.fr', zone: '75105', plan: 'yearly', subscribed: true } }),
@@ -386,8 +386,8 @@ test('mon compte : un seul prix pour tous les véhicules, sans choix à faire', 
   await demo(page)
   await page.getByRole('button', { name: 'Mon compte' }).first().click()
   const dialog = page.getByRole('dialog')
-  await expect(dialog.getByText('Tous vos véhicules sont inclus.')).toBeVisible()
-  await expect(dialog.getByText(/91,20\s€\/an/)).toBeVisible()
+  await expect(dialog.getByText('Vos véhicules · 3')).toBeVisible()
+  await expect(dialog.getByText(/€/)).toHaveCount(0) // no price here, per vehicle or otherwise
   await expect(dialog.getByRole('switch')).toHaveCount(0)
   await expect(dialog.getByRole('checkbox')).toHaveCount(0)
 })

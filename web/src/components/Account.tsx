@@ -1,15 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Loader2, UserRound } from 'lucide-react'
+import { CreditCard, Loader2, Mail, Receipt, UserRound, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
-import { PlansDialog } from '@/components/Pricing'
 import { arrondissement, PayByBot, PayByPhone, Plate, ZonePlate } from '@/components/signs'
-import { api, clock, type Account, type Overview, type PricedVehicle, type Pricing } from '@/lib/api'
+import { api, clock, type Account, type Overview, type PricedVehicle } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { ui } from '@/lib/styles'
 import { LoadingLine } from '@/components/Loading'
-
-const euros = (cents: number) => (cents / 100).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })
 
 /** "Mon compte" in the top bar: what PayByBot reads from the PayByPhone account, the home zone and e-mail. */
 export function AccountButton({
@@ -51,21 +48,15 @@ function AccountDialog({
   // Only the « riverain » vehicles, each with the arrondissement PayByPhone gives it the resident rate in (never
   // typed); undefined: looking.
   const [vehicles, setVehicles] = useState<PricedVehicle[] | undefined>(undefined)
-  const [pricing, setPricing] = useState<Pricing | null>(null)
   useEffect(() => {
     api.pricing().then(
-      (p) => {
-        setPricing(p)
-        setVehicles(p.vehicles ?? [])
-      },
+      (p) => setVehicles(p.vehicles ?? []),
       () => setVehicles([]),
     )
   }, [])
-  const yearly = account?.plan === 'yearly'
 
   // « Gérer »: Stripe's customer portal (card, invoices, cancel), back here after.
   const [opening, setOpening] = useState(false)
-  const [plans, setPlans] = useState(false) // « S’abonner »: straight to Stripe
   function manage() {
     setOpening(true)
     api.billingPortal().then(
@@ -90,9 +81,6 @@ function AccountDialog({
     )
   }, [])
 
-  const row = 'flex items-start justify-between gap-6 py-4'
-  const label = 'shrink-0 pt-1 text-sm text-ink/55'
-
   if (deleting) return <DeleteConfirm data={data} onCancel={() => setDeleting(false)} onDeleted={onDeleted} />
 
   const cards = data.payments.filter((p) => p.kind === 'card')
@@ -101,138 +89,114 @@ function AccountDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className={ui.dialog}>
         <div className="px-6 pt-7">
-          <DialogTitle className={ui.dialogTitle}>Mon compte</DialogTitle>
+          {/* The same weight as the section titles below. */}
+          <DialogTitle className={cn(ui.dialogTitle, 'font-semibold')}>Mon compte</DialogTitle>
           <DialogDescription className="mt-1 text-ink/60">
             Ce que <PayByBot /> lit dans votre compte <PayByPhone />.
           </DialogDescription>
         </div>
 
-        {/* The vehicles, one row each (plate and zone); one price covers them all. */}
-        <section className="mx-6 mt-6">
-          <h3 className="font-heading text-lg font-bold text-ink">
-            {vehicles && vehicles.length > 1 ? 'Vos véhicules' : 'Votre véhicule'}
-          </h3>
-
-          <ul className="mt-3 divide-y divide-ink/10 rounded-xl border border-ink/12 bg-white">
-            {vehicles === undefined ? (
-              <LoadingLine className="px-4 py-4" />
-            ) : vehicles.length ? (
-              vehicles.map((v) => {
-                const zone = arrondissement(v.zone)
-                return (
-                  // The plates in a column of one width, so every zone starts at the same place.
-                  <li key={v.plate} className="flex items-center gap-4 px-4 py-3">
-                    <span className="w-[7.75rem] shrink-0">
+        <div className="space-y-6 px-6 pt-6 pb-7">
+          {/* The vehicles, one row each: the plate on the left, the resident rate on the right. */}
+          <Section title={vehicles && vehicles.length > 1 ? `Vos véhicules · ${vehicles.length}` : 'Votre véhicule'}>
+            <Rows>
+              {vehicles === undefined ? (
+                <LoadingLine className="px-4 py-4" />
+              ) : vehicles.length ? (
+                vehicles.map((v) => {
+                  const zone = arrondissement(v.zone)
+                  return (
+                    <li key={v.plate} className={rowClass}>
                       <Plate plate={v.plate} size="sm" />
-                    </span>
-                    <span className="min-w-0 flex-1 text-[0.95rem] font-semibold text-ink">
-                      {zone ?? (v.zone ? <ZonePlate zone={v.zone} /> : <span className="font-normal text-ink/60">Sans tarif résident</span>)}
-                    </span>
-                  </li>
-                )
-              })
-            ) : (
-              <li className="px-4 py-3 text-ink/60">{data.vehicles.length ? 'Aucun véhicule au tarif résident' : 'Aucun véhicule'}</li>
-            )}
-          </ul>
-
-          {account?.subscribed && pricing?.monthly != null && !!vehicles?.length && (
-            // The offer and its « Gérer l'abonnement » together: the name and what it covers on the left, the price and
-            // the link on the right, each line on the same baseline.
-            <div className="mt-3 grid grid-cols-[1fr_auto] items-baseline gap-x-4 gap-y-1 rounded-xl bg-ink/[0.04] px-4 py-3 text-ink">
-              <span>Abonnement {yearly ? 'annuel' : 'mensuel'}</span>
-              <span className="text-right font-bold whitespace-nowrap">
-                {euros((yearly ? pricing.yearly : pricing.monthly) ?? 0)}
-                {yearly ? '/an' : '/mois'}
-              </span>
-              <span className="text-sm text-ink/60">{vehicles.length > 1 ? 'Tous vos véhicules sont inclus.' : ''}</span>
-              {!demo && account?.plan ? (
-                <button onClick={manage} disabled={opening} className={cn('inline-flex items-center justify-end gap-1.5 text-sm', ui.link)}>
-                  {opening && <Loader2 className="size-3.5 animate-spin" />}
-                  Gérer l’abonnement
-                </button>
-              ) : (
-                <span />
-              )}
-            </div>
-          )}
-
-          <p className="mt-3 px-4 text-sm text-ink/55">
-            Un véhicule manque ? Ajoutez-le sur{' '}
-            {/* PayByPhone's own app link (as in the e-mails): on an iPhone it opens the app when installed (a universal
-                link), else its App Store page. */}
-            <a href="https://paybyphone.onelink.me/ZQkh/" target="_blank" rel="noreferrer" className={ui.link}>
-              <PayByPhone />
-            </a>
-          </p>
-        </section>
-
-        <dl className="mx-6 mt-6 divide-y divide-ink/10 border-y border-ink/10">
-          <div className={row}>
-            <dt className={label}>{cards.length > 1 ? 'Cartes bancaires' : 'Carte bancaire'}</dt>
-            <dd className="flex flex-col items-end gap-1 text-right font-medium text-ink">
-              {cards.length ? (
-                cards.map((c) => (
-                  <span key={c.id}>
-                    {c.label}
-                    {c.expired && <span className="ml-2 text-sm font-semibold text-destructive">Expirée</span>}
-                  </span>
-                ))
-              ) : (
-                <span className="font-normal text-ink/60">Aucune carte</span>
-              )}
-            </dd>
-          </div>
-
-          {/* With an offer, it is managed from the vehicles' header. */}
-          {!demo && !account?.plan && (
-            <div className={row}>
-              <dt className={label}>Abonnement</dt>
-              <dd className="text-right">
-                {account === undefined ? (
-                  <Loader2 className="ml-auto size-4 animate-spin text-ink/40" />
-                ) : (
-                  <span className="flex flex-col items-end gap-1">
-                    {account?.trialEnd && (
-                      <span className="text-ink/60">
-                        Mois offert jusqu’au{' '}
-                        {new Date(account.trialEnd).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}
+                      <span className={cn('text-right', v.zone ? 'text-ink' : 'text-ink/50')}>
+                        {zone ? `Résident · ${zone}` : v.zone ? <ZonePlate zone={v.zone} /> : 'Non résident'}
                       </span>
-                    )}
-                    {account?.trialDays && !account.trialEnd && (
-                      <span className="text-ink/60">1er mois offert à l’abonnement</span>
-                    )}
-                    <button type="button" onClick={() => setPlans(true)} className={cn('text-sm', ui.link)}>
-                      S’abonner · 9,50 €/mois
-                    </button>
+                    </li>
+                  )
+                })
+              ) : (
+                <li className={cn(rowClass, 'text-ink/60')}>{data.vehicles.length ? 'Aucun véhicule au tarif résident' : 'Aucun véhicule'}</li>
+              )}
+            </Rows>
+            <p className={note}>
+              Un véhicule manque ? Ajoutez-le sur{' '}
+              {/* PayByPhone's own app link (as in the e-mails): on an iPhone it opens the app when installed (a universal
+                  link), else its App Store page. */}
+              <a href="https://paybyphone.onelink.me/ZQkh/" target="_blank" rel="noreferrer" className={ui.link}>
+                <PayByPhone />
+              </a>
+            </p>
+          </Section>
+
+          <Section title="Paiement et contact">
+            <Rows>
+              <Row icon={CreditCard} label={cards.length > 1 ? 'Cartes bancaires' : 'Carte bancaire'}>
+                {cards.length ? (
+                  <span className="flex flex-col gap-0.5">
+                    {cards.map((c) => (
+                      <span key={c.id}>
+                        {c.label}
+                        {c.expired && <span className="ml-2 font-semibold text-destructive">Expirée</span>}
+                      </span>
+                    ))}
                   </span>
+                ) : (
+                  <span className="text-ink/50">Aucune carte</span>
                 )}
-              </dd>
-            </div>
-          )}
+              </Row>
+              {/* Paying subscribers: Stripe's portal (card, invoices, cancelling) — the offer itself is not shown here. */}
+              {!demo && account?.plan && (
+                <Row icon={Receipt} label="Abonnement">
+                  <button onClick={manage} disabled={opening} className={cn('inline-flex items-center gap-1.5', ui.link)}>
+                    {opening && <Loader2 className="size-3.5 animate-spin" />}
+                    Gérer mon abonnement
+                  </button>
+                </Row>
+              )}
+              <Row icon={Mail} label="E-mail">
+                {email === undefined ? <Loader2 className="size-4 animate-spin text-ink/40" /> : <span className="block truncate">{email || '—'}</span>}
+              </Row>
+            </Rows>
+          </Section>
 
-          <div className={row}>
-            <dt className={label}>E-mail</dt>
-            <dd className="min-w-0 truncate text-right font-medium text-ink">
-              {email === undefined ? <Loader2 className="ml-auto size-4 animate-spin text-ink/40" /> : email || '—'}
-            </dd>
-          </div>
-
-        </dl>
-
-        <div className={cn('px-6 pb-7', demo ? 'pt-2' : 'pt-6')}>
           {!demo && (
-            <button
-              onClick={() => setDeleting(true)}
-              className="inline-flex h-10 items-center rounded-[10px] border border-destructive/30 px-4 text-sm font-semibold text-destructive transition hover:bg-destructive/5"
-            >
+            <button onClick={() => setDeleting(true)} className="text-sm font-medium text-destructive/80 underline-offset-[3px] transition hover:text-destructive hover:underline">
               Supprimer mon compte
             </button>
           )}
         </div>
       </DialogContent>
-      {plans && <PlansDialog onClose={() => setPlans(false)} />}
     </Dialog>
+  )
+}
+
+// One look for every part of the window: a section title, a white box of rows of one height, the label on the left
+// and the value on the right, all in the same text size.
+const rowClass = 'flex min-h-14 items-center justify-between gap-4 px-4 py-3 text-[0.95rem]'
+const note = 'mt-2 px-1 text-sm text-ink/55'
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <h3 className="mb-2 px-1 text-[0.95rem] font-semibold text-ink">{title}</h3>
+      {children}
+    </section>
+  )
+}
+
+function Rows({ children }: { children: React.ReactNode }) {
+  return <ul className="divide-y divide-ink/[0.08] overflow-hidden rounded-xl border border-ink/10 bg-white">{children}</ul>
+}
+
+/** An icon in place of the label (the label kept for screen readers), the value beside it, an action on the right. */
+function Row({ icon: Icon, label, action, children }: { icon: LucideIcon; label: string; action?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <li className={cn(rowClass, 'justify-start')}>
+      <Icon className="size-[1.15rem] shrink-0 text-ink/45" aria-hidden />
+      <span className="sr-only">{label} : </span>
+      <span className="min-w-0 flex-1 text-ink">{children}</span>
+      {action && <span className="shrink-0">{action}</span>}
+    </li>
   )
 }
 
