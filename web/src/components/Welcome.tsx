@@ -231,9 +231,9 @@ export function Welcome({
           )}
           {/* The vehicle to automate: one, chosen with a tap (the resident one first). */}
           {offered.length > 0 && (
-            <div className="mt-8" role="radiogroup" aria-label="Stationnement à automatiser">
+            <div className="mt-6" role="radiogroup" aria-label="Stationnement à automatiser">
               <p className="mb-2 text-sm text-ink/55">{offered.length > 1 ? 'Quel stationnement automatiser ?' : 'Stationnement à automatiser :'}</p>
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {offered.map((v) => {
                   const on = v.plate === choice?.plate
                   return (
@@ -245,7 +245,7 @@ export function Welcome({
                       aria-label={v.plate}
                       onClick={() => setPicked(v.plate)}
                       className={cn(
-                        'flex w-full items-center gap-3 rounded-2xl border bg-white px-5 py-3.5 text-left transition',
+                        'flex w-full items-center gap-3 rounded-2xl border bg-white px-4 py-2.5 text-left transition',
                         on ? 'border-eu ring-1 ring-eu' : 'border-ink/10 hover:border-ink/25',
                       )}
                     >
@@ -254,17 +254,17 @@ export function Welcome({
                           {on && <span className="size-2.5 rounded-full bg-eu" />}
                         </span>
                       )}
-                      <span className="min-w-0">
-                        <Plate plate={v.plate} size="sm" />
-                        {/* Its ticket now: until when, or none (from PayByPhone). */}
-                        <span className="mt-1.5 block text-sm text-ink/55">
+                      <Plate plate={v.plate} size="sm" />
+                      {/* On the right, one above the other: resident or not, then its ticket now (from PayByPhone). */}
+                      <span className="ml-auto flex flex-col items-end gap-1 text-right">
+                        {v.zone ? <ZoneTag zone={v.zone} /> : <span className="text-sm text-ink/45">Non résident</span>}
+                        <span className="text-xs text-ink/50">
                           {(() => {
                             const end = ticketEnd(v.plate)
-                            return end ? `Ticket en cours jusqu’au ${when(end)}` : 'Aucun ticket en cours'
+                            return end ? `Ticket jusqu’au ${when(end)}` : 'Aucun ticket en cours'
                           })()}
                         </span>
                       </span>
-                      <span className="ml-auto self-start">{v.zone ? <ZoneTag zone={v.zone} /> : <span className="text-sm text-ink/45">Non résident</span>}</span>
                     </button>
                   )
                 })}
