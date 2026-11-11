@@ -5,6 +5,8 @@ import { PayByBot, PayByPhone, Plate, withPayByPhone, Wordmark } from '@/compone
 import { api, type Me, type Overview, type PricedVehicle } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { ui } from '@/lib/styles'
+import { LineBone, PlateBone } from '@/components/Skeletons'
+import { SmoothHeight } from '@/components/ui/smooth-height'
 
 /** +33612345678 -> +33 6 12 34 56 78 (other formats are shown as they are). */
 function phoneText(username: string) {
@@ -107,76 +109,87 @@ export function Welcome({
           </p>
 
           {/* Three lines, the label on the left and what PayByPhone gave on the right: nothing else. */}
-          <dl className="mt-8 divide-y divide-ink/10 border-y border-ink/10">
-            <Line label="Compte" icon={Phone}>
-              <span className="font-heading font-medium tabular-nums">{phoneText(me.username)}</span>
-            </Line>
-            {email !== '' && (
-              <Line label="E-mail" icon={Mail}>
-                {email === undefined ? <Loader2 className="ml-auto size-4 animate-spin text-ink/40" /> : <span className="block truncate font-heading font-medium">{email}</span>}
+          {/* Lines arriving with PayByPhone's answer: the block grows smoothly, never in one jump. */}
+          <SmoothHeight className="mt-8">
+            <dl className="divide-y divide-ink/10 border-y border-ink/10">
+              <Line label="Compte" icon={Phone}>
+                <span className="font-heading font-medium tabular-nums">{phoneText(me.username)}</span>
               </Line>
-            )}
-            <Line label={n > 1 ? 'Véhicules' : 'Véhicule'}>
-              {vehicles === undefined ? (
-                <Loader2 className="ml-auto size-4 animate-spin text-ink/40" aria-label="Recherche de vos véhicules" />
-              ) : vehicles.length ? (
-                <span className="inline-flex flex-col items-end gap-1.5">
-                  {vehicles.map((v) => (
-                    <Plate key={v.plate} plate={v.plate} size="sm" />
-                  ))}
-                </span>
-              ) : (
-                <span className="text-ink/60">Aucun</span>
+              {email !== '' && (
+                <Line label="E-mail" icon={Mail}>
+                  {email === undefined ? (
+                    <LineBone className="ml-auto w-36" />
+                  ) : (
+                    <span className="block truncate font-heading font-medium">{email}</span>
+                  )}
+                </Line>
               )}
-            </Line>
-            {/* Its own line: the zone(s) where PayByPhone gives the resident rate (« 75001 »). */}
-            {zones.length > 0 && (
-              <Line label="Résidence">
-                <span className="flex flex-col items-end gap-0.5">
-                  {zones.map((z) => (
-                    <span key={z} className="font-heading font-medium">
-                      {z}
-                    </span>
-                  ))}
-                </span>
-              </Line>
-            )}
-            {/* The card only when it blocks (none valid): a card number on the welcome page alarms more than it helps. */}
-            {!valid.length && (
-              <Line label={cards.length > 1 ? 'Cartes' : 'Carte'}>
-                {cards.length ? (
-                  <span className="flex flex-col items-end gap-0.5 font-heading font-medium">
-                    {cards.map((p) => (
-                      <span key={p.id} className={cn(p.expired && 'text-ink/45 line-through decoration-ink/30')}>
-                        {p.label.replace(/ — exp\..*$/, '')}
-                        {p.expired && <span className="ml-2 text-sm font-normal text-destructive">expirée</span>}
-                      </span>
+              <Line label={n > 1 ? 'Véhicules' : 'Véhicule'}>
+                {vehicles === undefined ? (
+                  <PlateBone className="ml-auto" />
+                ) : vehicles.length ? (
+                  <span className="inline-flex flex-col items-end gap-1.5">
+                    {vehicles.map((v) => (
+                      <Plate key={v.plate} plate={v.plate} size="sm" />
                     ))}
                   </span>
                 ) : (
-                  <span className="font-heading font-medium text-destructive">Aucune</span>
+                  <span className="text-ink/60">Aucun</span>
                 )}
               </Line>
-            )}
-          </dl>
+              {/* Its own line: the zone(s) where PayByPhone gives the resident rate (« 75001 »). */}
+              {(vehicles === undefined || zones.length > 0) && (
+                <Line label="Résidence">
+                  {vehicles === undefined ? (
+                    <LineBone className="ml-auto w-16" />
+                  ) : (
+                    <span className="flex flex-col items-end gap-0.5">
+                      {zones.map((z) => (
+                        <span key={z} className="font-heading font-medium">
+                          {z}
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                </Line>
+              )}
+              {/* The card only when it blocks (none valid): a card number on the welcome page alarms more than it helps. */}
+              {!valid.length && (
+                <Line label={cards.length > 1 ? 'Cartes' : 'Carte'}>
+                  {cards.length ? (
+                    <span className="flex flex-col items-end gap-0.5 font-heading font-medium">
+                      {cards.map((p) => (
+                        <span key={p.id} className={cn(p.expired && 'text-ink/45 line-through decoration-ink/30')}>
+                          {p.label.replace(/ — exp\..*$/, '')}
+                          {p.expired && <span className="ml-2 text-sm font-normal text-destructive">expirée</span>}
+                        </span>
+                      ))}
+                    </span>
+                  ) : (
+                    <span className="font-heading font-medium text-destructive">Aucune</span>
+                  )}
+                </Line>
+              )}
+            </dl>
 
-          {/* Only when something blocks: what to do, in one place. */}
-          {vehicles !== undefined && (!vehicles.length || !valid.length) && (
-            <p role="alert" className="mt-4 text-sm leading-relaxed text-destructive">
-              {withPayByPhone(
-                !vehicles.length
-                  ? 'Aucun véhicule : ajoutez-le dans l’application PayByPhone, puis touchez « Rafraîchir ».'
-                  : cards.length
-                    ? 'Carte expirée : ajoutez une carte bancaire valide dans l’application PayByPhone, puis touchez « Rafraîchir ».'
-                    : 'Aucune carte bancaire : ajoutez-en une dans l’application PayByPhone, puis touchez « Rafraîchir ».',
-              )}
-              {vehicles.length > 0 && (
-                <span className="mt-1 block text-ink/55">
-                  Apple Pay, Google Pay et PayPal ne fonctionnent pas avec <PayByBot /> : seule une carte bancaire convient.
-                </span>
-              )}
-            </p>
-          )}
+            {/* Only when something blocks: what to do, in one place. */}
+            {vehicles !== undefined && (!vehicles.length || !valid.length) && (
+              <p role="alert" className="mt-4 text-sm leading-relaxed text-destructive">
+                {withPayByPhone(
+                  !vehicles.length
+                    ? 'Aucun véhicule : ajoutez-le dans l’application PayByPhone, puis touchez « Rafraîchir ».'
+                    : cards.length
+                      ? 'Carte expirée : ajoutez une carte bancaire valide dans l’application PayByPhone, puis touchez « Rafraîchir ».'
+                      : 'Aucune carte bancaire : ajoutez-en une dans l’application PayByPhone, puis touchez « Rafraîchir ».',
+                )}
+                {vehicles.length > 0 && (
+                  <span className="mt-1 block text-ink/55">
+                    Apple Pay, Google Pay et PayPal ne fonctionnent pas avec <PayByBot /> : seule une carte bancaire convient.
+                  </span>
+                )}
+              </p>
+            )}
+          </SmoothHeight>
 
           <button onClick={onContinue} disabled={!vehicles?.length || !valid.length} className={cn(ui.primary, 'mt-8')}>
             C’est bien moi, continuer <ArrowRight className="size-5" />

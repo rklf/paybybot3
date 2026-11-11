@@ -7,6 +7,7 @@ import { api, clock, type Account, type Overview, type PricedVehicle } from '@/l
 import { cn } from '@/lib/utils'
 import { LineBone, PlateBone } from '@/components/Skeletons'
 import { ui } from '@/lib/styles'
+import { SmoothHeight } from '@/components/ui/smooth-height'
 
 /** "Mon compte" in the top bar: what PayByBot reads from the PayByPhone account, the home zone and e-mail. */
 export function AccountButton({
@@ -95,81 +96,91 @@ function AccountDialog({
           </DialogDescription>
         </div>
 
-        <div className="space-y-6 px-6 pt-6 pb-7">
-          {/* The vehicles, one row each: the plate on the left, the resident rate on the right. */}
-          <Section>
-            <Rows>
-              {vehicles === undefined ? (
-                // The rows' own shapes while PayByPhone answers (as many as the account's cars).
-                (data.vehicles.length ? data.vehicles : [null]).map((_, i) => (
-                  <li key={i} className={rowClass}>
-                    <PlateBone />
-                    <LineBone className="w-28" />
-                  </li>
-                ))
-              ) : vehicles.length ? (
-                vehicles.map((v) => {
-                  const zone = arrondissement(v.zone)
-                  return (
-                    <li key={v.plate} className={rowClass}>
-                      <Plate plate={v.plate} size="sm" />
-                      <span className={cn('text-right', v.zone ? 'text-ink' : 'text-ink/50')}>
-                        {zone ? `Résident · ${zone}` : v.zone ? <ZonePlate zone={v.zone} /> : 'Non résident'}
-                      </span>
+        {/* What arrives a moment later (PayByPhone, the account) makes the window grow smoothly, never in one jump. */}
+        <SmoothHeight>
+          <div className="space-y-6 px-6 pt-6 pb-7">
+            {/* The vehicles, one row each: the plate on the left, the resident rate on the right. */}
+            <Section>
+              <Rows>
+                {vehicles === undefined ? (
+                  // The rows' own shapes while PayByPhone answers (as many as the account's cars).
+                  (data.vehicles.length ? data.vehicles : [null]).map((_, i) => (
+                    <li key={i} className={rowClass}>
+                      <PlateBone />
+                      <LineBone className="w-28" />
                     </li>
-                  )
-                })
-              ) : (
-                <li className={cn(rowClass, 'text-ink/60')}>{data.vehicles.length ? 'Aucun véhicule au tarif résident' : 'Aucun véhicule'}</li>
-              )}
-            </Rows>
-            <p className={note}>
-              Un véhicule manque ? Ajoutez-le sur{' '}
-              {/* PayByPhone's own app link (as in the e-mails): on an iPhone it opens the app when installed (a universal
-                  link), else its App Store page. */}
-              <a href="https://paybyphone.onelink.me/ZQkh/" target="_blank" rel="noreferrer" className={ui.link}>
-                <PayByPhone />
-              </a>
-            </p>
-          </Section>
-
-          <Section title="Paiement et contact">
-            <Rows>
-              <Row icon={CreditCard} label={cards.length > 1 ? 'Cartes bancaires' : 'Carte bancaire'}>
-                {cards.length ? (
-                  <span className="flex flex-col gap-0.5">
-                    {cards.map((c) => (
-                      <span key={c.id}>
-                        {c.label}
-                        {c.expired && <span className="ml-2 font-semibold text-destructive">Expirée</span>}
-                      </span>
-                    ))}
-                  </span>
+                  ))
+                ) : vehicles.length ? (
+                  vehicles.map((v) => {
+                    const zone = arrondissement(v.zone)
+                    return (
+                      <li key={v.plate} className={rowClass}>
+                        <Plate plate={v.plate} size="sm" />
+                        <span className={cn('text-right', v.zone ? 'text-ink' : 'text-ink/50')}>
+                          {zone ? `Résident · ${zone}` : v.zone ? <ZonePlate zone={v.zone} /> : 'Non résident'}
+                        </span>
+                      </li>
+                    )
+                  })
                 ) : (
-                  <span className="text-ink/50">Aucune carte</span>
+                  <li className={cn(rowClass, 'text-ink/60')}>{data.vehicles.length ? 'Aucun véhicule au tarif résident' : 'Aucun véhicule'}</li>
                 )}
-              </Row>
-              {/* Paying subscribers: Stripe's portal (card, invoices, cancelling) — the offer itself is not shown here. */}
-              {!demo && account?.plan && (
-                <Row icon={Receipt} label="Abonnement">
-                  <button onClick={manage} disabled={opening} className={cn('inline-flex items-center gap-1.5', ui.link)}>
-                    {opening && <Loader2 className="size-3.5 animate-spin" />}
-                    Gérer mon abonnement
-                  </button>
-                </Row>
-              )}
-              <Row icon={Mail} label="E-mail">
-                {email === undefined ? <Loader2 className="size-4 animate-spin text-ink/40" /> : <span className="block truncate">{email || '—'}</span>}
-              </Row>
-            </Rows>
-          </Section>
+              </Rows>
+              <p className={note}>
+                Un véhicule manque ? Ajoutez-le sur{' '}
+                {/* PayByPhone's own app link (as in the e-mails): on an iPhone it opens the app when installed (a universal
+                    link), else its App Store page. */}
+                <a href="https://paybyphone.onelink.me/ZQkh/" target="_blank" rel="noreferrer" className={ui.link}>
+                  <PayByPhone />
+                </a>
+              </p>
+            </Section>
 
-          {!demo && (
-            <button onClick={() => setDeleting(true)} className="text-sm font-medium text-destructive/80 underline-offset-[3px] transition hover:text-destructive hover:underline">
-              Supprimer mon compte
-            </button>
-          )}
-        </div>
+            <Section title="Paiement et contact">
+              <Rows>
+                <Row icon={CreditCard} label={cards.length > 1 ? 'Cartes bancaires' : 'Carte bancaire'}>
+                  {cards.length ? (
+                    <span className="flex flex-col gap-0.5">
+                      {cards.map((c) => (
+                        <span key={c.id}>
+                          {c.label}
+                          {c.expired && <span className="ml-2 font-semibold text-destructive">Expirée</span>}
+                        </span>
+                      ))}
+                    </span>
+                  ) : (
+                    <span className="text-ink/50">Aucune carte</span>
+                  )}
+                </Row>
+                {/* Paying subscribers: Stripe's portal (card, invoices, cancelling) — the offer itself is not shown here. While
+                    the account is read, its place is kept (a grey line), so the window does not jump when it arrives. */}
+                {!demo && account === undefined && (
+                  <li className={cn(rowClass, 'justify-start')}>
+                    <Receipt className="size-[1.15rem] shrink-0 text-ink/45" aria-hidden />
+                    <LineBone className="w-44" />
+                  </li>
+                )}
+                {!demo && account?.plan && (
+                  <Row icon={Receipt} label="Abonnement">
+                    <button onClick={manage} disabled={opening} className={cn('inline-flex items-center gap-1.5', ui.link)}>
+                      {opening && <Loader2 className="size-3.5 animate-spin" />}
+                      Gérer mon abonnement
+                    </button>
+                  </Row>
+                )}
+                <Row icon={Mail} label="E-mail">
+                  {email === undefined ? <LineBone className="w-52" /> : <span className="block truncate">{email || '—'}</span>}
+                </Row>
+              </Rows>
+            </Section>
+
+            {!demo && (
+              <button onClick={() => setDeleting(true)} className="text-sm font-medium text-destructive/80 underline-offset-[3px] transition hover:text-destructive hover:underline">
+                Supprimer mon compte
+              </button>
+            )}
+          </div>
+        </SmoothHeight>
       </DialogContent>
     </Dialog>
   )

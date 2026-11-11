@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Check, Loader2, Mail, Pause, Play, Repeat, RotateCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
@@ -197,6 +197,27 @@ export function RenewalNote({ ap, onChanged }: { ap: Autopilot; onChanged?: () =
   return <>Renouvellement du ticket programmé</>
 }
 
+/** Turning a switch off: it slides to off first, then « Arrêter … ? » opens; « Annuler » puts it back on. It stays off
+ *  once stopped (until the next reading says so), and comes back on if stopping failed or when it is on again later. */
+function useSlideOff(setConfirming: (open: boolean) => void, on: boolean) {
+  const [leaving, setLeaving] = useState(false)
+  const timer = useRef<number | undefined>(undefined)
+  useEffect(() => () => clearTimeout(timer.current), [])
+  useEffect(() => {
+    if (!on) setLeaving(false)
+  }, [on])
+  const ask = () => {
+    setLeaving(true)
+    timer.current = window.setTimeout(() => setConfirming(true), 250) // the switch's own slide
+  }
+  // The window closed without stopping (Annuler, Échap, outside): back on.
+  const closed = (open: boolean) => {
+    setConfirming(open)
+    if (!open) setLeaving(false)
+  }
+  return { leaving, setLeaving, ask, closed }
+}
+
 /** Under a ticket: the vacation pause (planned, or a link to plan one), then the way to stop, in red. */
 const actionBtn = 'flex h-11 w-full items-center justify-center gap-2 rounded-xl border font-semibold transition active:scale-[0.99] sm:w-auto sm:px-5'
 
@@ -231,6 +252,7 @@ export function RenewalActions({
   const [pausing, setPausing] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const { later, paused } = pauseState(ap)
+  const slide = useSlideOff(setConfirming, ap.enabled)
 
   const [busy, setBusy] = useState(false)
 
@@ -260,6 +282,7 @@ export function RenewalActions({
       toast.success(stoppedText, { description: 'Le ticket en cours reste valable.' })
     } catch (e) {
       toast.error((e as Error).message)
+      slide.setLeaving(false)
     }
     setBusy(false)
     setConfirming(false)
@@ -285,11 +308,11 @@ export function RenewalActions({
                 Pause
               </button>
             )}
-            <ToggleSwitch checked label={switchLabel} disabled={busy} busy={busy} onPress={() => setConfirming(true)} />
+            <ToggleSwitch checked={!slide.leaving} label={switchLabel} disabled={busy} busy={busy} onPress={slide.ask} />
           </div>
         <ConfirmDialog
           open={confirming}
-          onOpenChange={setConfirming}
+          onOpenChange={slide.closed}
           title={`${stopLabel} ?`}
           description="Le ticket en cours reste valable jusqu’à sa fin. Aucun nouveau ticket ne sera pris."
           confirmLabel={stopLabel}
@@ -339,7 +362,7 @@ export function RenewalActions({
       </div>
       <ConfirmDialog
         open={confirming}
-        onOpenChange={setConfirming}
+        onOpenChange={slide.closed}
         title={`${stopLabel} ?`}
         description="Le ticket en cours reste valable jusqu’à sa fin. Aucun nouveau ticket ne sera pris."
         confirmLabel={stopLabel}
@@ -591,6 +614,7 @@ export function RenewalSwitch({
   const [busy, setBusy] = useState(false)
   const [pausing, setPausing] = useState(false)
   const on = !!ap && ap.enabled && !ap.lastError
+  const slide = useSlideOff(setConfirming, on)
   // On and not paused (nor a pause planned): the pause offered on the switch's line, like programmed tickets.
   const pausable = on && !!ap && !pauseState(ap).paused && !pauseState(ap).later
 
@@ -602,6 +626,7 @@ export function RenewalSwitch({
       toast.success('Renouvellement arrêté.', { description: 'Le ticket en cours reste valable.' })
     } catch (e) {
       toast.error((e as Error).message)
+      slide.setLeaving(false)
     }
     setBusy(false)
     setConfirming(false)
@@ -618,7 +643,7 @@ export function RenewalSwitch({
           <Pause className="size-3.5" /> Pause
         </button>
       )}
-      <ToggleSwitch checked={on} label="Renouvellement résident automatique" disabled={busy} busy={busy} onPress={onClick} />
+      <ToggleSwitch checked={on && !slide.leaving} label="Renouvellement résident automatique" disabled={busy} busy={busy} onPress={onClick} />
     </div>
   )
 
@@ -640,7 +665,7 @@ export function RenewalSwitch({
     <>
       {row(() =>
         on
-          ? setConfirming(true)
+          ? slide.ask()
           : (async () => {
               setBusy(true)
               await relaunch(ap, onChanged)
@@ -657,7 +682,7 @@ export function RenewalSwitch({
       {pausing && <PauseDialog ap={ap} onClose={() => setPausing(false)} onDone={onChanged} />}
       <ConfirmDialog
         open={confirming}
-        onOpenChange={setConfirming}
+        onOpenChange={slide.closed}
         title="Arrêter le renouvellement ?"
         description="Le ticket en cours reste valable jusqu’à sa fin. Plus aucune semaine ne sera payée automatiquement."
         confirmLabel="Arrêter le renouvellement"
