@@ -217,7 +217,7 @@ function left(iso: string, now: number) {
   return d ? `${d} j ${h} h` : h ? `${h} h ${m % 60} min` : `${m % 60} min`
 }
 
-const inFreeMonth = (c: AdminClient, now: number) => c.subscribed && !!c.trialEnd && new Date(c.trialEnd).getTime() > now
+const inFreeMonth = (c: AdminClient, now: number) => !!c.trialEnd && new Date(c.trialEnd).getTime() > now // a card or not
 /** What a client brings each month (an old yearly one for a twelfth), 0 while in the free month or without one. */
 const monthlyOf = (c: AdminClient, now: number) =>
   !c.subscribed || inFreeMonth(c, now) || c.price == null ? 0 : c.plan === 'yearly' ? c.price / 12 : c.price
@@ -691,7 +691,7 @@ type Row = {
 function rowsOf(clients: AdminClient[], now: number): Row[] {
   return clients.map((c) => {
     const free = inFreeMonth(c, now)
-    const sub: Row['sub'] = !c.subscribed ? (c.plan ? 'Arrêté' : 'Sans abonnement') : free ? 'Mois offert' : 'Payant'
+    const sub: Row['sub'] = free ? 'Mois offert' : !c.subscribed ? (c.plan ? 'Arrêté' : 'Sans abonnement') : 'Payant'
     const vehicles =
       c.vehicles?.map((v) => {
         const rest = v.expire ? left(v.expire, now) : null

@@ -1,13 +1,13 @@
 import { Loading } from '@/components/Loading'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Accessibility, ChevronRight, LogOut, Plus } from 'lucide-react'
+import { Accessibility, LogOut, Plus } from 'lucide-react'
 import { arrondissement, PayByPhone, Plate, vehicleType, withPayByPhone } from '@/components/signs'
 import { TopBar } from '@/components/TopBar'
 import { InviteButton } from '@/components/Invite'
 import { DailyTickets, DailyWizard, isDaily, ruleState, when as whenAt } from '@/components/DailyTickets'
 import { AccountButton } from '@/components/Account'
-import { PlansDialog, TrialBanner } from '@/components/Pricing'
+import { FreeMonthCard, ReactivateCard, TrialBanner } from '@/components/Pricing'
 import { ui } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 import { LineBone } from '@/components/Skeletons'
@@ -452,8 +452,14 @@ export function Dashboard({
   // dialog stays open (then the offer); without one, the « Programmer un ticket » wizard does (then the offer).
   // No subscription running (never taken, or the free month over without one): every automation ends on the
   // subscription screen. An unpaid one is not: its invoice is paid from the banner, not with a new subscription.
-  const needsOffer = !!me.hosted && !me.demo && !!account && !account.subscribed && account.blocked !== 'unpaid'
-  const [offerOpen, setOfferOpen] = useState(false) // « Activer mon compte »: the offer screen
+  // The free month needs no card: the offer is asked only once it is over (then before any automation).
+  const needsOffer = !!me.hosted && !me.demo && !!account && account.blocked === 'trialOver'
+  // Local preview only, on the demo: ?apercu=j25 (5 days left) or ?apercu=fin (the free month over).
+  const freeMonthPreview = import.meta.env.DEV ? (/apercu=(j25|fin|impaye)/.exec(location.search)?.[1] ?? null) : null
+  // Renewals paused (free month over, or a card still refused after the grace week): the page blurred behind one card.
+  const paused: 'trialOver' | 'unpaid' | null =
+    freeMonthPreview === 'fin' ? 'trialOver' : freeMonthPreview === 'impaye' ? 'unpaid'
+      : !me.demo && (account?.blocked === 'trialOver' || account?.blocked === 'unpaid') ? account.blocked : null
   const [backPlate, setBackPlate] = useState<string | undefined>() // back to the wizard, on the car it left
   const [residentFor, setResidentFor] = useState<string | null>(null) // a resident car chosen in « Programmer un ticket »
   const [programAsked, setProgramAsked] = useState(0) // « Programmer un ticket »: each click opens the ticket wizard
@@ -507,41 +513,22 @@ export function Dashboard({
         <CardGate account={<AccountButton data={data} onDeleted={onDeleted ?? onLogout} demo={me.demo} label />} />
       )}
       <TrialBanner
-        blocked={account?.blocked ?? null}
+        blocked={paused ?? account?.blocked ?? null}
         graceEnd={account?.graceEnd ?? null}
       />
-      {/* No offer chosen yet: a thin light blue bar (the logo's blue) across the top, the way to activate the account. */}
-      {needsOffer && (
-        <button
-          type="button"
-          onClick={() => setOfferOpen(true)}
-          className="group flex w-full items-center justify-center gap-1.5 bg-[#e3efff] px-4 py-2 text-sm font-semibold text-[#1f55e6] transition hover:bg-[#d4e6ff]"
-        >
-          Activer mon compte
-          <span className="font-normal text-[#1f55e6]/70">
-            {/* Account re-created during its free month: only the days left of the first one, not a new month. */}
-            {(() => {
-              const left = account?.trialEnd ? Math.ceil((new Date(account.trialEnd).getTime() - Date.now()) / 86_400_000) : 0
-              return left > 0 ? `· mois offert déjà entamé, ${left} jour${left > 1 ? 's' : ''} restant${left > 1 ? 's' : ''}` : '· 1er mois offert'
-            })()}
-          </span>
-          <ChevronRight className="size-4 transition-transform group-hover:translate-x-0.5" />
-        </button>
-      )}
       {/* Free month running: the same light blue bar, with the days left. */}
-      {!needsOffer && !me.demo && account?.subscribed && !account.blocked && account.trialEnd &&
+      {!needsOffer && !me.demo && !account?.blocked && account?.trialEnd &&
         new Date(account.trialEnd).getTime() > Date.now() && (() => {
           const days = Math.ceil((new Date(account.trialEnd).getTime() - Date.now()) / 86_400_000)
           return (
             <div className="trial-bar flex w-full items-center justify-center gap-1.5 bg-[#e3efff] px-4 py-2 text-sm font-semibold text-[#1f55e6]">
-              Période d’essai gratuite
+              Mois offert
               <span className="font-normal text-[#1f55e6]/70">
                 · {days} jour{days > 1 ? 's' : ''} restant{days > 1 ? 's' : ''}
               </span>
             </div>
           )
         })()}
-      {offerOpen && <PlansDialog onClose={() => setOfferOpen(false)} />}
       <TopBar>
         {me.demo && (
           <span className="hidden h-9 items-center rounded-full bg-amber/25 px-3 text-sm font-semibold text-ink min-[400px]:inline-flex sm:h-10 sm:px-4 sm:text-[0.95rem]">
@@ -550,7 +537,7 @@ export function Dashboard({
         )}
         {/* Inviting a friend: always offered to a signed-in account (word of mouth is the only way in). */}
         {/* Programming a non-resident ticket: a sober button beside the invitation, no card in the page. */}
-{programmable && (
+{programmable && !paused && (
         <button
           onClick={() => (setBackPlate(undefined), setProgramAsked((n) => n + 1))}
           disabled={!data}
@@ -570,7 +557,16 @@ export function Dashboard({
 
       {data && <CardBanner payments={data.payments} />}
 
-      <main className="mx-auto w-full max-w-[34rem] flex-1 px-6 pt-4 pb-6">
+      {/* Free month over: the page blurred behind « Réactivez votre compte » (the top bar stays usable). */}
+      {paused && <ReactivateCard kind={paused} ticketEnd={live.reduce<string | null>((end, x) => (!end || x.expire > end ? x.expire : end), null)} />}
+      <main
+        aria-hidden={!!paused || undefined}
+        className={cn('mx-auto w-full max-w-[34rem] flex-1 px-6 pt-4 pb-6', paused && 'pointer-events-none opacity-30 blur-[6px] select-none')}
+      >
+        {/* The free month's last 7 days (local preview: ?apercu=j25 on the demo). */}
+        {(freeMonthPreview === 'j25' || (!me.demo && !!me.hosted && account && !account.subscribed && !account.blocked)) && (
+          <FreeMonthCard trialEnd={freeMonthPreview === 'j25' ? new Date(Date.now() + 5 * 86_400_000).toISOString() : (account?.trialEnd ?? null)} />
+        )}
         {/* No greeting: the page opens on what matters, whether a ticket is running. */}
         <h1 className="mt-2 text-[1.05rem] text-ink/60">
           {!data

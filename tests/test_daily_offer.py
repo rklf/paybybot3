@@ -28,12 +28,6 @@ class DailyNeedsAnOffer(unittest.TestCase):
                 return e.status_code, e.detail, saved
         return 200, "", saved
 
-    def test_free_month_without_offer_is_refused_for_precise_days(self):
-        for extra in ({"days": [5], "start": "09:00"}, {}):  # precise days, and the weekly renewal alike
-            status, detail, saved = self.add("trial", **extra)
-            self.assertEqual(status, 402)
-            self.assertIn("Abonnez-vous", detail)
-            self.assertEqual(saved, [])  # nothing stored
 
     def test_free_month_over_leads_to_the_subscription(self):
         status, detail, saved = self.add("trial_over", days=[5], start="09:00")

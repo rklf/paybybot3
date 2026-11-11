@@ -132,21 +132,26 @@ export function TrialBanner({
             {blocked === 'grace'
               ? 'Paiement refusé.'
               : blocked === 'unpaid'
-                ? 'Paiement refusé : renouvellement arrêté.'
-                : 'Mois offert terminé : compte bloqué.'}{' '}
-            <span className="font-normal text-white/80">
-              {blocked === 'grace'
-                ? `Vos renouvellements continuent jusqu'au ${graceDay(graceEnd)}, mettez à jour votre carte d'ici là.`
-                : 'Le prochain renouvellement ne sera pas payé.'}
-            </span>
+                ? 'Paiement refusé : votre renouvellement est en pause.'
+                : 'Mois offert terminé : votre renouvellement est en pause.'}
+            {blocked === 'grace' && (
+              <span className="font-normal text-white/80">
+                {' '}
+                {blocked === 'grace'
+                  ? `Vos renouvellements continuent jusqu'au ${graceDay(graceEnd)}, mettez à jour votre carte d'ici là.`
+                  : 'Le prochain renouvellement ne sera pas payé.'}
+              </span>
+            )}
           </span>
+          {blocked === 'grace' && (
           <button
             onClick={unlock}
             disabled={busy}
             className="inline-flex items-center rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-ink transition hover:bg-white/90 disabled:opacity-60"
           >
-            {busy ? <Loader2 className="size-4 animate-spin" /> : refused ? 'Se régulariser' : 'Débloquer mon compte'}
+            {busy ? <Loader2 className="size-4 animate-spin" /> : 'Se régulariser'}
           </button>
+          )}
         </div>
         {open && (
           <PlansDialog onClose={() => setOpen(false)} text="Le renouvellement reprend dès que le paiement est fait." />
@@ -155,8 +160,63 @@ export function TrialBanner({
     )
   }
 
-  // During the free month, nothing: the offer is chosen when the renewal is activated (it cannot be skipped).
   return null
+}
+
+/** The free month's last 7 days (no card was asked): a light card with the days left and the way on. */
+export function FreeMonthCard({ trialEnd }: { trialEnd: string | null }) {
+  const [open, setOpen] = useState(false)
+  const left = trialEnd ? Math.ceil((new Date(trialEnd).getTime() - Date.now()) / 86_400_000) : 0
+  if (!(left > 0 && left <= 7)) return null
+  return (
+    <div className="rise mb-6 rounded-2xl border border-ink/10 bg-white p-5">
+      <p className="font-heading text-xl font-semibold tracking-tight text-ink">{left > 1 ? `Plus que ${left} jours offerts` : 'Dernier jour offert'}</p>
+      <p className="mt-2 leading-relaxed text-ink/70">Ensuite, votre renouvellement continue pour 9,50 € par mois, tous vos véhicules, sans engagement.</p>
+      <button onClick={() => setOpen(true)} className={cn(ui.primary, 'mt-4 h-12 text-base')}>
+        Continuer pour 9,50 €/mois
+      </button>
+      {open && <PlansDialog onClose={() => setOpen(false)} text="Le renouvellement reprend dès que le paiement est fait." />}
+    </div>
+  )
+}
+
+/** Over the blurred dashboard (the top bar stays usable: « Mon compte », sign out), the one thing to do. The free month
+ *  over: activate the subscription (the offer screen). A card still refused after the grace week: reactivate the
+ *  account (straight to the invoice to pay). What still runs is said: the ticket running stays valid until its end. */
+export function ReactivateCard({ kind, ticketEnd }: { kind: 'trialOver' | 'unpaid'; ticketEnd?: string | null }) {
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const until = ticketEnd && new Date(ticketEnd).getTime() > Date.now()
+    ? new Date(ticketEnd).toLocaleString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' }).replace(':', 'h').replace(' à ', ', ')
+    : null
+  const trial = kind === 'trialOver'
+  async function go() {
+    if (trial) return setOpen(true)
+    setBusy(true)
+    try {
+      window.location.assign((await api.unlock()).url)
+    } catch (e) {
+      toast((e as Error).message)
+      setBusy(false)
+    }
+  }
+  return (
+    <div role="dialog" aria-labelledby="reactivate-title" className="rise fixed inset-x-4 top-1/2 z-30 mx-auto max-w-lg -translate-y-1/2 rounded-3xl bg-white p-8 shadow sm:p-12-[0_30px_60px_-20px_rgb(11_16_36/0.4)] ring-1 ring-ink/10">
+      <p id="reactivate-title" className="font-heading text-[1.75rem] leading-tight font-semibold tracking-tight text-ink">
+        {trial ? 'Activez votre abonnement' : 'Réactivez votre compte'}
+      </p>
+      <p className="mt-4 text-lg leading-relaxed text-ink/70">
+        {trial
+          ? 'Votre mois offert est terminé : le renouvellement automatique est en pause.'
+          : 'Le paiement de votre abonnement n’a pas été régularisé : le renouvellement automatique est en pause.'}
+        {until && <> Votre ticket actuel reste valable jusqu’au <strong className="font-semibold text-ink">{until}</strong>.</>}
+      </p>
+      <button onClick={go} disabled={busy} className="mt-8 flex h-14 w-full items-center justify-center rounded-xl bg-eu text-lg font-bold text-white transition hover:bg-[#173f86] disabled:opacity-60">
+        {busy ? <Loader2 className="size-5 animate-spin" /> : trial ? 'Activer mon abonnement' : 'Réactiver mon compte'}
+      </button>
+      {open && <PlansDialog onClose={() => setOpen(false)} text="Le renouvellement reprend dès que le paiement est fait." />}
+    </div>
+  )
 }
 
 /** « mardi 28 octobre » for the end of the grace week. */

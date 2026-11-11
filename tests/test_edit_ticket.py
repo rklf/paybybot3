@@ -106,7 +106,7 @@ class Hosted(unittest.TestCase):
         old = {"plate": "AB123CD", "location": "75017", "rate": "102", "duration": "2", "unit": "Hours",
                "payment_account_id": "card-1", "days": [0, 1], "start": "09:00"}
         rows = [{"id": "r1", "enabled": True, "data": web.encrypt_details(old)}]
-        for state in ("trial", "trial_over", "unpaid"):
+        for state in ("trial_over", "unpaid"):  # the free month needs no subscription
             with self.subTest(state=state), patch.object(web, "HOSTED", True), \
                     patch.object(web, "current", return_value=s), \
                     patch.object(web, "store", return_value=rows), patch.object(web, "load_account", return_value={}), \

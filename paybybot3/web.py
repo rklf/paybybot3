@@ -1846,7 +1846,7 @@ def with_details(row):
 
 ACCOUNT_FIELDS = ("email", "first_name", "zone", "trial_start", "trial_kept", "plan", "stripe_customer", "stripe_subscription",
                   "weekly_cents", "price_zone", "billed_weekly_cents", "weeklies", "billed_weeklies", "monthlies", "billed_monthlies", "suv_plates", "zone_found",
-                  "vehicle_zones", "dunning", "check_mailed", "early_stops", "checkout_at", "chosen_plates", "email_keyed", "origin", "revoked")
+                  "vehicle_zones", "dunning", "trial_mailed", "check_mailed", "early_stops", "checkout_at", "chosen_plates", "email_keyed", "origin", "revoked")
 TRIAL_DAYS = 30  # one free month for every new account, from the day the offer is chosen (never at sign-up)
 
 
@@ -2604,7 +2604,10 @@ def cron_renew(request: Request):
     # Supabase's calls send them when it is set up: Vercel's daily backup call comes at the same minute (5:00), and two
     # runs side by side would both send the day's e-mail before either notes it as sent.
     sender = cron_caller(request) == "supabase" or not os.environ.get("PAYBYBOT_CRON_TOKEN_SHA256")
-    dunned = run_dunning() if sender and datetime.now(timezone.utc).minute < 5 else None
+    hourly = sender and datetime.now(timezone.utc).minute < 5
+    dunned = run_dunning() if hourly else None
+    if hourly:
+        run_trial_reminders()
     check_capacity()
     return {"processed": len(results), "outcomes": results, "dunning": dunned, "probe": run_probe()}
 
@@ -3909,9 +3912,16 @@ def check_offer(s):
                                  "renouvellement.")
     if state == "trial_over":  # the free month ended without a subscription: the subscription screen
         raise HTTPException(402, "Abonnez-vous pour activer le renouvellement : votre mois offert est terminé.")
-    if state == "trial":
-        raise HTTPException(402, "Abonnez-vous pour activer le renouvellement : rien n'est prélevé avant la fin "
-                                 "de votre mois offert.")
+    # The free month ('trial'): no card asked, activated at once (the subscription is asked near its end).
+
+
+def begin_free_month(s):
+    """The free month starts with the first activation (not at sign-up); kept even if the account is deleted."""
+    account = load_account(s)
+    started = trial_started(account)
+    if started:
+        save_account(s, started)
+        mark_trial(s, parse_dt(started["trial_start"]), account.get("email"))
 
 
 @app.post("/api/autopilots")
@@ -3939,6 +3949,7 @@ def add_autopilot(body: Autopilot, pbb_session: str = Cookie(None)):
         if not refresh:
             raise HTTPException(401, "Reconnectez-vous pour activer le renouvellement automatique.")
         check_offer(s)
+        guarded(lambda: begin_free_month(s))
 
         def save():
             row = store("renewal_save", p_row={
@@ -4171,14 +4182,17 @@ def notify_blocked(details, state):
     car = "%s, zone %s" % (plate_text(details.get("plate")), details.get("location"))
     first = ("Le dernier paiement de votre abonnement PayByBot n'a pas abouti : votre compte est bloqué."
              if state == "unpaid" else
-             "Votre mois offert est terminé et aucun abonnement n'est en cours : votre compte est bloqué.")
-    send_email(to, "Compte PayByBot bloqué · paiement requis",
-               "Paiement refusé : compte bloqué" if state == "unpaid" else "Votre compte est bloqué",
+             "Votre mois offert est terminé : votre renouvellement automatique est en pause.")
+    send_email(to, "Compte PayByBot bloqué · paiement requis" if state == "unpaid" else
+               "Votre renouvellement PayByBot est en pause",
+               "Paiement refusé : compte bloqué" if state == "unpaid" else "Renouvellement en pause",
                [first,
                 "Votre ticket en cours reste valable jusqu'à sa fin, mais le renouvellement suivant pour %s "
                 "n'aura pas lieu." % car,
-                "Débloquez votre compte : le renouvellement reprend tout seul dès que le paiement est fait."],
-               ("Débloquer mon compte", unlock_link(details["owner"])),
+                "Débloquez votre compte : le renouvellement reprend tout seul dès que le paiement est fait."
+                if state == "unpaid" else
+                "Continuez pour 9,50 € par mois, sans engagement : le renouvellement reprend tout seul aussitôt."],
+               ("Débloquer mon compte" if state == "unpaid" else "Continuer avec PayByBot", unlock_link(details["owner"])),
                footer="Vous recevez cet e-mail parce que vous avez un renouvellement automatique sur PayByBot.")
 
 
@@ -4266,6 +4280,62 @@ def run_dunning():
                 count += 1
             except Exception as e:
                 log.warning("dunning failed for one subscription: %s", str(e)[:200])
+    return count
+
+
+# The subscription asked near the free month's end (no card was asked to start): days after its start, and the e-mail.
+TRIAL_REMINDERS = (("j21", 21), ("j27", 27), ("j30", 29))
+
+
+def notify_trial_ending(to, link, step, end):
+    left = {"j21": 9, "j27": 3, "j30": 1}[step]
+    day = day_text(end.astimezone(PARIS).date().isoformat())  # « jeudi 11 décembre », no hour
+    if step == "j30":
+        subject, title = "Dernier jour de votre mois offert PayByBot", "Dernier jour offert"
+        first = "Votre mois offert se termine aujourd'hui. Demain, votre renouvellement automatique se met en pause."
+    else:
+        subject = "Votre mois offert PayByBot se termine dans %d jours" % left
+        title = "Plus que %d jours offerts" % left
+        first = "Votre mois offert se termine le %s." % day
+    send_email(to, subject, title,
+               [first,
+                "Pendant ce mois, PayByBot a renouvelé votre stationnement à votre place, sans rien à faire.",
+                "Pour continuer après le %s : 9,50 € par mois pour tous vos véhicules, sans engagement. Rien n'est "
+                "prélevé avant cette date." % day],
+               ("Continuer avec PayByBot", link),
+               footer="Vous recevez cet e-mail parce que vous profitez du mois offert de PayByBot.")
+
+
+def run_trial_reminders(now=None):
+    """Run with the dunning, hourly: each free month near its end gets its e-mail of the day, once (only the latest
+    one due, never several at once). Never raises."""
+    now, count = now or datetime.now(timezone.utc), 0
+    try:
+        rows = store("admin_accounts") or []
+    except Exception as e:
+        log.warning("trial reminders: accounts unavailable: %s", type(e).__name__)
+        return 0
+    for row in rows:
+        try:
+            account = json.loads(_fernet("account").decrypt(row["data"].encode()))
+            start = parse_dt(account.get("trial_start"))
+            if not start or account.get("stripe_subscription") or not account.get("email"):
+                continue
+            elapsed = now - start
+            if elapsed >= timedelta(days=TRIAL_DAYS):
+                continue  # over: the renewal pauses and says so itself
+            due = [key for key, days in TRIAL_REMINDERS if elapsed >= timedelta(days=days)]
+            sent = account.get("trial_mailed") or []
+            if not due or due[-1] in sent:
+                continue
+            owner = row["owner"]
+            if billing_state(account, owner) != "trial":
+                continue  # subscribed meanwhile (found on Stripe)
+            notify_trial_ending(account["email"], unlock_link(owner), due[-1], start + timedelta(days=TRIAL_DAYS))
+            save_account_by_owner(owner, {"trial_mailed": sorted(set(sent) | set(due))})
+            count += 1
+        except Exception as e:
+            log.warning("trial reminder failed for one account: %s", type(e).__name__)
     return count
 
 
