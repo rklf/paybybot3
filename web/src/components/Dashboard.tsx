@@ -1,7 +1,7 @@
 import { Loading } from '@/components/Loading'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { ChevronRight, LogOut, Plus } from 'lucide-react'
+import { Accessibility, ChevronRight, LogOut, Plus } from 'lucide-react'
 import { arrondissement, PayByPhone, Plate, vehicleType, withPayByPhone } from '@/components/signs'
 import { TopBar } from '@/components/TopBar'
 import { InviteButton } from '@/components/Invite'
@@ -457,6 +457,7 @@ export function Dashboard({
   const [backPlate, setBackPlate] = useState<string | undefined>() // back to the wizard, on the car it left
   const [residentFor, setResidentFor] = useState<string | null>(null) // a resident car chosen in « Programmer un ticket »
   const [programAsked, setProgramAsked] = useState(0) // « Programmer un ticket »: each click opens the ticket wizard
+  const [cmisAsked, setCmisAsked] = useState(0) // « Carte mobilité CMI-S »: the wizard on that ticket only
   const live = data?.sessions.filter((s) => new Date(s.expire).getTime() > Date.now()) ?? []
   const isResidentCar = (plate: string) => (residentPlates ? residentPlates.has(plateKey(plate)) : true)
   // The car whose renewal opens: a resident ticket running, else a resident car without a ticket (its card is shown),
@@ -633,6 +634,7 @@ export function Dashboard({
             onChanged={onRefresh}
             needsOffer={needsOffer}
             openAsked={programAsked}
+            cmisAsked={cmisAsked}
             onResident={(p) => (setBackPlate(undefined), setResidentFor(p))}
             openPlate={backPlate}
             // Just past the welcome page (or no offer yet) without a resident car to renew: the wizard opens by itself.
@@ -667,6 +669,12 @@ export function Dashboard({
               </span>
             </RippleButton>
           </div>
+        )}
+        {/* The CMI-S card's free ticket, on its own: for any vehicle of the account, resident or not. */}
+        {data && data.vehicles.length > 0 && (
+          <button onClick={() => setCmisAsked((n) => n + 1)} className={cn(ui.primary, programmable ? 'mt-3' : 'mt-6')}>
+            <Accessibility className="size-5" /> Carte mobilité CMI-S
+          </button>
         )}
         {data && residentFor && (
           <RiverainDialog

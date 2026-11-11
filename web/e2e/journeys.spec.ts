@@ -432,6 +432,18 @@ test('impasses : sans carte bancaire, « Mon compte » reste accessible', async 
   await expect(page.getByRole('heading', { name: 'Mon compte' })).toBeVisible()
 })
 
+test('« Carte mobilité CMI-S » : son propre bouton, l’assistant ne propose que ce ticket', async ({ page }) => {
+  await demo(page)
+  await page.getByRole('button', { name: 'Carte mobilité CMI-S' }).click()
+  const wizard = page.getByRole('dialog')
+  await expect(wizard.getByRole('heading', { name: 'Carte mobilité CMI-S' })).toBeVisible()
+  await wizard.getByRole('button', { name: 'Suivant' }).click() // the vehicle (any, a resident one too)
+  await expect(wizard.getByRole('button', { name: /Carte mobilité CMI-S/ })).toHaveAttribute('aria-pressed', 'true')
+  await expect(wizard.getByRole('button', { name: /Véhicule léger|Véhicule lourd/ })).toHaveCount(0)
+  await wizard.getByRole('button', { name: 'Suivant' }).click()
+  await expect(wizard.getByRole('checkbox', { name: 'Tous' })).toBeVisible() // the arrondissements, no zone typed
+})
+
 test('programmer un ticket : carte mobilité CMI-S, « Tous » coche tout Paris', async ({ page }) => {
   await demo(page)
   await wizardButton(page).click()
