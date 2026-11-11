@@ -24,7 +24,7 @@ const FEATURE_ICONS = [RefreshCw, Pause, BellRing, Headset]
 const STEP_ICONS = [Link2, RefreshCw, ShieldCheck]
 
 /** Each step's screen (demo account, captured at one size: 1040 × 940). */
-const STEP_SHOTS = ['/how/1-connexion.png?v=10', '/how/2-activation.png?v=10', '/how/3-tableau-de-bord.png?v=10']
+const STEP_SHOTS = ['/how/1-connexion.png?v=11', '/how/2-activation.png?v=11', '/how/3-tableau-de-bord.png?v=11']
 const STEP_MS = 3500
 
 const STEPS = [
@@ -54,7 +54,7 @@ const TESTIMONIALS: [string, string, string][] = [
 /** « Comment ça marche » : the three steps on the left, a line filling down the active one, and its screen on the
  *  right. The steps take turns every 3.5 seconds (not with reduced motion); a click shows one at once. `page`: the
  *  « Comment ça marche » page itself (its title a page title, not a window-high section). */
-export function HowItWorks({ page = false }: { page?: boolean }) {
+export function HowItWorks({ page = false, cta }: { page?: boolean; /** Under the steps, in their column. */ cta?: ReactNode }) {
   const [active, setActive] = useState(0)
   const [auto, setAuto] = useState(() => !window.matchMedia('(prefers-reduced-motion: reduce)').matches)
   useEffect(() => {
@@ -75,7 +75,8 @@ export function HowItWorks({ page = false }: { page?: boolean }) {
           Comment ça marche
         </h2>
       )}
-      <div className="mt-12 grid items-center gap-10 lg:mt-16 lg:grid-cols-[1fr_1.05fr] lg:gap-16">
+      <div className={cn('grid items-center gap-10 lg:grid-cols-[1fr_1.05fr] lg:gap-16', page ? 'mt-8' : 'mt-12 lg:mt-16')}>
+        <div>
         <ol className="space-y-2">
           {STEPS.map(([title, text], i) => {
             const Icon = STEP_ICONS[i]
@@ -89,7 +90,7 @@ export function HowItWorks({ page = false }: { page?: boolean }) {
                     setAuto(false)
                   }}
                   aria-current={on || undefined}
-                  className="group relative flex w-full gap-5 py-5 pl-6 text-left"
+                  className={cn('group relative flex w-full gap-5 pl-6 text-left', page ? 'py-3.5' : 'py-5')}
                 >
                   {/* The line: grey, filling down in blue while the step is shown. */}
                   <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 overflow-hidden rounded-full bg-ink/10">
@@ -121,8 +122,16 @@ export function HowItWorks({ page = false }: { page?: boolean }) {
             )
           })}
         </ol>
+          {cta}
+        </div>
         {/* The screen: a window frame, raised above the text, its picture changing with the step. */}
-        <div className="mx-auto w-full max-w-[34rem] overflow-hidden rounded-2xl border border-ink/10 bg-white shadow-[0_40px_80px_-30px_rgb(11_16_36/0.35),0_12px_24px_-12px_rgb(11_16_36/0.12)]">
+        {/* On the « Comment ça marche » page, a smaller window: the whole page fits in a laptop's screen. */}
+        <div
+          className={cn(
+            'mx-auto w-full overflow-hidden rounded-2xl border border-ink/10 bg-white shadow-[0_40px_80px_-30px_rgb(11_16_36/0.35),0_12px_24px_-12px_rgb(11_16_36/0.12)]',
+            page ? 'max-w-[27rem]' : 'max-w-[34rem]',
+          )}
+        >
           <div className="flex items-center gap-1.5 border-b border-ink/[0.06] bg-ink/[0.02] px-4 py-3" aria-hidden>
             <span className="size-2.5 rounded-full bg-ink/15" />
             <span className="size-2.5 rounded-full bg-ink/15" />
@@ -130,18 +139,20 @@ export function HowItWorks({ page = false }: { page?: boolean }) {
             <span className="ml-3 truncate text-xs text-ink/40">paybybot.fr</span>
           </div>
           <div className="relative aspect-[1040/940]">
+            {/* Each picture fades as one block with what is laid over it (step 2: its switch turning on before step 3),
+                so nothing of the picture under the switch shows through while it fades. */}
             {STEP_SHOTS.map((src, i) => (
-              <img
-                key={src}
-                src={src}
-                alt={i === active ? STEPS[i][0] : ''}
-                aria-hidden={i !== active}
-                loading="lazy"
-                className={cn('absolute inset-0 size-full object-cover object-top transition-opacity duration-500', i === active ? 'opacity-100' : 'opacity-0')}
-              />
+              <div key={src} className={cn('absolute inset-0 transition-opacity duration-500', i === active ? 'opacity-100' : 'opacity-0')}>
+                <img
+                  src={src}
+                  alt={i === active ? STEPS[i][0] : ''}
+                  aria-hidden={i !== active}
+                  loading="lazy"
+                  className="size-full object-cover object-top"
+                />
+                {i === 1 && <ShotSwitch play={active === 1} auto={auto} />}
+              </div>
             ))}
-            {/* Step 2: the picture's switch turns on before step 3 shows it on. */}
-            <ShotSwitch play={active === 1} auto={auto} />
           </div>
         </div>
       </div>
@@ -180,7 +191,7 @@ function ShotSwitch({ play, auto }: { play: boolean; auto: boolean }) {
       ref={ref}
       aria-hidden
       inert
-      className={cn('pointer-events-none absolute top-[47.47%] left-[82.12%] origin-top-left rounded-full bg-white transition-opacity duration-500', play ? 'opacity-100' : 'opacity-0')}
+      className="pointer-events-none absolute top-[47.47%] left-[82.12%] origin-top-left rounded-full bg-white"
       style={{ transform: `scale(${scale})` }}
     >
       <ToggleSwitch checked={on} label="" onPress={() => {}} />

@@ -637,3 +637,35 @@ test('impasses : arrêter le renouvellement juste après la bienvenue ne rouvre 
   await page.waitForTimeout(1500)
   await expect(page.getByRole('dialog')).toHaveCount(0)
 })
+
+test('un seul véhicule résident renouvelé : « Programmer un stationnement » n’apparaît jamais, même le temps du chargement', async ({ page }) => {
+  await page.route('**/api/overview', async (route) => {
+    const answer = await route.fetch()
+    const json = await answer.json()
+    if (!json.vehicles) return route.fulfill({ response: answer, json })
+    // As on a real account: the running ticket does not say « resident » (only the tariffs do).
+    const sessions = json.sessions.map((x: object) => ({ ...x, resident: null }))
+    await route.fulfill({ json: { ...json, vehicles: json.vehicles.slice(0, 1), sessions } })
+  })
+  await demo(page)
+  await press(page, /Renouvellement/)
+  await page.getByRole('dialog').getByRole('button', { name: /^Activer le renouvellement/ }).click()
+  await expect(page.getByRole('switch', { name: /Renouvellement/ }).first()).toBeChecked({ timeout: 15_000 })
+  // Back later in a new tab: the tariffs (which say which car is resident) answer 3 seconds after the page.
+  await page.route('**/api/pricing', async (route) => {
+    await new Promise((r) => setTimeout(r, 3000))
+    await route.continue()
+  })
+  await page.evaluate(() => sessionStorage.clear())
+  await page.reload()
+  // Watched every 100 ms while the tariffs are on their way: never there.
+  let shown = 0
+  for (let i = 0; i < 40; i++) {
+    shown += await page.getByRole('button', { name: 'Programmer un stationnement' }).count()
+    await page.waitForTimeout(100)
+  }
+  expect(shown).toBe(0)
+  await expect(page.getByText('Renouvellement auto').first()).toBeVisible()
+  await page.waitForTimeout(3500)
+  await expect(page.getByRole('button', { name: 'Programmer un stationnement' })).toHaveCount(0)
+})
