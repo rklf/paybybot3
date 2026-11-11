@@ -1831,7 +1831,7 @@ REFRESH_RACE_WAIT = 1.5  # seconds: long enough for the request that refreshed t
 RENEWAL_FIELDS = ("label", "plate", "location", "rate", "duration", "unit", "payment_account_id", "email", "days",
                   "start", "tz", "cmis_attested_at", "date_from", "date_to", "locations",
                   "bank_job", "bank_ends", "bank_deadline", "bank_remind", "bank_reminded", "bank_at", "refused_tries", "card_warned",
-                  "card_stats", "card_hint")
+                  "card_stats", "card_hint", "paid")
 
 
 def encrypt_details(details):
@@ -1841,7 +1841,25 @@ def encrypt_details(details):
 
 def with_details(row):
     """Database row (encrypted data) -> row with its details in clear."""
-    return {**row, **json.loads(_fernet("renewal").decrypt(row["data"].encode()))}
+    return {**row, **decrypt_details(row["data"])}
+
+
+def decrypt_details(data):
+    return json.loads(_fernet("renewal").decrypt(data.encode()))
+
+
+PAID_KEPT = 52  # tickets kept as proof per renewal (a year of weekly renewals)
+
+
+def keep_paid(row, patch, now, until, cost):
+    """Proof of a ticket PayByBot paid (« Historique »): when, which zones, until when, its price. Kept with the renewal,
+    encrypted; merged with details already changed in this patch."""
+    base = {**row, **decrypt_details(patch["data"])} if patch.get("data") else row
+    until = parse_dt(until) if isinstance(until, str) else until  # the zones' end comes as text
+    entry = {"at": utc_iso(now), "until": utc_iso(until) if until else None,
+             "zones": [str(z) for z in (row.get("locations") or [row.get("location")]) if z],
+             "cost": (cost or {}).get("amount")}
+    patch["data"] = encrypt_details({**base, "paid": (list(base.get("paid") or []) + [entry])[-PAID_KEPT:]})
 
 
 ACCOUNT_FIELDS = ("email", "first_name", "zone", "trial_start", "trial_kept", "plan", "stripe_customer", "stripe_subscription",
@@ -2260,6 +2278,8 @@ def renewal_with(session, row, rule, now, patch, previous_error, activating, ref
     counted = "bank" if bank_asked else {"paid": "paid", "refused": "refused", "unconfirmed": "refused"}.get(outcome)
     if counted:
         count_card(session, row, patch, used_card, counted)
+    if outcome == "paid":
+        keep_paid(row, patch, now, expire, (result or {}).get("cost"))
     if "data" not in patch and sealed_with_old(row.get("data"), "renewal"):
         patch["data"] = encrypt_details(row)
     log.info("renewal %s zone=%s plate=%s: %s", row["id"], row["location"], row["plate"][:2] + "***", outcome)
@@ -2290,6 +2310,8 @@ def renew_zones(session, row, rule, now, patch, previous_error):
         later = schedule.next_slot(rule, now) if rule else None
         patch.update(last_payment=utc_iso(now), last_error=None, next_check=utc_iso(later or now + timedelta(days=1)))
         outcome = "paid" if expire else "active"
+        if expire:
+            keep_paid(row, patch, now, expire, None)
     log.info("renewal %s zones=%s plate=%s: %s (%s refused, %s left)", row["id"], len(row["locations"]),
              row["plate"][:2] + "***", outcome, len(failed), len(left))
     store("renewal_update", p_id=row["id"], p_patch=patch)
@@ -4736,39 +4758,32 @@ def admin_stats(pbb_admin: str = Cookie(None)):
     return guarded(lambda: store("admin_stats"))
 
 
-def automated_places(s):
-    """(plate, zone) of every automation PayByBot has or had for this account (a renewal, a programmed ticket and its
-    zones, running or stopped): what « Historique » lists."""
-    if HOSTED and not s.demo:
-        items = []
-        for row in store("renewal_list", p_owner=owner_id(s.username)) or []:
-            try:
-                items.append(with_details(row))
-            except Exception:
-                continue
-    else:
-        items = list(s.autopilots.values())
-    return {(plate_key(x["plate"]), str(z)) for x in items for z in (x.get("locations") or [x.get("location")]) if z}
-
-
 @app.get("/api/history")
 def history(pbb_session: str = Cookie(None)):
-    """The tickets of the cars and zones PayByBot automates (running and past, from PayByPhone), newest first. The
-    demo, with no automation, shows its own past weeks."""
+    """The tickets PayByBot paid, newest first: its own proofs (kept at each payment), never a ticket the user bought
+    himself on PayByPhone. The demo shows its own past weeks."""
     s = current(pbb_session)
-    try:
-        places = automated_places(s)
-        if not places and not s.demo:
+    if s.demo or not HOSTED:
+        try:
+            return [serialize_session(x) for x in s.call("get_past_sessions", limit=10) or []][:30]
+        except Exception:
             return []
-        rows, seen = [], set()
-        for x in (s.call("get_parking_sessions") or []) + (s.call("get_past_sessions", limit=40) or []):
-            key = (plate_key((x.get("vehicle") or {}).get("licensePlate") or ""), str(x.get("locationId")))
-            if x.get("parkingSessionId") in seen or (places and key not in places):
+    try:
+        rows = []
+        for row in store("renewal_list", p_owner=owner_id(s.username)) or []:
+            try:
+                d = with_details(row)
+            except Exception:
                 continue
-            seen.add(x.get("parkingSessionId"))
-            rows.append(serialize_session(x))
+            for i, p in enumerate(d.get("paid") or []):
+                for z in p.get("zones") or [d.get("location")]:
+                    rows.append({"id": "%s-%d-%s" % (row.get("id"), i, z), "plate": d["plate"], "location": z,
+                                 "start": p.get("at"), "expire": p.get("until") or p.get("at"), "rate": d.get("rate"),
+                                 "resident": not d.get("days"), "kind": "Carte mobilité CMI-S" if d.get("cmis_attested_at") else None,
+                                 "cost": {"amount": p["cost"], "currency": "EUR"} if p.get("cost") is not None else None,
+                                 "stopped": False})
         rows.sort(key=lambda r: r["start"] or "", reverse=True)
-        return rows[:30]
+        return rows[:60]
     except Exception as e:
         log.info("history unavailable: %s", type(e).__name__)
         return []
