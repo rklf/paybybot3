@@ -2,11 +2,12 @@ import { Loading } from '@/components/Loading'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Accessibility, LogOut, Plus } from 'lucide-react'
-import { arrondissement, PayByPhone, Plate, vehicleType, withPayByPhone } from '@/components/signs'
+import { PayByPhone, Plate, vehicleType, withPayByPhone } from '@/components/signs'
 import { TopBar } from '@/components/TopBar'
 import { InviteButton } from '@/components/Invite'
 import { DailyTickets, DailyWizard, isDaily, ruleState, when as whenAt } from '@/components/DailyTickets'
 import { AccountButton } from '@/components/Account'
+import { HistoryButton } from '@/components/History'
 import { FreeMonthCard, ReactivateCard, TrialBanner } from '@/components/Pricing'
 import { ui } from '@/lib/styles'
 import { cn } from '@/lib/utils'
@@ -252,7 +253,6 @@ function IdleVehicles({ data, onChanged, hosted, demo, autoPlate, locked, onLogo
   return (
     <div className="mt-5 space-y-3">
       {cars.map((v) => {
-        const place = v.zone ? arrondissement(v.zone) : null
         return (
           <div key={v.plate} data-renewal-card className="flex flex-col items-center rounded-2xl border border-border p-5 text-center">
             <Plate plate={v.plate} />
@@ -268,7 +268,7 @@ function IdleVehicles({ data, onChanged, hosted, demo, autoPlate, locked, onLogo
               {v.zone ? (
                 <div>
                   <dt className="inline">Zone : </dt>
-                  <dd className="inline text-ink">{place ? `${place} (${v.zone})` : v.zone}</dd>
+                  <dd className="inline text-ink">{v.zone}</dd>
                 </div>
               ) : (
                 <LineBone className="mx-auto mt-1.5 h-[1.15rem] w-44" />
@@ -548,6 +548,7 @@ export function Dashboard({
         </button>
         )}
         {!me.demo && <InviteButton disabled={!data} />}
+        <HistoryButton disabled={!data} />
         <AccountButton data={data} onDeleted={onDeleted ?? onLogout} demo={me.demo} />
         <button onClick={onLogout} className={ui.navText} aria-label="Déconnexion">
           <LogOut className="size-5 sm:hidden" />

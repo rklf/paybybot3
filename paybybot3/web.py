@@ -4736,6 +4736,44 @@ def admin_stats(pbb_admin: str = Cookie(None)):
     return guarded(lambda: store("admin_stats"))
 
 
+def automated_places(s):
+    """(plate, zone) of every automation PayByBot has or had for this account (a renewal, a programmed ticket and its
+    zones, running or stopped): what « Historique » lists."""
+    if HOSTED and not s.demo:
+        items = []
+        for row in store("renewal_list", p_owner=owner_id(s.username)) or []:
+            try:
+                items.append(with_details(row))
+            except Exception:
+                continue
+    else:
+        items = list(s.autopilots.values())
+    return {(plate_key(x["plate"]), str(z)) for x in items for z in (x.get("locations") or [x.get("location")]) if z}
+
+
+@app.get("/api/history")
+def history(pbb_session: str = Cookie(None)):
+    """The tickets of the cars and zones PayByBot automates (running and past, from PayByPhone), newest first. The
+    demo, with no automation, shows its own past weeks."""
+    s = current(pbb_session)
+    try:
+        places = automated_places(s)
+        if not places and not s.demo:
+            return []
+        rows, seen = [], set()
+        for x in (s.call("get_parking_sessions") or []) + (s.call("get_past_sessions", limit=40) or []):
+            key = (plate_key((x.get("vehicle") or {}).get("licensePlate") or ""), str(x.get("locationId")))
+            if x.get("parkingSessionId") in seen or (places and key not in places):
+                continue
+            seen.add(x.get("parkingSessionId"))
+            rows.append(serialize_session(x))
+        rows.sort(key=lambda r: r["start"] or "", reverse=True)
+        return rows[:30]
+    except Exception as e:
+        log.info("history unavailable: %s", type(e).__name__)
+        return []
+
+
 @app.get("/api/zones/recent")
 def recent_zones(pbb_session: str = Cookie(None)):
     """The zones the user already parked in on PayByPhone, most recent first (suggested when typing a zone)."""

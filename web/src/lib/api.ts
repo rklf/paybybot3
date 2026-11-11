@@ -182,6 +182,8 @@ export const api = {
   validatePayment: (t: string) =>
     post<{ status: 'challenge' | 'paid' | 'done'; url?: string; html?: string; sig?: string }>('/api/validate', { t }),
   myInvite: () => request<{ code: string; url: string }>('/api/invite'),
+  /** The tickets PayByBot took (running and past), newest first. */
+  history: () => request<Session[]>('/api/history'),
   requestAccess: (email: string, turnstile = '') => post<{ ok: boolean }>('/api/access', { email, turnstile }),
   me: () => request<Me>('/api/me'),
   login: (
