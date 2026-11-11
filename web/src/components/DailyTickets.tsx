@@ -826,6 +826,11 @@ export function DailyWizard({
         setError('PayByPhone ne propose pas le ticket carte mobilité CMI-S pour ce véhicule.')
         return
       }
+      // Nothing a visitor can buy there (only the resident rate, or none): said plainly, not a question without answers.
+      if (kind !== 'cmis' && !visitors.length) {
+        setError('PayByPhone ne vend aucun ticket visiteur pour ce véhicule dans cette zone. Vérifiez le numéro sur le panneau ou l’horodateur.')
+        return
+      }
       setRateId((kept || byKind || visitors[0] || first[0])?.ratePolicyId ?? null)
       setRatesKey(byKind ? null : key)
       setStep(byKind && !preset.current ? 3 : 2)
@@ -1161,7 +1166,7 @@ export function DailyWizard({
                 </div>
               )}
               {/* The type did not say the rate (a zone selling several visitor rates): asked here. */}
-              {showRates && (
+              {showRates && options.length > 0 && (
               <div>
                 <p className={ui.label}>Quel ticket prendre ?</p>
                 <div className="space-y-2">

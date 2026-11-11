@@ -14,19 +14,28 @@ export function AccountButton({
   data,
   onDeleted,
   demo = false,
+  label = false,
 }: {
   data: Overview | null
   onDeleted: () => void
   demo?: boolean
+  /** A text link (« Mon compte ») instead of the top bar's button. */
+  label?: boolean
 }) {
   const [open, setOpen] = useState(false)
   return (
     <>
-      {/* On a phone, the icon alone (the top bar must fit 375 px). */}
-      <button onClick={() => setOpen(true)} disabled={!data} className={ui.navText} aria-label="Mon compte">
-        <UserRound className="size-5 sm:hidden" />
-        <span className="hidden sm:inline">Mon compte</span>
-      </button>
+      {label ? (
+        <button onClick={() => setOpen(true)} disabled={!data} className={ui.link}>
+          Mon compte
+        </button>
+      ) : (
+        // On a phone, the icon alone (the top bar must fit 375 px).
+        <button onClick={() => setOpen(true)} disabled={!data} className={ui.navText} aria-label="Mon compte">
+          <UserRound className="size-5 sm:hidden" />
+          <span className="hidden sm:inline">Mon compte</span>
+        </button>
+      )}
       {open && data && <AccountDialog data={data} onClose={() => setOpen(false)} onDeleted={onDeleted} demo={demo} />}
     </>
   )

@@ -36,5 +36,34 @@ class Cron(unittest.TestCase):
         self.assertNotEqual(by_owner["o1"], by_owner["o2"])
 
 
+    def test_more_than_one_batch_when_many_are_due(self):
+        # 4 at a time (PayByPhone's limits), but batch after batch while the run has time: not 4 every 5 minutes.
+        batches = [[{"id": "a%d" % i, "owner": "o%d" % i} for i in range(4)],
+                   [{"id": "b%d" % i, "owner": "p%d" % i} for i in range(4)], [{"id": "c0", "owner": "q0"}]]
+
+        def store(fn, **k):
+            return batches.pop(0) if fn == "renewal_claim_due" and batches else None
+        with patch.dict(os.environ, {"PAYBYBOT_SECRET": "t"}), patch.object(web, "HOSTED", True), \
+                patch.object(web, "cron_authorized", return_value=True), patch.object(web, "store", side_effect=store), \
+                patch.object(web, "process_renewal", return_value="paid"), patch.object(web, "run_dunning", return_value=0):
+            answer = web.cron_renew(SimpleNamespace(headers={}))
+        self.assertEqual(answer["processed"], 9)
+
+    def test_no_new_batch_late_in_the_run(self):
+        # Past 50 seconds no batch starts: the function's limit (120 s) is never reached.
+        claims = []
+
+        def store(fn, **k):
+            if fn == "renewal_claim_due":
+                claims.append(1)
+                return [{"id": "x%d" % (len(claims) * 10 + i), "owner": "o%d" % i} for i in range(4)]
+        clock = iter([0, 10, 60, 70, 80])
+        with patch.dict(os.environ, {"PAYBYBOT_SECRET": "t"}), patch.object(web, "HOSTED", True), \
+                patch.object(web, "cron_authorized", return_value=True), patch.object(web, "store", side_effect=store), \
+                patch.object(web, "process_renewal", return_value="paid"), patch.object(web, "run_dunning", return_value=0), \
+                patch.object(web.time, "monotonic", side_effect=lambda: next(clock)):
+            web.cron_renew(SimpleNamespace(headers={}))
+        self.assertEqual(len(claims), 2)
+
 if __name__ == "__main__":
     unittest.main()

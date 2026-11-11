@@ -393,6 +393,45 @@ test('programmer un ticket : le type de véhicule choisit le tarif visiteur', as
   await expect(page.getByText('72,00 €').first()).toBeVisible()
 })
 
+test('impasses : une zone sans ticket visiteur le dit, au lieu d’une question vide', async ({ page }) => {
+  // Only the resident rate in that zone: nothing a visitor can buy.
+  await page.route('**/api/rates**', (r) =>
+    r.fulfill({ json: [{ ratePolicyId: 'res', name: 'Résident', acceptedTimeUnits: ['Days'], parkingNotAllowedReason: null }] }))
+  await demo(page)
+  await wizardButton(page).click()
+  await page.getByRole('button', { name: 'Suivant' }).click()
+  await page.getByRole('button', { name: /Véhicule léger/ }).click()
+  await page.getByRole('button', { name: 'Suivant' }).click()
+  const zone = page.getByRole('combobox')
+  await zone.fill('750')
+  await page.getByRole('option', { name: /Paris/ }).first().click()
+  await page.getByRole('button', { name: 'Suivant' }).click()
+  await expect(page.getByText(/aucun ticket visiteur/)).toBeVisible()
+  await expect(page.getByText('Quel ticket prendre ?')).toHaveCount(0)
+})
+
+test('impasses : sans carte bancaire, « Mon compte » reste accessible', async ({ page }) => {
+  // The demo account never sees this screen: shown here as a real account.
+  for (const path of ['**/api/me', '**/api/login']) {
+    await page.route(path, async (route) => {
+      const answer = await route.fetch()
+      const json = await answer.json().catch(() => null)
+      await route.fulfill({ response: answer, json: json && typeof json === 'object' ? { ...json, demo: false } : json })
+    })
+  }
+  await page.route('**/api/overview', async (route) => {
+    const answer = await route.fetch()
+    const json = await answer.json()
+    if (!json.vehicles) return route.fulfill({ response: answer, json })
+    await route.fulfill({ json: { ...json, payments: [] } })
+  })
+  await page.goto(LINK + '#demo')
+  const gate = page.getByRole('dialog', { name: 'Carte bancaire requise' })
+  await expect(gate).toBeVisible()
+  await gate.getByRole('button', { name: 'Mon compte' }).click()
+  await expect(page.getByRole('heading', { name: 'Mon compte' })).toBeVisible()
+})
+
 test('programmer un ticket : carte mobilité CMI-S, « Tous » coche tout Paris', async ({ page }) => {
   await demo(page)
   await wizardButton(page).click()

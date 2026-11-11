@@ -2,15 +2,13 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Check, Link2, Mail, MessageSquare, Send, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
-import { api } from '@/lib/api'
 import { ui } from '@/lib/styles'
 import { cn } from '@/lib/utils'
-import { LineBone } from '@/components/Skeletons'
 
 // The message sent with the link (copied or shared), in the user's own voice.
 const MESSAGE =
   // Straight apostrophes: some apps mangle the typographic ones (’) when the text is passed in a link.
-  "Hello ! J'ai découvert PayByBot, une app qui renouvelle automatiquement mon stationnement résident PayByPhone. Voici mon lien d'affiliation :"
+  "Hello ! J'ai découvert PayByBot, une app qui renouvelle automatiquement mon stationnement résident PayByPhone. C'est par ici :"
 
 /** WhatsApp's mark (Simple Icons), white on its green. */
 function WhatsAppIcon({ className }: { className?: string }) {
@@ -55,23 +53,16 @@ function Option({
   )
 }
 
-/** The share options with the user's own link (WhatsApp, SMS, e-mail…), and the link itself unless withLink is false. */
+/** The share options with the site's address (WhatsApp, SMS, e-mail…), and the address itself unless withLink is
+ *  false. PayByBot is open to all: no personal link to ask the server for, so nothing that can fail. */
 export function InviteShare({ withLink = false, className }: { withLink?: boolean; className?: string }) {
-  const [url, setUrl] = useState<string | null>(null)
+  const url = window.location.origin
   const [copied, setCopied] = useState(false)
 
-  useEffect(() => {
-    api.myInvite().then((r) => setUrl(r.url), () => toast.error('Lien indisponible pour le moment.'))
-  }, [])
-
-  // Each way of sharing tags the link (?s=…), so the admin sees where an opened link came from.
-  const tagged = (s: string) => (url ? `${url}${url.includes('?') ? '&' : '?'}s=${s}` : '')
-  const text = url ? `${MESSAGE} ${tagged('copy')}` : ''
-  const textFor = (s: string) => `${MESSAGE} ${tagged(s)}`
+  const text = `${MESSAGE} ${url}`
   const enc = encodeURIComponent
 
   async function copy() {
-    if (!url) return
     try {
       await navigator.clipboard.writeText(text) // the message with the link, ready to paste
       setCopied(true)
@@ -95,34 +86,34 @@ export function InviteShare({ withLink = false, className }: { withLink?: boolea
           label="WhatsApp"
           className="bg-[#25d366] text-white"
           icon={<WhatsAppIcon className="size-7" />}
-          href={url ? `https://wa.me/?text=${enc(textFor('wa'))}` : undefined}
+          href={`https://wa.me/?text=${enc(text)}`}
         />
         <Option
           label="SMS"
           className="bg-[#34c759] text-white"
           icon={<MessageSquare className="size-6" />}
-          href={url ? `sms:?&body=${enc(textFor('sms'))}` : undefined}
+          href={`sms:?&body=${enc(text)}`}
         />
         <Option
           label="E-mail"
           className="bg-eu text-white"
           icon={<Mail className="size-6" />}
-          href={url ? `mailto:?subject=${enc('Fini les amendes de stationnement')}&body=${enc(textFor('mail'))}` : undefined}
+          href={`mailto:?subject=${enc('Fini les amendes de stationnement')}&body=${enc(text)}`}
         />
         <Option
           label="Telegram"
           className="bg-[#229ed9] text-white"
           icon={<Send className="size-6" />}
-          href={url ? `https://t.me/share/url?url=${enc(tagged('tg'))}&text=${enc(MESSAGE)}` : undefined}
+          href={`https://t.me/share/url?url=${enc(url)}&text=${enc(MESSAGE)}`}
         />
       </div>
 
       {withLink && (
         <div className="mt-4 flex items-center gap-3 rounded-xl bg-ink/[0.04] py-2 pr-2 pl-4">
           <span className="min-w-0 flex-1 truncate text-left text-sm text-ink/70">
-            {url ? url.replace(/^https?:\/\//, '') : <LineBone className="my-1 w-52" />}
+            {url.replace(/^https?:\/\//, '')}
           </span>
-          <button onClick={copy} disabled={!url} className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-ink shadow-[0_1px_2px_rgb(0_0_0/0.08)]">
+          <button onClick={copy} className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-ink shadow-[0_1px_2px_rgb(0_0_0/0.08)]">
             {copied ? 'Copié' : 'Copier'}
           </button>
         </div>

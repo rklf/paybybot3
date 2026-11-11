@@ -502,7 +502,9 @@ export function Dashboard({
       )}
       {/* No card saved on PayByPhone (removed since, Apple Pay only): PayByBot cannot pay, so it is not usable. The
           only requirement: no resident rate is needed (non-residents take tickets on chosen days). */}
-      {data && !me.demo && !data.payments.some((p) => p.kind === 'card') && <CardGate />}
+      {data && !me.demo && !data.payments.some((p) => p.kind === 'card') && (
+        <CardGate account={<AccountButton data={data} onDeleted={onDeleted ?? onLogout} demo={me.demo} label />} />
+      )}
       <TrialBanner
         blocked={account?.blocked ?? null}
         graceEnd={account?.graceEnd ?? null}

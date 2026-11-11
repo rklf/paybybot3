@@ -181,8 +181,6 @@ export const api = {
     post<{ id: number | null; sig: string | null }>('/api/link-open', { source, device, visit, visitor }),
   validatePayment: (t: string) =>
     post<{ status: 'challenge' | 'paid' | 'done'; url?: string; html?: string; sig?: string }>('/api/validate', { t }),
-  pushKey: () => request<{ key: string }>('/api/push/key'),
-  pushSubscribe: (subscription: PushSubscriptionJSON) => post<{ ok: boolean }>('/api/push/subscribe', subscription),
   myInvite: () => request<{ code: string; url: string }>('/api/invite'),
   requestAccess: (email: string, turnstile = '') => post<{ ok: boolean }>('/api/access', { email, turnstile }),
   me: () => request<Me>('/api/me'),
@@ -203,13 +201,10 @@ export const api = {
       ...(signup ? { signup: true, ...signup } : {}),
     }),
   account: () => request<Account>('/api/account'),
-  setSuv: (plate: string, suv: boolean) =>
-    request<Pricing>('/api/vehicles/suv', { method: 'PUT', body: JSON.stringify({ plate, suv }) }),
   updateAccount: (patch: Partial<Account>) =>
     request<Account>('/api/account', { method: 'PUT', body: JSON.stringify(patch) }),
   logout: () => post('/api/logout'),
   checkout: (plan: 'monthly' | 'yearly') => post<{ url: string }>('/api/billing/checkout', { plan }),
-  contact: (p: { email: string; message: string; website: string }) => post<{ ok: true }>('/api/contact', p),
   confirmCheckout: (session_id: string) => post<{ plan: string }>('/api/billing/confirm', { session_id }),
   billingPortal: () => post<{ url: string }>('/api/billing/portal'),
   subscription: () => request<Subscription>('/api/billing/subscription'),
@@ -224,7 +219,6 @@ export const api = {
     if (!pricingCall || now - pricingCall.at > maxAge) pricingCall = { at: now, p: request<Pricing>('/api/pricing') }
     return pricingCall.p
   },
-  residentStatus: () => request<{ zone: string | null; resident: boolean | null }>('/api/resident-status'),
   adminLogin: (email: string, password: string, turnstile = '') =>
     post('/api/admin/login', { email, password, turnstile }),
   adminLogout: () => post('/api/admin/logout'),
@@ -243,7 +237,6 @@ export const api = {
   deleteData: () => request('/api/me/data', { method: 'DELETE' }),
   overview: () => request<Overview>('/api/overview'),
   /** The weeks already paid, from PayByPhone, newest first. */
-  history: () => request<Session[]>('/api/history'),
   /** Home zone guessed from the PayByPhone history (null if none). */
   residentZone: () => (zoneLookup ??= request<{ zone: string | null; manual?: boolean }>('/api/resident-zone').catch(() => ({ zone: null, manual: false }))),
   zone: (number: string) => request<{ found: boolean }>(`/api/zone?number=${encodeURIComponent(number)}`),
@@ -257,7 +250,6 @@ export const api = {
     request<{ rate: string | null; inZone: boolean }>(`/api/last-rate?${new URLSearchParams({ location, plate })}`),
   quote: (p: Parking & { sessionId?: string; renewal?: boolean }) =>
     post<{ cost: Money; start: string; expire: string; afterCurrent?: boolean; currentExpire?: string | null; priceSource?: 'history' | 'paris' | null }>('/api/quote', p),
-  extend: (p: Parking & { sessionId: string }) => post<{ ok: true; expire: string; cost: Money }>('/api/extend', p),
   pay: (p: Parking) => post<{ ok: true; expire: string; cost: Money }>('/api/pay', p),
   addAutopilot: (p: Parking & { label: string; email?: string }) =>
     post<Autopilot & { activation?: Activation }>('/api/autopilots', p),
@@ -319,15 +311,4 @@ export function until(iso: string) {
   const { day, time } = dayAndTime(iso)
   if (!day) return `jusqu'à ${time}`
   return day === 'demain' ? `jusqu'à demain ${time}` : `jusqu'au ${day}, ${time}`
-}
-
-export function remaining(ms: number) {
-  if (ms <= 0) return 'terminé'
-  const min = Math.floor(ms / 60000)
-  const d = Math.floor(min / 1440)
-  const h = Math.floor((min % 1440) / 60)
-  const m = min % 60
-  if (d) return `${d} j ${h} h`
-  if (h) return `${h} h ${String(m).padStart(2, '0')}`
-  return `${Math.max(m, 1)} min`
 }

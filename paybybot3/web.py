@@ -16,6 +16,7 @@ Two modes:
 
 import base64
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 import contextvars
 import hashlib
 import hmac
@@ -27,7 +28,6 @@ import secrets
 import threading
 import time
 import uuid
-import calendar
 from datetime import date, datetime, time as dtime, timedelta, timezone
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
@@ -38,7 +38,7 @@ import requests
 from fastapi import Cookie, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 from typing import Annotated
 
 from . import schedule
@@ -1074,8 +1074,9 @@ def check_capacity(now=None):
     if snap.get("overdue"):
         capacity_alert("queue:" + day, "renouvellements en retard",
                        ["%s renouvellement(s) attendent depuis plus de 10 minutes après leur heure : le robot ne suit "
-                        "plus (il en traite %s toutes les 5 minutes)." % (snap["overdue"], CLAIM_PER_RUN),
-                        "Risque d'amende pour ces clients. Augmentez CLAIM_PER_RUN dans web.py."])
+                        "plus (il en traite %s à la fois, lot après lot pendant %s s, toutes les 5 minutes)."
+                        % (snap["overdue"], CLAIM_PER_RUN, BATCH_UNTIL_SECONDS),
+                        "Risque d'amende pour ces clients. Augmentez CLAIM_PER_RUN ou BATCH_UNTIL_SECONDS dans web.py."])
     owners = snap.get("owners") or 0
     for step in USER_STEPS:
         if owners >= step:
@@ -1968,6 +1969,34 @@ def store(fn, **params):
     return r.json() if r.content else None
 
 
+# Longer than a function may run (vercel.json: maxDuration 120): a lease not let go (a function stopped mid-way) ends
+# by itself, and the renewal is paid at a later run.
+PAY_LEASE_SECONDS = 150
+BUSY = "Un paiement est déjà en cours pour ce renouvellement. Patientez une minute, puis rouvrez PayByBot."
+
+
+@contextmanager
+def paying(key):
+    """Never two payments at once for one renewal (or two activations of one car): the key's lease, taken atomically
+    in the database, gives True to the first one only, and is let go after, even on an error. The database out of
+    reach gives True: a renewal missed (a fine for the client) is worse than the rare double this guards against."""
+    try:
+        # Only an explicit « no » is someone else's lease (an empty answer is not taken for one).
+        taken = store("lease_take", p_key=key, p_seconds=PAY_LEASE_SECONDS) is not False
+        mine = taken
+    except Exception as e:
+        log.warning("lease %s not taken: %s", key.split(":")[0], type(e).__name__)
+        taken, mine = True, False
+    try:
+        yield taken
+    finally:
+        if mine:
+            try:
+                store("lease_drop", p_key=key)
+            except Exception as e:
+                log.warning("lease %s not let go: %s", key.split(":")[0], type(e).__name__)
+
+
 def stored_to_autopilot(row):
     """Database row -> the shape the interface already uses for renewals."""
     row = with_details(row)
@@ -2530,7 +2559,10 @@ def bank_wait_patch(session, row, job_id, active, now, validating):
             "data": encrypt_details({**row, **details})}
 
 
-CLAIM_PER_RUN = 4  # renewals handled side by side at each scheduler run (every 5 minutes)
+CLAIM_PER_RUN = 4  # renewals handled side by side (more at once and PayByPhone answers 429)
+# A new batch starts only before this many seconds into the run: a batch can take a minute (a payment to confirm), and
+# the function stops at 120 s (vercel.json). Batch after batch until then: not just 4 every 5 minutes.
+BATCH_UNTIL_SECONDS = 50
 
 
 @app.api_route("/api/cron/renew", methods=["GET", "POST"])
@@ -2542,26 +2574,32 @@ def cron_renew(request: Request):
         raise HTTPException(401, "Unauthorized")
     # Side by side, so a slow one (a payment to confirm can take a minute) never pushes the others past the
     # function's time limit; one failing never stops the others.
-    rows = store("renewal_claim_due", p_limit=CLAIM_PER_RUN) or []
-
     def safe(row, logins):
         try:
-            return process_renewal(row, logins=logins)
+            # Being paid elsewhere right now (the page's « Activer », « Valider mon paiement »…): left to them.
+            with paying("pay:%s" % row.get("id")) as free:
+                return process_renewal(row, logins=logins) if free else "busy"
         except Exception as e:
             log.warning("renewal %s not processed: %s", row.get("id"), type(e).__name__)
             return "error"
 
     # One account's renewals one after the other, with one login: two logins at once with the same token make
     # PayByPhone drop them all (« connexion expirée »). The accounts side by side.
-    accounts = {}
-    for row in rows:
-        accounts.setdefault(row.get("owner") or row.get("id"), []).append(row)
-
     def account(group):
         logins = {}
         return [safe(row, logins) for row in group]
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        results = [r for done in pool.map(account, accounts.values()) for r in done]
+
+    started, results = time.monotonic(), []
+    while True:
+        rows = store("renewal_claim_due", p_limit=CLAIM_PER_RUN) or []
+        accounts = {}
+        for row in rows:
+            accounts.setdefault(row.get("owner") or row.get("id"), []).append(row)
+        with ThreadPoolExecutor(max_workers=CLAIM_PER_RUN) as pool:
+            results += [r for done in pool.map(account, accounts.values()) for r in done]
+        # A full batch: maybe more are due; another one if the run still has time.
+        if len(rows) < CLAIM_PER_RUN or time.monotonic() - started >= BATCH_UNTIL_SECONDS:
+            break
     # Once an hour (the scheduler calls every 5 minutes): the e-mails of the grace week after a refused charge. Only
     # Supabase's calls send them when it is set up: Vercel's daily backup call comes at the same minute (5:00), and two
     # runs side by side would both send the day's e-mail before either notes it as sent.
@@ -2681,10 +2719,6 @@ class Parking(BaseModel):
     unit: str = Field(pattern="^(Days|Hours|Minutes)$")
     plate: str = Field(max_length=20)
     paymentAccountId: str = Field(max_length=80)
-
-
-class Extension(Parking):
-    sessionId: str = Field(max_length=80)
 
 
 class Autopilot(Parking):
@@ -3508,18 +3542,6 @@ ELECTRIC_TWO_WHEELS = re.compile(r"electric\s*motorcycle|deux[\s-]*roues\s*[ée]
 DEFAULT_MONTHLY_CENTS = MONTHLY_PRICE
 
 
-def paris_zone(zone):
-    """1 for arrondissements 1 to 11 (750xx), 2 for 12 to 20; 1 when unknown."""
-    m = re.fullmatch(r"750(\d\d)", str(zone or ""))
-    return 2 if m and int(m.group(1)) >= 12 else 1
-
-
-def resident_week(vehicle_type):
-    """The official Paris resident week for this vehicle type, in cents."""
-    t = str(vehicle_type or "")
-    return RESIDENT_WEEK["electric" if ELECTRIC_TWO_WHEELS.search(t) else "two" if TWO_WHEELS.search(t) else "car"]
-
-
 def monthly_cents(vehicle_type, zone=None, suv=False, weekly=None):
     """The single monthly price: neither the vehicle, its zone nor PayByPhone's price change it any more (the
     arguments stay for the callers)."""
@@ -3535,12 +3557,6 @@ def plan_total(monthlies, plan="monthly"):
 
 def now_utc():
     return datetime.now(timezone.utc)
-
-
-def add_months(dt, n):
-    year, month = divmod(dt.month - 1 + n, 12)
-    year, month = dt.year + year, month + 1
-    return dt.replace(year=year, month=month, day=min(dt.day, calendar.monthrange(year, month)[1]))
 
 
 def plate_key(plate):
@@ -3560,32 +3576,6 @@ def vehicle_resident_rate(s, zone, vehicle):
     return next((r for r in rates if RESIDENT_RATE.search("%s %s" % (r.get("name"), r.get("type")))
                  and bool(TWO_WHEELS.search("%s %s" % (r.get("name"), r.get("type")))) == wants_two
                  and not r.get("parkingNotAllowedReason")), None)
-
-
-def resident_vehicles(s, zone):
-    """The account's vehicles with a resident rate in the home zone, cars first, with that rate: [(vehicle, rate)].
-    PayByBot only deals with these « riverain » vehicles."""
-    vehicles = [v for v in s.call("get_vehicles") if not v.get("archived")]
-    vehicles.sort(key=lambda v: bool(TWO_WHEELS.search(str(v.get("type") or ""))))
-    found = []
-    for vehicle in vehicles:
-        rate = vehicle_resident_rate(s, zone, vehicle)
-        if rate:
-            found.append((vehicle, rate))
-    return found
-
-
-def resident_rate(s, zone):
-    """(plate, rate) of the first resident vehicle in the zone, cars first; (None, None) when there is none: the
-    resident status (carte résident) is not active there for any of its vehicles."""
-    found = resident_vehicles(s, zone)
-    return (found[0][0]["licensePlate"], found[0][1]) if found else (None, None)
-
-
-def weekly_resident_cents(s, zone):
-    """What a week at the resident rate costs this account in its home zone, in cents (None if unknown)."""
-    plate, rate = resident_rate(s, zone)
-    return week_price(s, zone, plate, rate) if rate else None
 
 
 VEHICLE_ZONE_RECHECK = 12 * 3600  # a vehicle without a resident rate is looked for again after 12 hours
@@ -3875,57 +3865,6 @@ def pay(body: Parking, pbb_session: str = Cookie(None)):
         raise
 
 
-@app.post("/api/extend")
-def extend(body: Extension, pbb_session: str = Cookie(None)):
-    s = current(pbb_session)
-
-    def run():
-        pending = s.unconfirmed.get((body.plate, body.location))
-        if pending and time.time() - pending < 30 * 60:
-            raise HTTPException(423, "Un paiement précédent pour ce véhicule dans cette zone n'a pas été confirmé. "
-                                     "Vérifiez dans l'application PayByPhone avant de payer à nouveau.")
-        before = next((x for x in s.call("get_parking_sessions", licensePlate=body.plate, locationId=body.location)
-                       if x.get("parkingSessionId") == body.sessionId), None)
-        if before is None:
-            raise HTTPException(409, "Ce ticket n'est plus en cours : il ne peut pas être prolongé.")
-        before_expire = before["expireTime"]  # keep the value: the session dict may be updated in place
-        log.info("extend: session=%s zone=%s %s %s plate=%s demo=%s", body.sessionId, body.location,
-                 body.duration, body.unit, body.plate[:2] + "***", s.demo)
-        try:
-            result = s.call("extend", parkingSessionId=body.sessionId, durationQuantity=fmt_qty(body.duration),
-                            durationTimeUnit=body.unit, licensePlate=body.plate, locationId=body.location,
-                            ratePolicyId=body.rate, paymentAccountId=body.paymentAccountId)
-        except Exception as e:
-            log.warning("extend: PayByPhone refused: %s", str(e)[:1000])
-            raise
-        log.info("extend: PayByPhone answered jobId=%s jobStatus=%s cost=%s new expire=%s", result.get("jobId"),
-                 result.get("jobStatus"), result.get("cost"), result.get("expireTime"))
-        s.attempts.append({"at": datetime.now(timezone.utc).isoformat(), "location": body.location,
-                           "plate": body.plate, "operation": "extend",
-                           **{k: result.get(k) for k in ("quoteId", "parkingSessionId", "jobId", "jobStatus")}})
-        # Confirmed only once PayByPhone lists the session with its later end time.
-        for i in range(10):
-            now = next((x for x in s.call("get_parking_sessions", licensePlate=body.plate, locationId=body.location)
-                        if x.get("parkingSessionId") == body.sessionId), None)
-            if now and now["expireTime"] > before_expire:
-                log.info("extend: confirmed after %s check(s)", i + 1)
-                s.log("success", "Ticket prolongé : zone %s, %s" % (body.location, body.plate))
-                return {"ok": True, "expire": iso(now["expireTime"]), "cost": result.get("cost")}
-            if not s.demo:
-                time.sleep(3)
-        s.unconfirmed[(body.plate, body.location)] = time.time()
-        log.warning("extend: end time unchanged for session %s", body.sessionId)
-        log_diagnosis(s)
-        raise HTTPException(504, UNCONFIRMED)
-
-    try:
-        return guarded(run)
-    except HTTPException as e:
-        if e.status_code in (422, 502, 503, 504):
-            log.warning("extend failed: %s", e.detail)
-        raise
-
-
 @app.get("/api/debug")
 def debug(pbb_session: str = Cookie(None)):
     if HOSTED:  # diagnosis stays in the server logs online
@@ -3934,31 +3873,6 @@ def debug(pbb_session: str = Cookie(None)):
     report = guarded(lambda: diagnosis(s))
     log.warning("diagnosis (on demand): %s", json.dumps(report, default=str))
     return report
-
-
-CARD_NEEDS_CHECK = ("Votre banque a refusé ce paiement automatique : payez vous-même votre ticket dans l'application "
-                    "PayByPhone, et vérifiez votre carte.")
-
-
-def mail_check_failed(s, plate, message):
-    """The check before activating could not pay: the same e-mail as a renewal that cannot pay, with the
-    PayByPhone button. At most one an hour per vehicle, the check being easy to run again."""
-    if not HOSTED or s.demo:
-        return
-    try:
-        account = load_account(s)
-        to, now = account.get("email"), datetime.now(timezone.utc)
-        mailed = account.get("check_mailed") or {}
-        last = parse_dt(mailed.get(plate_key(plate)))
-        if not to or (last and now - last < timedelta(hours=1)):
-            return
-        send_email(to, "Action requise · renouvellement %s" % plate_text(plate), "Le renouvellement a besoin de vous",
-                   ["Le renouvellement automatique pour %s n'a pas pu être activé :" % plate_text(plate), message,
-                    "Réglez-le dans l'application PayByPhone, puis activez le renouvellement depuis PayByBot."],
-                   ("Ouvrir PayByPhone", PAYBYPHONE_URL))
-        save_account(s, {"check_mailed": {**mailed, plate_key(plate): now.isoformat()}})
-    except Exception as e:
-        log.warning("check e-mail failed: %s", str(e)[:200])
 
 
 def checked_days(body):
@@ -4071,7 +3985,11 @@ def add_autopilot(body: Autopilot, pbb_session: str = Cookie(None)):
                                                        "couvert."}
             return answer
 
-        return guarded(save)
+        # Two clicks on « Activer » at once: one renewal only (both would pass the check above, then each pay).
+        with paying("add:%s:%s" % (owner_id(s.username), plate_key(body.plate))) as free:
+            if not free or plate_key(body.plate) in guarded(lambda: renewed_plates(s)):
+                raise HTTPException(409, "Ce véhicule a déjà un renouvellement automatique.")
+            return guarded(save)
     ap = {**body.model_dump(), "duration": fmt_qty(body.duration), "id": uuid.uuid4().hex[:8], "enabled": True,
           "lastCheck": None, "lastPayment": None, "lastError": None, "days": days, "start": start, "locations": zones}
     s.autopilots[ap["id"]] = ap
@@ -4110,24 +4028,6 @@ def get_account(pbb_session: str = Cookie(None)):
             # A renewal is activated only with a subscription, chosen even during the free month.
             "subscribed": state in ("ok", "grace"),
             "suvPlates": list(account.get("suv_plates") or [])}
-
-
-class SuvChoice(BaseModel):
-    plate: str = Field(max_length=20)
-    suv: bool
-
-
-@app.put("/api/vehicles/suv")
-def set_suv(body: SuvChoice, pbb_session: str = Cookie(None)):
-    """« Mon véhicule est un SUV »: PayByPhone does not tell, the user ticks it; the price follows (from the next
-    billing date for a running subscription)."""
-    s = current(pbb_session)
-    key = plate_key(body.plate)
-    suvs = set(guarded(lambda: load_account(s)).get("suv_plates") or [])
-    suvs = suvs | {key} if body.suv else suvs - {key}
-    guarded(lambda: save_account(s, {"suv_plates": sorted(suvs)}))
-    found = guarded(lambda: account_pricing(s))
-    return found or {"zone": None, "monthly": None, "yearly": None}
 
 
 class Checkout(BaseModel):
@@ -4502,12 +4402,6 @@ def resident_status(s):
     return {"zone": (find_home_zone(s, scan=False) or {}).get("zone"), "resident": False}
 
 
-@app.get("/api/resident-status")
-def resident_status_route(pbb_session: str = Cookie(None)):
-    s = current(pbb_session)
-    return guarded(lambda: resident_status(s))
-
-
 @app.post("/api/billing/checkout")
 def billing_checkout(body: Checkout, request: Request, pbb_session: str = Cookie(None)):
     """Stripe Checkout for the monthly plan (the only one now; a yearly one asked by an old page is taken as monthly);
@@ -4770,31 +4664,6 @@ def admin_stats(pbb_admin: str = Cookie(None)):
         raise HTTPException(403, "Accès réservé.")
     require_admin(pbb_admin)
     return guarded(lambda: store("admin_stats"))
-
-
-@app.get("/api/history")
-def history(pbb_session: str = Cookie(None)):
-    """The weeks already paid, from PayByPhone (running and past tickets of five days or more), newest first. An
-    extended ticket is one line covering all its weeks."""
-    s = current(pbb_session)
-
-    def load():
-        try:
-            past = s.call("get_past_sessions", limit=40) or []
-        except Exception as e:
-            log.info("history unavailable: %s", type(e).__name__)
-            past = []
-        rows, seen = [], set()
-        for x in (s.call("get_parking_sessions") or []) + past:
-            start, end = x.get("startTime"), x.get("expireTime")
-            if x.get("parkingSessionId") in seen or not (start and end) or end - start < timedelta(days=5):
-                continue
-            seen.add(x.get("parkingSessionId"))
-            rows.append(serialize_session(x))
-        rows.sort(key=lambda r: r["start"] or "", reverse=True)
-        return rows[:20]
-
-    return guarded(load)
 
 
 @app.get("/api/zones/recent")
@@ -5143,8 +5012,11 @@ def resume_autopilot(ap_id: str, pbb_session: str = Cookie(None)):
             # instead of « Paiement en cours… » until the next scheduler run.
             row = next((r for r in store("renewal_list", p_owner=owner) if r["id"] == ap_id), None)
             if row:
-                process_renewal({**row, "owner": owner}, refresh_token=refresh,
-                                refused=bool(before.get("last_error")))
+                # Already being paid (the scheduler, another tab): not twice, its outcome shows at the next reading.
+                with paying("pay:%s" % ap_id) as free:
+                    if free:
+                        process_renewal({**row, "owner": owner}, refresh_token=refresh,
+                                        refused=bool(before.get("last_error")))
                 row = next((r for r in store("renewal_list", p_owner=owner) if r["id"] == ap_id), row)
                 result = with_next_ticket(stored_to_autopilot(row))
         return result
@@ -5282,7 +5154,10 @@ def take_now(ap_id: str, pbb_session: str = Cookie(None)):
         guarded(hold)
         # This page's own session as it is: no new login, so no token replaced while the waves go (PayByPhone may
         # drop all of a login's tokens when two uses meet).
-        outcome = process_renewal({**row, "owner": owner_id(s.username)}, activating=True, first_now=True, session=s)
+        with paying("pay:%s" % ap_id) as free:
+            if not free:
+                raise HTTPException(409, BUSY)
+            outcome = process_renewal({**row, "owner": owner_id(s.username)}, activating=True, first_now=True, session=s)
         if outcome == "partial":  # the page calls again for the rest; if it is closed, the scheduler goes on later
             guarded(hold)
         ap = stored_to_autopilot(guarded(row_of) or row)
@@ -5372,31 +5247,35 @@ def validate_payment(body: ValidateBody):
         raise HTTPException(429, "Trop d'essais aujourd'hui. Vérifiez votre carte dans l'application PayByPhone.")
     if guarded_state(owner) in BLOCKED_STATES:
         raise HTTPException(402, BLOCKED)
-    refresh = decrypt_credential(store("renewal_get_credential", p_owner=owner))
-    bot = bot_from_refresh(refresh, owner)
-    session = UserSession.for_bot(bot)
-    now = datetime.now(timezone.utc)
-    if bank_validated(row, running_for(session, row["plate"])):
-        process_renewal(raw, refresh_token=bot.refresh_token or refresh)  # records it as paid and tells the client
-        return {"status": "paid"}
-    page = session.call("get_job_challenge", row["bank_job"]) if row.get("bank_job") else {}
-    try:
-        page = past_hidden_step(session, row["bank_job"], page)
-    except Exception as e:
-        log.info("bank hidden step: %s", type(e).__name__)
-    if page.get("pending") and not page.get("hidden") and challenge_answer(page):
-        store("renewal_update", p_id=row["id"], p_patch={"next_check": utc_iso(now + timedelta(minutes=15))})
-        return challenge_answer(page)
-    outcome = process_renewal(raw, refresh_token=bot.refresh_token or refresh, refused=True, validating=True)
-    if outcome == "paid":
-        return {"status": "paid"}
-    if outcome == "bank_wait":
-        fresh = next((r for r in store("renewal_list", p_owner=owner) or [] if r.get("id") == row["id"]), raw)
-        job = with_details(fresh).get("bank_job")
-        answer = challenge_answer(session.call("get_job_challenge", job) if job else {})
-        if answer:
-            return answer
-    raise HTTPException(502, "Le paiement n'a pas pu être relancé. Vérifiez votre carte dans l'application PayByPhone.")
+    # Two clicks, two tabs, or the scheduler at the same moment: one payment only.
+    with paying("pay:%s" % row["id"]) as free:
+        if not free:
+            raise HTTPException(409, BUSY)
+        refresh = decrypt_credential(store("renewal_get_credential", p_owner=owner))
+        bot = bot_from_refresh(refresh, owner)
+        session = UserSession.for_bot(bot)
+        now = datetime.now(timezone.utc)
+        if bank_validated(row, running_for(session, row["plate"])):
+            process_renewal(raw, refresh_token=bot.refresh_token or refresh)  # records it as paid and tells the client
+            return {"status": "paid"}
+        page = session.call("get_job_challenge", row["bank_job"]) if row.get("bank_job") else {}
+        try:
+            page = past_hidden_step(session, row["bank_job"], page)
+        except Exception as e:
+            log.info("bank hidden step: %s", type(e).__name__)
+        if page.get("pending") and not page.get("hidden") and challenge_answer(page):
+            store("renewal_update", p_id=row["id"], p_patch={"next_check": utc_iso(now + timedelta(minutes=15))})
+            return challenge_answer(page)
+        outcome = process_renewal(raw, refresh_token=bot.refresh_token or refresh, refused=True, validating=True)
+        if outcome == "paid":
+            return {"status": "paid"}
+        if outcome == "bank_wait":
+            fresh = next((r for r in store("renewal_list", p_owner=owner) or [] if r.get("id") == row["id"]), raw)
+            job = with_details(fresh).get("bank_job")
+            answer = challenge_answer(session.call("get_job_challenge", job) if job else {})
+            if answer:
+                return answer
+        raise HTTPException(502, "Le paiement n'a pas pu être relancé. Vérifiez votre carte dans l'application PayByPhone.")
 
 
 def challenge_page_response(html, sig):
@@ -5432,13 +5311,6 @@ def vapid_private():
     return ec.derive_private_key(int.from_bytes(seed, "big") % (order - 1) + 1, ec.SECP256R1())
 
 
-def vapid_public_key():
-    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-
-    raw = vapid_private().public_key().public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
-    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
-
-
 def webpush_send(subscription, payload):
     from py_vapid import Vapid02
     from pywebpush import webpush
@@ -5466,38 +5338,6 @@ def send_push(owner, title, body, url):
                     store("push_delete", p_key=hashlib.sha256(subscription["endpoint"].encode()).hexdigest())
                 except Exception:
                     pass
-
-
-class PushSub(BaseModel):
-    endpoint: str = Field(max_length=1000)
-    keys: dict[str, Annotated[str, Field(max_length=300)]]
-
-    @field_validator("endpoint")
-    @classmethod
-    def only_push_services(cls, value):
-        """The server calls this address: only the browsers' real services, never anything else."""
-        from urllib.parse import urlparse
-
-        url = urlparse(value)
-        host = url.hostname or ""
-        if url.scheme != "https" or not any(host == h or (h.startswith(".") and host.endswith(h)) for h in PUSH_HOSTS):
-            raise ValueError("Adresse refusée.")
-        return value
-
-
-@app.get("/api/push/key")
-def push_key():
-    return {"key": vapid_public_key()}
-
-
-@app.post("/api/push/subscribe")
-def push_subscribe(body: PushSub, pbb_session: str = Cookie(None)):
-    s = current(pbb_session)
-    if HOSTED and not s.demo:
-        data = _fernet("push").encrypt(json.dumps(body.model_dump()).encode()).decode()
-        guarded(lambda: store("push_save", p_owner=owner_id(s.username),
-                              p_key=hashlib.sha256(body.endpoint.encode()).hexdigest(), p_data=data))
-    return {"ok": True}
 
 
 class Assets(StaticFiles):
@@ -5531,39 +5371,6 @@ def favicon_ico():
 
 if (STATIC_DIR / "assets").exists():
     app.mount("/assets", Assets(directory=STATIC_DIR / "assets"), name="assets")
-
-
-class ContactMessage(BaseModel):
-    email: str = Field(max_length=254, pattern=r"^[^@\s]{1,64}@[^@\s]{1,190}\.[A-Za-z]{2,24}$")
-    message: str = Field(min_length=2, max_length=3000)
-    website: str = Field(default="", max_length=200)  # left empty by people, filled by bots
-
-
-@app.post("/api/contact")
-def contact(body: ContactMessage, request: Request, pbb_session: str = Cookie(None)):
-    """The « Contact » window: the message goes to the contact address, a reply goes straight to the visitor."""
-    if body.website:  # a bot filled the hidden field: say it went, send nothing
-        return {"ok": True}
-    check_email(body.email)
-    if HOSTED:
-        ip = request.headers.get("x-real-ip") or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-        key = hmac.new(_subkey(_secrets()[0], "rate"), ip.encode(), hashlib.sha256).hexdigest()
-        if not guarded(lambda: store("rate_hit", p_key="contact:" + key, p_window_seconds=3600, p_max=5)):
-            raise HTTPException(429, "Trop de messages envoyés. Réessayez dans une heure, ou écrivez à %s." % MAIL_REPLY_TO)
-    account = ""
-    try:  # signed in: say which PayByPhone account writes, to answer faster
-        account = current(pbb_session).username
-    except Exception:
-        pass
-    text = body.message.strip()
-    lines = ["De : %s" % body.email.strip()] + (["Compte PayByPhone : %s" % account] if account else []) \
-        + [x.strip() for x in re.split(r"\n\s*\n", text) if x.strip()]
-    if not send_email(MAIL_REPLY_TO, "Message du site · %s" % body.email.strip(), "Nouveau message", lines,
-                      footer="Envoyé depuis la fenêtre « Contact » de paybybot.fr. Répondez à cet e-mail pour "
-                             "écrire au visiteur.", reply_to=body.email.strip()):
-        raise HTTPException(503, "Le message n'a pas pu partir. Écrivez-nous à %s." % MAIL_REPLY_TO)
-    log.info("contact message sent (%d characters)", len(text))
-    return {"ok": True}
 
 
 @app.get("/{path:path}", include_in_schema=False)

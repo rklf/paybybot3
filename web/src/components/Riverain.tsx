@@ -1155,132 +1155,6 @@ export function RiverainDialog({
   )
 }
 
-/** PayByPhone offers no resident rate to the account in its home zone: say it, and what to do. */
-export function NoResidentStatus({ zone, className }: { zone: string | null; className?: string }) {
-  const where = zone ? arrondissement(zone) ?? `la zone ${zone}` : null
-  return (
-    <div role="status" className={cn('rounded-2xl border border-amber/60 bg-amber/10 p-4 text-left', className)}>
-      <p className="font-semibold text-ink">Tarif résident requis sur {withPayByPhone('PayByPhone')}</p>
-      <p className="mt-1 text-sm leading-relaxed text-ink/70">
-        Aucun tarif résident n’a été trouvé pour vos véhicules{where ? ` (${where})` : ''}. Effectuez votre demande de
-        stationnement résident, puis revenez une fois le tarif actif dans votre application {withPayByPhone('PayByPhone')}.
-      </p>
-    </div>
-  )
-}
-
-/** Paris arrondissements and their resident zone number on PayByPhone (the postcode). */
-const ARRONDISSEMENTS = Array.from({ length: 20 }, (_, i) => ({
-  label: i === 0 ? '1er' : `${i + 1}e`,
-  zone: `750${String(i + 1).padStart(2, '0')}`,
-}))
-
-/** « 17 », « 17e », « Paris 17 » or « 75017 » -> the matching arrondissements, as they are typed. */
-function matchArrondissements(query: string) {
-  const digits = query.replace(/\D/g, '')
-  if (!digits) return []
-  if (digits.startsWith('75')) return ARRONDISSEMENTS.filter((a) => a.zone.startsWith(digits)).slice(0, 6)
-  const n = digits.replace(/^0+/, '')
-  return n ? ARRONDISSEMENTS.filter((a) => String(Number(a.zone.slice(3))).startsWith(n)).slice(0, 6) : []
-}
-
-/** The home zone: shown when known (history, account), else typed: suggestions appear as you type. */
-export function ZoneField({
-  zone,
-  fromHistory,
-  onZone,
-}: {
-  zone: string
-  fromHistory: boolean
-  onZone: (zone: string) => void
-}) {
-  const [editing, setEditing] = useState(false)
-  const [query, setQuery] = useState('')
-  const open = editing || !zone
-  const matches = matchArrondissements(query)
-
-  function choose(z: string) {
-    onZone(z)
-    setQuery('')
-    setEditing(false)
-  }
-
-  if (!open) {
-    return (
-      <div>
-        <p className={ui.label}>Arrondissement de résidence</p>
-        <div className="flex items-center justify-between gap-4">
-          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {arrondissement(zone) && <span className="font-semibold text-ink">{arrondissement(zone)}</span>}
-            <ZonePlate zone={zone} />
-            {fromHistory && <span className="text-sm text-ink/50">d'après votre historique</span>}
-          </span>
-          <button onClick={() => setEditing(true)} className={cn('text-sm', ui.link)}>
-            Changer
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div>
-      <label htmlFor="riverain-arrondissement" className={ui.label}>
-        Votre arrondissement de résidence
-      </label>
-      <input
-        id="riverain-arrondissement"
-        role="combobox"
-        aria-expanded={matches.length > 0}
-        aria-controls="riverain-arrondissements"
-        autoComplete="off"
-        inputMode="numeric"
-        placeholder="Ex. : 17 ou 75017"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && matches[0]) {
-            e.preventDefault()
-            choose(matches[0].zone)
-          }
-        }}
-        autoFocus
-        className={cn(ui.field, 'h-12 text-base')}
-      />
-      {matches.length > 0 && (
-        <ul
-          id="riverain-arrondissements"
-          role="listbox"
-          aria-label="Arrondissements"
-          className="mt-2 overflow-hidden rounded-xl border border-ink/15"
-        >
-          {matches.map((a) => (
-            <li key={a.zone}>
-              <button
-                role="option"
-                aria-selected={false}
-                onClick={() => choose(a.zone)}
-                className="flex w-full items-center justify-between gap-3 border-b border-ink/10 px-4 py-3 text-left last:border-b-0 hover:bg-muted"
-              >
-                <span className="font-semibold text-ink">Paris {a.label}</span>
-                <span className="text-sm font-bold text-ink/50 tabular-nums">{a.zone}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {query.trim() && !matches.length && (
-        <p className="mt-2 text-sm text-ink/55">Tapez un arrondissement de Paris, de 1 à 20.</p>
-      )}
-      {zone && (
-        <button onClick={() => setEditing(false)} className={cn('mt-2 text-sm', ui.link)}>
-          Garder {arrondissement(zone) ?? `la zone ${zone}`}
-        </button>
-      )}
-    </div>
-  )
-}
-
 function dayText(ms: number) {
   return new Date(ms).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', timeZone: TZ })
 }
@@ -1491,53 +1365,6 @@ function ManageDialog({
 
 export type ResidentStatus = { zone: string | null; resident: boolean | null }
 
-/**
- * No resident rate on PayByPhone: PayByBot cannot be used. Full screen over the blurred page, with a way to check
- * again once the rate is granted, to correct the arrondissement, or to leave.
- */
-export function ResidentGate({
-  zone,
-  vehicles,
-  onChecked,
-}: {
-  zone: string | null
-  vehicles?: number
-  onChecked: (status: ResidentStatus) => void
-}) {
-  const [checking, setChecking] = useState(false)
-
-  async function check() {
-    setChecking(true)
-    try {
-      const status = await api.residentStatus()
-      if (status.resident === false) toast('Toujours aucun tarif résident sur votre compte PayByPhone.')
-      onChecked(status)
-    } catch (e) {
-      toast.error((e as Error).message)
-    } finally {
-      setChecking(false)
-    }
-  }
-
-  async function logout() {
-    await api.logout().catch(() => {})
-    window.location.assign('/')
-  }
-
-  return (
-    <ResidentRequired zone={zone} vehicles={vehicles}>
-      <button onClick={check} disabled={checking} className={cn('mt-7', ui.primary)}>
-        {checking ? <Loader2 className="size-5 animate-spin" /> : 'J’ai le tarif résident, vérifier à nouveau'}
-      </button>
-      <p className="mt-5 text-center text-sm">
-        <button onClick={logout} className={ui.link}>
-          Se déconnecter
-        </button>
-      </p>
-    </ResidentRequired>
-  )
-}
-
 /** Full screen over the blurred page: PayByBot needs a vehicle with the resident rate; what to do, then the actions. */
 /** Full screen over the blurred page: what PayByBot needs and what to do, then the actions (children). */
 function FullScreenNotice({ title, intro, steps, children }: { title: string; intro: ReactNode; steps: string[]; children: ReactNode }) {
@@ -1630,8 +1457,9 @@ export function CardRequired({ children }: { children: ReactNode }) {
   )
 }
 
-/** Signed in without a saved card: PayByBot is not usable until one is added (the page reloads to check). */
-export function CardGate() {
+/** Signed in without a saved card: PayByBot is not usable until one is added (the page reloads to check). « Mon
+ *  compte » stays within reach (the subscription, deleting the account): this screen covers the whole page. */
+export function CardGate({ account }: { account?: ReactNode }) {
   async function logout() {
     await api.logout().catch(() => {})
     window.location.assign('/')
@@ -1641,7 +1469,8 @@ export function CardGate() {
       <button onClick={() => window.location.reload()} className={cn('mt-7', ui.primary)}>
         J’ai ajouté une carte, vérifier à nouveau
       </button>
-      <p className="mt-5 text-center text-sm">
+      <p className="mt-5 flex items-center justify-center gap-5 text-sm">
+        {account}
         <button onClick={logout} className={ui.link}>
           Se déconnecter
         </button>

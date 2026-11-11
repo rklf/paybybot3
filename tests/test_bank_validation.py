@@ -235,13 +235,6 @@ class Page(Base):
 
 
 class Push(Base):
-    def test_only_real_push_services(self):
-        ok = web.PushSub(endpoint="https://fcm.googleapis.com/fcm/send/x", keys={"p256dh": "a", "auth": "b"})
-        self.assertEqual(ok.endpoint, "https://fcm.googleapis.com/fcm/send/x")
-        for bad in ("http://fcm.googleapis.com/x", "https://evil.example/x", "https://169.254.169.254/x"):
-            with self.assertRaises(Exception):
-                web.PushSub(endpoint=bad, keys={"p256dh": "a", "auth": "b"})
-
     def test_a_gone_subscription_is_forgotten_and_nothing_raises(self):
         data = web._fernet("push").encrypt(json.dumps({"endpoint": "https://fcm.googleapis.com/x", "keys": {}}).encode()).decode()
         calls = []
@@ -272,12 +265,10 @@ class Push(Base):
         self.assertEqual(post.call_args.args[0], sub["endpoint"])
         headers = post.call_args.kwargs["headers"]
         self.assertIn("vapid", headers["authorization"].lower())
-        self.assertIn(web.vapid_public_key(), headers["authorization"])
+        key = web.vapid_private().public_key().public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
+        self.assertIn(encode(key), headers["authorization"])
         self.assertNotIn(b"title", post.call_args.kwargs["data"])  # encrypted
 
-    def test_the_key_is_stable(self):
-        self.assertEqual(web.vapid_public_key(), web.vapid_public_key())
-        self.assertGreater(len(web.vapid_public_key()), 80)
 
 
 if __name__ == "__main__":
