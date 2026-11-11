@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { ArrowRight, Check, Loader2, Mail, Phone, type LucideIcon } from 'lucide-react'
+import { ArrowRight, Loader2, Mail, Phone, type LucideIcon } from 'lucide-react'
 import { RemotePanel } from '@/components/RemoteScene'
 import { PayByBot, PayByPhone, Plate, withPayByPhone, Wordmark } from '@/components/signs'
 import { api, type Me, type Overview, type PricedVehicle } from '@/lib/api'
@@ -97,11 +97,6 @@ export function Welcome({
   // the next step waits, and « Rafraîchir » looks again once it is added.
   const cards = data.payments.filter((p) => p.kind === 'card')
   const valid = cards.filter((p) => !p.expired)
-  // The card was missing on this page: once added (« Rafraîchir »), its line stays, confirmed, instead of vanishing.
-  const [cardWasMissing, setCardWasMissing] = useState(false)
-  useEffect(() => {
-    if (!valid.length) setCardWasMissing(true)
-  }, [valid.length])
 
   return (
     <div className="grid min-h-dvh bg-background lg:grid-cols-[1.05fr_1fr]">
@@ -158,33 +153,21 @@ export function Welcome({
                   )}
                 </Line>
               )}
-              {/* The card only when it blocks (none valid): a card number on the welcome page alarms more than it helps. */}
-              {(!valid.length || cardWasMissing) && (
-                <Line label={cards.length > 1 ? 'Cartes' : 'Carte'}>
-                  {valid.length ? (
-                    // Just added: the card, and a green word saying it is now right.
-                    <span className="flex flex-col items-end gap-0.5 font-heading font-medium">
-                      {valid.map((p) => (
-                        <span key={p.id}>{p.label.replace(/ — exp\..*$/, '')}</span>
-                      ))}
-                      <span className="flex items-center gap-1 font-sans text-sm font-normal text-[#1a9a4a]">
-                        <Check className="size-3.5" strokeWidth={3} /> Ajoutée
+              {/* The card PayByPhone pays with: always shown, in red when there is none valid (the next step waits). */}
+              <Line label={cards.length > 1 ? 'Cartes' : 'Carte'}>
+                {cards.length ? (
+                  <span className="flex flex-col items-end gap-0.5 font-heading font-medium">
+                    {cards.map((p) => (
+                      <span key={p.id} className={cn(p.expired && 'text-ink/45 line-through decoration-ink/30')}>
+                        {p.label.replace(/ — exp\..*$/, '')}
+                        {p.expired && <span className="ml-2 text-sm font-normal text-destructive">expirée</span>}
                       </span>
-                    </span>
-                  ) : cards.length ? (
-                    <span className="flex flex-col items-end gap-0.5 font-heading font-medium">
-                      {cards.map((p) => (
-                        <span key={p.id} className={cn(p.expired && 'text-ink/45 line-through decoration-ink/30')}>
-                          {p.label.replace(/ — exp\..*$/, '')}
-                          {p.expired && <span className="ml-2 text-sm font-normal text-destructive">expirée</span>}
-                        </span>
-                      ))}
-                    </span>
-                  ) : (
-                    <span className="font-heading font-medium text-destructive">Aucune</span>
-                  )}
-                </Line>
-              )}
+                    ))}
+                  </span>
+                ) : (
+                  <span className="font-heading font-medium text-destructive">Aucune</span>
+                )}
+              </Line>
             </dl>
 
             {/* Only when something blocks: what to do, in one place. */}

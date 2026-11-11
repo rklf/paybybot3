@@ -96,6 +96,16 @@ export function LoginView({
   const human = useTurnstile()
   const EXISTS = 'Un compte PayByBot existe déjà pour ce compte PayByPhone.'
 
+  // From « Se connecter » to « S'inscrire » (or back) the page stays: what was typed is kept, but the other page's
+  // messages are not (« Aucun compte PayByBot… S'inscrire » on the sign-up page itself, for one).
+  useEffect(() => {
+    setError(null)
+    setNoAccount(false)
+    setAccountExists(false)
+    setNoResident(null)
+    setInvalid(new Set())
+  }, [signup])
+
   // Sign-up: say right away, once the number is typed, that it is already signed up.
   useEffect(() => {
     // « Se connecter » from the banner switches this same form to sign-in: the number stays, the banner goes.

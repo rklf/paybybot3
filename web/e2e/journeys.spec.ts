@@ -258,6 +258,22 @@ test('inscription : « Continuer » avec des infos manquantes les encadre en rou
   await expect.poll(() => sent).toBe(1)
 })
 
+test('connexion sans compte puis « S’inscrire » : le message de la connexion ne suit pas sur l’inscription', async ({ page }) => {
+  await page.route('**/api/login', (r) => r.fulfill({ status: 404, json: { detail: 'Aucun compte PayByBot pour ce compte PayByPhone.' } }))
+  await page.goto(LINK + '#/connexion')
+  await page.getByPlaceholder('Numéro PayByPhone').fill('612345678')
+  await page.getByPlaceholder('Mot de passe PayByPhone').fill('secret')
+  await page.getByRole('button', { name: 'Se connecter' }).last().click()
+  const notice = page.getByText(/Aucun compte PayByBot/)
+  await expect(notice).toBeVisible()
+  await page.getByRole('alert').getByRole('link', { name: 'S\'inscrire' }).click()
+  await expect(page).toHaveURL(/#\/inscription/)
+  await expect(page.getByRole('button', { name: /Continuer/ })).toBeVisible()
+  await expect(notice).toHaveCount(0)
+  // What was typed stays: no need to type it again.
+  await expect(page.getByPlaceholder('Numéro PayByPhone')).toHaveValue('612345678')
+})
+
 test('pause : le calendrier ne propose pas les jours passés', async ({ page }) => {
   await demo(page)
   await press(page, /Renouvellement/)
@@ -322,6 +338,8 @@ test('impasses : la page « Valider mon paiement » sans son lien explique quoi 
 test('impasses : la page de bienvenue permet de se déconnecter', async ({ page }) => {
   await demo(page)
   await page.goto(LINK + '#/bienvenue')
+  // The card PayByPhone pays with is always shown there.
+  await expect(page.getByText('Visa •••• 4242')).toBeVisible()
   await page.getByRole('button', { name: 'Se déconnecter' }).click()
   await expect(page.getByRole('button', { name: 'Déconnexion' })).toHaveCount(0)
 })
@@ -343,9 +361,8 @@ test('bienvenue sans carte bancaire valide : croix rouge, on ne passe pas', asyn
   payments = [{ id: 'c2', label: 'Visa •••• 1111 — exp. 04/29', kind: 'card' }]
   await page.getByRole('button', { name: 'Rafraîchir' }).click()
   await expect(next).toBeEnabled()
-  // The card just added is shown, confirmed (not a line that vanishes).
+  // The card just added is shown.
   await expect(page.getByText('Visa •••• 1111')).toBeVisible()
-  await expect(page.getByText('Ajoutée')).toBeVisible()
 })
 
 test('programmer un ticket : une voiture résidente mène au renouvellement de la semaine', async ({ page }) => {
