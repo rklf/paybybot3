@@ -805,7 +805,7 @@ test('bienvenue : on choisit un seul véhicule ; un résident est renouvelé aus
   })
   await demo(page)
   await page.goto(LINK + '#/bienvenue')
-  await expect(page.getByText('Quel véhicule automatiser ?')).toBeVisible()
+  await expect(page.getByText('Quel stationnement automatiser ?')).toBeVisible()
   await expect(page.getByRole('radio')).toHaveCount(3) // every car, one to choose
   await expect(page.getByRole('radio', { name: /AB-?123/ })).toHaveAttribute('aria-checked', 'true') // the resident one first
   await page.getByRole('radio', { name: /GH-?456/ }).click()

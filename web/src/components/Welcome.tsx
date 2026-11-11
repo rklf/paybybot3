@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import { ui } from '@/lib/styles'
 import { LineBone, PlateBone } from '@/components/Skeletons'
 import { SmoothHeight } from '@/components/ui/smooth-height'
-import { activateWeekly, ZoneTag } from '@/components/Riverain'
+import { activateWeekly, when, ZoneTag } from '@/components/Riverain'
 
 /** +33612345678 -> +33 6 12 34 56 78 (other formats are shown as they are). */
 function phoneText(username: string) {
@@ -106,6 +106,12 @@ export function Welcome({
   // One vehicle to automate, chosen here: a resident one gets its weekly renewal at once; another goes on to the
   // usual ticket wizard, on that car. A resident car renewed already is shown, not offered.
   const offered = (vehicles ?? []).filter((v) => !(v.zone && v.renewed))
+  // The latest end of a ticket running now for this car (stopped ones do not count).
+  const key = (p: string) => p.replace(/[^0-9a-z]/gi, '').toUpperCase()
+  const ticketEnd = (plate: string) =>
+    data.sessions
+      .filter((x) => key(x.plate) === key(plate) && !x.stopped && new Date(x.expire).getTime() > Date.now())
+      .reduce<number | null>((end, x) => Math.max(end ?? 0, new Date(x.expire).getTime()), null)
   const [picked, setPicked] = useState<string | null>(null)
   const choice = offered.find((v) => v.plate === picked) ?? offered.find((v) => v.zone) ?? offered[0] ?? null
   const resident = choice?.zone ? { ...choice, zone: choice.zone } : null
@@ -225,8 +231,8 @@ export function Welcome({
           )}
           {/* The vehicle to automate: one, chosen with a tap (the resident one first). */}
           {offered.length > 0 && (
-            <div className="mt-8" role="radiogroup" aria-label="Véhicule à automatiser">
-              <p className="mb-2 text-sm text-ink/55">{offered.length > 1 ? 'Quel véhicule automatiser ?' : 'Votre véhicule :'}</p>
+            <div className="mt-8" role="radiogroup" aria-label="Stationnement à automatiser">
+              <p className="mb-2 text-sm text-ink/55">{offered.length > 1 ? 'Quel stationnement automatiser ?' : 'Stationnement à automatiser :'}</p>
               <div className="space-y-2">
                 {offered.map((v) => {
                   const on = v.plate === choice?.plate
@@ -248,8 +254,17 @@ export function Welcome({
                           {on && <span className="size-2.5 rounded-full bg-eu" />}
                         </span>
                       )}
-                      <Plate plate={v.plate} size="sm" />
-                      <span className="ml-auto">{v.zone ? <ZoneTag zone={v.zone} /> : <span className="text-sm text-ink/45">Non résident</span>}</span>
+                      <span className="min-w-0">
+                        <Plate plate={v.plate} size="sm" />
+                        {/* Its ticket now: until when, or none (from PayByPhone). */}
+                        <span className="mt-1.5 block text-sm text-ink/55">
+                          {(() => {
+                            const end = ticketEnd(v.plate)
+                            return end ? `Ticket en cours jusqu’au ${when(end)}` : 'Aucun ticket en cours'
+                          })()}
+                        </span>
+                      </span>
+                      <span className="ml-auto self-start">{v.zone ? <ZoneTag zone={v.zone} /> : <span className="text-sm text-ink/45">Non résident</span>}</span>
                     </button>
                   )
                 })}
