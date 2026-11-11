@@ -24,7 +24,7 @@ const FEATURE_ICONS = [RefreshCw, Pause, BellRing, Headset]
 const STEP_ICONS = [Link2, RefreshCw, ShieldCheck]
 
 /** Each step's screen (demo account, captured at one size: 1040 × 940). */
-const STEP_SHOTS = ['/how/1-connexion.png?v=12', '/how/2-activation.png?v=12', '/how/3-tableau-de-bord.png?v=12']
+const STEP_SHOTS = ['/how/1-connexion.png?v=13', '/how/2-activation.png?v=13', '/how/3-tableau-de-bord.png?v=13']
 const STEP_MS = 3500
 
 // One short line each: read at a glance.

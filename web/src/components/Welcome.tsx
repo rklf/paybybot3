@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { ArrowRight, Loader2, Mail, Phone, type LucideIcon } from 'lucide-react'
+import { ArrowRight, Check, Loader2, Mail, Phone, type LucideIcon } from 'lucide-react'
 import { RemotePanel } from '@/components/RemoteScene'
 import { PayByBot, PayByPhone, Plate, withPayByPhone, Wordmark } from '@/components/signs'
 import { api, type Me, type Overview, type PricedVehicle } from '@/lib/api'
@@ -97,16 +97,21 @@ export function Welcome({
   // the next step waits, and « Rafraîchir » looks again once it is added.
   const cards = data.payments.filter((p) => p.kind === 'card')
   const valid = cards.filter((p) => !p.expired)
+  // The card was missing on this page: once added (« Rafraîchir »), its line stays, confirmed, instead of vanishing.
+  const [cardWasMissing, setCardWasMissing] = useState(false)
+  useEffect(() => {
+    if (!valid.length) setCardWasMissing(true)
+  }, [valid.length])
 
   return (
     <div className="grid min-h-dvh bg-background lg:grid-cols-[1.05fr_1fr]">
       <div className="flex flex-col px-6 pt-5 pb-10 sm:px-10 lg:px-[clamp(2.5rem,7vw,7rem)] lg:pb-6">
         <Wordmark />
         <div className="rise mx-auto w-full max-w-lg lg:my-auto lg:pt-2">
-          <h1 className={cn(ui.title, 'mt-10 lg:mt-0')}>Bienvenue{me.firstName ? `, ${me.firstName}` : ''}.</h1>
-          <p className={ui.subtitle}>
+          {/* No big title: the page opens straight on what PayByPhone gave (this line is its heading). */}
+          <h1 className={cn(ui.subtitle, 'mt-10 lg:mt-0')}>
             Vos informations <PayByPhone />.
-          </p>
+          </h1>
 
           {/* Three lines, the label on the left and what PayByPhone gave on the right: nothing else. */}
           {/* Lines arriving with PayByPhone's answer: the block grows smoothly, never in one jump. */}
@@ -154,9 +159,19 @@ export function Welcome({
                 </Line>
               )}
               {/* The card only when it blocks (none valid): a card number on the welcome page alarms more than it helps. */}
-              {!valid.length && (
+              {(!valid.length || cardWasMissing) && (
                 <Line label={cards.length > 1 ? 'Cartes' : 'Carte'}>
-                  {cards.length ? (
+                  {valid.length ? (
+                    // Just added: the card, and a green word saying it is now right.
+                    <span className="flex flex-col items-end gap-0.5 font-heading font-medium">
+                      {valid.map((p) => (
+                        <span key={p.id}>{p.label.replace(/ — exp\..*$/, '')}</span>
+                      ))}
+                      <span className="flex items-center gap-1 font-sans text-sm font-normal text-[#1a9a4a]">
+                        <Check className="size-3.5" strokeWidth={3} /> Ajoutée
+                      </span>
+                    </span>
+                  ) : cards.length ? (
                     <span className="flex flex-col items-end gap-0.5 font-heading font-medium">
                       {cards.map((p) => (
                         <span key={p.id} className={cn(p.expired && 'text-ink/45 line-through decoration-ink/30')}>

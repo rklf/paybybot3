@@ -238,6 +238,26 @@ test('inscription : le code copié depuis l’e-mail se colle (Ctrl+V), même av
   await expect.poll(() => verified).toEqual(['123456'])
 })
 
+test('inscription : « Continuer » avec des infos manquantes les encadre en rouge, sans rien envoyer', async ({ page }) => {
+  let sent = 0
+  await page.route('**/api/login', (r) => (sent++, r.fulfill({ json: { pending: true, email: 'a@b.fr' } })))
+  await page.goto(LINK + '#/inscription')
+  await page.getByPlaceholder('Numéro PayByPhone').fill('612345678')
+  await page.getByPlaceholder('Votre e-mail').fill('a@b.fr')
+  // No password, the terms not ticked: the button can still be pressed, and says what is missing.
+  await page.getByRole('button', { name: /Continuer/ }).click()
+  await expect(page.getByLabel('Mot de passe', { exact: true })).toHaveAttribute('aria-invalid', 'true')
+  await expect(page.getByRole('checkbox').first()).toHaveAttribute('aria-invalid', 'true')
+  expect(sent).toBe(0)
+  // Each one goes back to normal once filled in.
+  await page.getByPlaceholder('Mot de passe PayByPhone').fill('secret')
+  await expect(page.getByLabel('Mot de passe', { exact: true })).not.toHaveAttribute('aria-invalid', 'true')
+  await page.getByRole('checkbox').first().check()
+  await expect(page.getByRole('checkbox').first()).not.toHaveAttribute('aria-invalid', 'true')
+  await page.getByRole('button', { name: /Continuer/ }).click()
+  await expect.poll(() => sent).toBe(1)
+})
+
 test('pause : le calendrier ne propose pas les jours passés', async ({ page }) => {
   await demo(page)
   await press(page, /Renouvellement/)
@@ -323,6 +343,9 @@ test('bienvenue sans carte bancaire valide : croix rouge, on ne passe pas', asyn
   payments = [{ id: 'c2', label: 'Visa •••• 1111 — exp. 04/29', kind: 'card' }]
   await page.getByRole('button', { name: 'Rafraîchir' }).click()
   await expect(next).toBeEnabled()
+  // The card just added is shown, confirmed (not a line that vanishes).
+  await expect(page.getByText('Visa •••• 1111')).toBeVisible()
+  await expect(page.getByText('Ajoutée')).toBeVisible()
 })
 
 test('programmer un ticket : une voiture résidente mène au renouvellement de la semaine', async ({ page }) => {

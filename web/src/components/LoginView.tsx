@@ -59,7 +59,7 @@ function phoneUsername(national: string, code: string) {
   return '+' + code + raw.replace(/\D/g, '').replace(/^0/, '')
 }
 
-type Field = 'phone' | 'email' | 'signupEmail'
+type Field = 'phone' | 'email' | 'signupEmail' | 'password' | 'terms'
 
 const fieldBox =
   'flex h-14 items-center rounded-xl border border-ink/20 bg-white transition focus-within:border-eu focus-within:ring-3 focus-within:ring-eu/15 overflow-hidden'
@@ -141,6 +141,8 @@ export function LoginView({
       if (mode === 'phone' && phoneProblem(phone)) bad.add('phone')
       if (mode === 'phone' && signup && emailProblem(signupEmail)) bad.add('signupEmail')
       if (mode === 'email' && emailProblem(email)) bad.add('email')
+      if (!password) bad.add('password')
+      if (signup && !accepted) bad.add('terms')
       setInvalid(bad)
       if (bad.size) return
     }
@@ -209,6 +211,8 @@ export function LoginView({
       <main className="flex flex-1 flex-col px-6 py-10 sm:py-12">
         <form
           className="rise mx-auto my-auto w-full max-w-[26rem]"
+          // What is missing is framed in red by submit() (not the browser's own bubbles).
+          noValidate
           onSubmit={(e) => {
             e.preventDefault()
             submit()
@@ -326,14 +330,18 @@ export function LoginView({
             )}
 
 
-            <div className={fieldBox}>
+            <div className={box('password')}>
               <input
                 id="password"
                 type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
                 placeholder="Mot de passe PayByPhone"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value)
+                  fixed('password')
+                }}
+                aria-invalid={invalid.has('password') || undefined}
                 aria-label="Mot de passe"
                 required
                 className="h-full min-w-0 flex-1 bg-transparent px-4 text-lg text-ink outline-none placeholder:text-ink/30"
@@ -384,9 +392,14 @@ export function LoginView({
               <input
                 type="checkbox"
                 checked={accepted}
-                onChange={(e) => setAccepted(e.target.checked)}
+                onChange={(e) => {
+                  setAccepted(e.target.checked)
+                  fixed('terms')
+                }}
                 required
-                className="mt-0.5 size-5 shrink-0 accent-[var(--eu)]"
+                aria-invalid={invalid.has('terms') || undefined}
+                // Not ticked when « Continuer » was pressed: framed in red, like a missing field.
+                className={cn('mt-0.5 size-5 shrink-0 accent-[var(--eu)]', invalid.has('terms') && 'rounded-[4px] outline-2 outline-offset-1 outline-destructive')}
               />
               <span>
                 J'accepte les{' '}
@@ -424,7 +437,7 @@ export function LoginView({
 
           <button
             type="submit"
-            disabled={loading !== null || (signup && (!accepted || accountExists))}
+            disabled={loading !== null || (signup && accountExists)}
             className="mt-7 lg:mt-5 flex h-14 w-full items-center justify-center gap-2 rounded-xl border-[1.5px] border-eu bg-transparent text-lg font-bold text-eu transition hover:bg-eu/[0.06] active:scale-[0.99] disabled:opacity-60"
           >
             {loading === 'login' ? <Loader2 className="size-5 animate-spin" /> : <>{signup ? 'Continuer' : 'Se connecter'} <ArrowRight className="size-5" /></>}
