@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { ui } from '@/lib/styles'
 import { LineBone, PlateBone } from '@/components/Skeletons'
 import { SmoothHeight } from '@/components/ui/smooth-height'
+import { activateWeekly, ZoneTag } from '@/components/Riverain'
 
 /** +33612345678 -> +33 6 12 34 56 78 (other formats are shown as they are). */
 function phoneText(username: string) {
@@ -39,12 +40,16 @@ export function Welcome({
   me,
   data,
   onContinue,
+  onActivated,
   onRefresh,
   onLogout,
 }: {
   me: Me
   data: Overview
-  onContinue: () => void
+  /** On to the dashboard; with a plate, the ticket wizard opens on that car. */
+  onContinue: (plate?: string) => void
+  /** The renewal activated from this page: the dashboard, with nothing more to open. */
+  onActivated?: () => void
   /** Not this PayByPhone account: back to the sign-in (else the only ways out were a greyed-out button and a reload). */
   onLogout?: () => void
   /** Read the PayByPhone account again (a vehicle or a card changed in the PayByPhone app meanwhile). */
@@ -97,6 +102,26 @@ export function Welcome({
   // the next step waits, and « Rafraîchir » looks again once it is added.
   const cards = data.payments.filter((p) => p.kind === 'card')
   const valid = cards.filter((p) => !p.expired)
+  // The resident cars not renewed yet: « Activer le renouvellement » here, the welcome and the activation in one screen.
+  // One vehicle to automate, chosen here: a resident one gets its weekly renewal at once; another goes on to the
+  // usual ticket wizard, on that car. A resident car renewed already is shown, not offered.
+  const offered = (vehicles ?? []).filter((v) => !(v.zone && v.renewed))
+  const [picked, setPicked] = useState<string | null>(null)
+  const choice = offered.find((v) => v.plate === picked) ?? offered.find((v) => v.zone) ?? offered[0] ?? null
+  const resident = choice?.zone ? { ...choice, zone: choice.zone } : null
+  const [activating, setActivating] = useState(false)
+  const [activationError, setActivationError] = useState<string | null>(null)
+  async function go() {
+    if (!choice) return onContinue()
+    if (!resident) return onContinue(choice.plate) // the ticket wizard, on this car
+    setActivating(true)
+    setActivationError(null)
+    const { done, failed, paywall } = await activateWeekly([resident], valid[0].id)
+    setActivating(false)
+    if (paywall) return onContinue() // the free month is over: the dashboard says how to go on
+    if (done) return (onActivated ?? onContinue)()
+    setActivationError(failed.join('\n'))
+  }
 
   return (
     <div className="grid min-h-dvh bg-background lg:grid-cols-[1.05fr_1fr]">
@@ -124,6 +149,7 @@ export function Welcome({
                   )}
                 </Line>
               )}
+              {(vehicles === undefined || !vehicles.length) && (
               <Line label={n > 1 ? 'Véhicules' : 'Véhicule'}>
                 {vehicles === undefined ? (
                   <PlateBone className="ml-auto" />
@@ -137,6 +163,7 @@ export function Welcome({
                   <span className="text-ink/60">Aucun</span>
                 )}
               </Line>
+              )}
               {/* Its own line: the zone(s) where PayByPhone gives the resident rate (« 75001 »). */}
               {(vehicles === undefined || zones.length > 0) && (
                 <Line label="Résidence">
@@ -191,8 +218,50 @@ export function Welcome({
             )}
           </SmoothHeight>
 
-          <button onClick={onContinue} disabled={!vehicles?.length || !valid.length} className={cn(ui.primary, 'mt-8')}>
-            C’est bien moi, continuer <ArrowRight className="size-5" />
+          {activationError && (
+            <p role="alert" className="mt-6 text-sm leading-relaxed whitespace-pre-line text-destructive">
+              {withPayByPhone(activationError)}
+            </p>
+          )}
+          {/* The vehicle to automate: one, chosen with a tap (the resident one first). */}
+          {offered.length > 0 && (
+            <div className="mt-8" role="radiogroup" aria-label="Véhicule à automatiser">
+              <p className="mb-2 text-sm text-ink/55">{offered.length > 1 ? 'Quel véhicule automatiser ?' : 'Votre véhicule :'}</p>
+              <div className="space-y-2">
+                {offered.map((v) => {
+                  const on = v.plate === choice?.plate
+                  return (
+                    <button
+                      key={v.plate}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      aria-label={v.plate}
+                      onClick={() => setPicked(v.plate)}
+                      className={cn(
+                        'flex w-full items-center gap-3 rounded-2xl border bg-white px-5 py-3.5 text-left transition',
+                        on ? 'border-eu ring-1 ring-eu' : 'border-ink/10 hover:border-ink/25',
+                      )}
+                    >
+                      {offered.length > 1 && (
+                        <span className={cn('grid size-5 shrink-0 place-items-center rounded-full border-2', on ? 'border-eu' : 'border-ink/25')}>
+                          {on && <span className="size-2.5 rounded-full bg-eu" />}
+                        </span>
+                      )}
+                      <Plate plate={v.plate} size="sm" />
+                      <span className="ml-auto">{v.zone ? <ZoneTag zone={v.zone} /> : <span className="text-sm text-ink/45">Non résident</span>}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          <button
+            onClick={go}
+            disabled={activating || !vehicles?.length || !valid.length}
+            className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-eu text-lg font-bold text-white transition hover:bg-[#173f86] disabled:opacity-60"
+          >
+            {activating ? <Loader2 className="size-5 animate-spin" /> : resident ? 'Activer le renouvellement' : <>Continuer <ArrowRight className="size-5" /></>}
           </button>
           <p className="mt-4 flex flex-wrap justify-center gap-x-5 gap-y-2 text-sm text-ink/55">
             <button onClick={refresh} disabled={refreshing} className={cn('inline-flex items-center gap-1.5', ui.link)}>

@@ -324,9 +324,12 @@ export function Dashboard({
   onLogout,
   onDeleted,
   autoRenew = false,
+  ticketPlate,
 }: {
   /** Just past the welcome page: open the renewal of the first car at once. */
   autoRenew?: boolean
+  /** Chosen on the welcome page (no resident rate): the ticket wizard opens on it. */
+  ticketPlate?: string
   me: Me
   data: Overview | null
   onRefresh: () => Promise<void>
@@ -464,6 +467,9 @@ export function Dashboard({
   const [residentFor, setResidentFor] = useState<string | null>(null) // a resident car chosen in « Programmer un ticket »
   const [programAsked, setProgramAsked] = useState(0) // « Programmer un ticket »: each click opens the ticket wizard
   const [cmisAsked, setCmisAsked] = useState(0) // « Carte mobilité CMI-S »: the wizard on that ticket only
+  useEffect(() => {
+    if (ticketPlate) (setBackPlate(ticketPlate), setProgramAsked((n) => n + 1))
+  }, [ticketPlate])
   const live = data?.sessions.filter((s) => new Date(s.expire).getTime() > Date.now()) ?? []
   const isResidentCar = (plate: string) => (residentPlates ? residentPlates.has(plateKey(plate)) : true)
   // The car whose renewal opens: a resident ticket running, else a resident car without a ticket (its card is shown),
@@ -611,14 +617,6 @@ export function Dashboard({
           </div>
         )}
 
-        {/* No resident car and nothing running or programmed: the page says what to do, car by car. */}
-        {data && !running.length && !shownDaily && residentPlates && data.vehicles.length > 0 &&
-          !data.vehicles.some((v) => residentPlates.has(plateKey(v.plate))) && (
-            <FirstTicket
-              plates={data.vehicles.map((v) => v.plate)}
-              onPick={(p) => (setBackPlate(p), setProgramAsked((n) => n + 1))}
-            />
-          )}
 
         {/* The renewal is the one action of the app: no one-off payment button. */}
         {/* The cars with neither a ticket nor a renewal: one card each, with its button. */}
@@ -662,7 +660,7 @@ export function Dashboard({
               className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-eu text-lg font-bold text-white shadow-[0_6px_20px_-8px_rgb(29_78_163/0.55)] transition hover:bg-[#173f86] active:scale-[0.99]"
             >
               <span className="inline-flex items-center gap-2">
-                <Plus className="size-5" /> Programmer un stationnement
+                <Plus className="size-5" /> Programmer un ticket
               </span>
             </RippleButton>
           </div>
@@ -693,47 +691,6 @@ export function Dashboard({
 
       <HostedFooter className="px-6 pb-5" hosted={!!me.hosted} />
     </div>
-  )
-}
-
-/** « Renouveler un autre véhicule », under the cards: a car with the resident rate not renewed yet gets the resident
- *  renewal; otherwise the ticket wizard, for any other car. */
-/** A first visit without a resident car: one card per car, like the ticket cards, its switch off; turning it on
- *  opens « Programmer un ticket » on that car. */
-function FirstTicket({ plates, onPick }: { plates: string[]; onPick: (plate: string) => void }) {
-  return (
-    <div className="mt-5 space-y-3">
-      {plates.map((plate) => (
-        <IdleCar key={plate} plate={plate} onPick={() => onPick(plate)} />
-      ))}
-    </div>
-  )
-}
-
-function IdleCar({ plate, onPick }: { plate: string; onPick: () => void }) {
-  const [pressed, setPressed] = useState(false)
-  return (
-    <article className="rise overflow-hidden rounded-2xl border border-ink/10 bg-white">
-      <div className="flex items-center justify-between gap-4 px-5 py-4">
-        <span className="shrink-0">
-          <Plate plate={plate} size="sm" />
-        </span>
-        <span className="rounded-full border border-ink/10 px-3 py-1 text-sm text-ink/50">Non couvert</span>
-      </div>
-      <div className="flex items-center justify-between gap-4 border-t border-ink/[0.06] px-5 py-5">
-        <span className="text-base text-ink sm:text-[1.05rem]">Renouvellement auto</span>
-        <ToggleSwitch
-          checked={pressed}
-          label={`Programmer un renouvellement pour ${plate}`}
-          onPress={() => {
-            if (pressed) return
-            setPressed(true)
-            setTimeout(onPick, 280) // the knob slides to green, then the window opens
-            setTimeout(() => setPressed(false), 900) // off again behind it: on only once a ticket is programmed
-          }}
-        />
-      </div>
-    </article>
   )
 }
 

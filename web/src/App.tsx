@@ -83,6 +83,7 @@ export default function App() {
   // Right after "S'inscrire": open the renewal setup on the dashboard.
   const [onboarding, setOnboarding] = useState(false)
   const [autoRenew, setAutoRenew] = useState(false) // past the welcome page: the renewal opens by itself
+  const [ticketPlate, setTicketPlate] = useState<string | undefined>() // past the welcome page: its ticket wizard
   const [zoneReady, setZoneReady] = useState(true)
 
   // A small ticket bought by hand, to try a bank's validation for real: no button leads here.
@@ -434,9 +435,15 @@ export default function App() {
           me={me}
           data={data}
           onRefresh={refresh}
-          onContinue={() => {
+          onContinue={(plate) => {
             setOnboarding(false)
-            setAutoRenew(true)
+            // A car chosen without the resident rate: the ticket wizard on it; else the dashboard as before.
+            if (plate) setTicketPlate(plate)
+            else setAutoRenew(true)
+          }}
+          onActivated={() => {
+            setOnboarding(false)
+            refresh()
           }}
           onLogout={logout}
         />
@@ -453,6 +460,7 @@ export default function App() {
             }}
             me={me}
             autoRenew={autoRenew}
+            ticketPlate={ticketPlate}
             data={data}
             onRefresh={refresh}
             onPay={() => setPaying(true)}

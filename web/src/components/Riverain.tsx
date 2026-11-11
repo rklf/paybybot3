@@ -441,6 +441,32 @@ const isResident = (r: Rate) => /r[ée]sid|riverain/i.test(`${r.name} ${r.type}`
 const isTwoWheels = (text: string) => /2\s*roues|deux[\s-]*roues|moto|scooter|two[\s-]*wheel/i.test(text)
 
 /** The resident rate for this vehicle: Paris has one for cars and one for motorbikes ("2 roues - Résident"). */
+/** The weekly renewal of these resident cars, activated at once (the welcome page's « Activer le renouvellement »):
+ *  for each, its resident rate, a quote (the card can pay), then the renewal, each answer told as on the dashboard.
+ *  « paywall »: the free month is over, the offer comes first. */
+export async function activateWeekly(cars: { plate: string; zone: string; type?: string | null; rate?: Rate | null }[], payment: string) {
+  const failed: string[] = []
+  let done = 0
+  for (const car of cars) {
+    try {
+      const rate = car.rate ?? residentRateFor(await api.rates(car.zone, car.plate), car.type ?? undefined)
+      if (!rate) throw new Error('Pas de tarif résident pour ce véhicule dans cette zone.')
+      if (!rate.acceptedTimeUnits.includes('Days')) throw new Error('Le tarif résident de cette zone ne se paie pas à la journée.')
+      const p: Parking = { location: car.zone, rate: rate.ratePolicyId, duration: WEEK_DAYS, unit: 'Days', plate: car.plate, paymentAccountId: payment }
+      await api.quote({ ...p, renewal: true })
+      const { activation } = await api.addAutopilot({ ...p, label: WEEKLY_LABEL })
+      saveLast(p)
+      if (activation) activationToast(activation, cars.length > 1 ? car.plate : undefined)
+      else toast.success('Renouvellement hebdomadaire activé.')
+      done += 1
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 402 && /offre|abonn/i.test(e.message)) return { done, failed, paywall: true }
+      failed.push(cars.length > 1 ? `${car.plate} : ${(e as Error).message}` : (e as Error).message)
+    }
+  }
+  return { done, failed, paywall: false }
+}
+
 function residentRateFor(rates: Rate[], vehicleType?: string) {
   const residents = rates.filter(isResident)
   const moto = isTwoWheels(vehicleType ?? '')
