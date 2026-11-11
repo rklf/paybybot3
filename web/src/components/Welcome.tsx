@@ -160,6 +160,8 @@ export function Welcome({
                     {cards.map((p) => (
                       <span key={p.id} className={cn(p.expired && 'text-ink/45 line-through decoration-ink/30')}>
                         {p.label.replace(/ — exp\..*$/, '')}
+                        {/* Its end date, quieter (« exp. 07/31 »). */}
+                        {/ — exp\..*$/.test(p.label) && <span className="ml-2 font-sans text-ink/55">{p.label.replace(/^.* — /, '')}</span>}
                         {p.expired && <span className="ml-2 text-sm font-normal text-destructive">expirée</span>}
                       </span>
                     ))}

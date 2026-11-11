@@ -340,6 +340,7 @@ test('impasses : la page de bienvenue permet de se déconnecter', async ({ page 
   await page.goto(LINK + '#/bienvenue')
   // The card PayByPhone pays with is always shown there.
   await expect(page.getByText('Visa •••• 4242')).toBeVisible()
+  await expect(page.getByText('exp. 04/28')).toBeVisible()
   await page.getByRole('button', { name: 'Se déconnecter' }).click()
   await expect(page.getByRole('button', { name: 'Déconnexion' })).toHaveCount(0)
 })
