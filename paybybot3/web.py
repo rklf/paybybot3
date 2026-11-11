@@ -4805,13 +4805,15 @@ def admin_clients(pbb_admin: str = Cookie(None)):
         """Each vehicle's automations (renewal or programmed ticket): « Actif », « Suspendu » (stopped by a failure:
         a refused payment, a validation never given…) or « Désactivé » (turned off, nothing failed); and the last
         failure still standing (None when every one of its automations went through)."""
-        states, failures = {}, {}
+        states, failures, plates = {}, {}, {}
         try:
             for row in store("renewal_list", p_owner=owner) or []:
                 try:
-                    key = plate_key(with_details(row)["plate"])
+                    plate = with_details(row)["plate"]
+                    key = plate_key(plate)
                 except Exception:
                     continue
+                plates.setdefault(key, plate)
                 state = "Actif" if row.get("enabled") else "Suspendu" if row.get("last_error") else "Désactivé"
                 if states.get(key) != "Actif" and not (states.get(key) == "Suspendu" and state == "Désactivé"):
                     states[key] = state
@@ -4819,13 +4821,13 @@ def admin_clients(pbb_admin: str = Cookie(None)):
                     failures[key] = row["last_error"]
         except Exception as e:
             log.info("admin: renewals unreadable for a client: %s", type(e).__name__)
-        return states, failures
+        return states, failures, plates
 
     def status(vehicle, zones, covered, renewals):
         """Resident: its arrondissement, False when PayByPhone gives it none, None when never looked up."""
         key = plate_key(vehicle["plate"])
         entry = zones.get(key)
-        states, failures = renewals
+        states, failures, _ = renewals
         return {**vehicle, "resident": (entry.get("z") or False) if entry else None,
                 "covered": covered or key in states, "renewal": states.get(key), "failure": failures.get(key)}
 
@@ -4834,8 +4836,11 @@ def admin_clients(pbb_admin: str = Cookie(None)):
     with ThreadPoolExecutor(max_workers=8) as pool:
         for client, owner, found in zip(clients, owners, pool.map(parking, owners)):
             zones, covered = client.pop("_zones"), client.pop("_covered")
-            renewals = renewals_of(owner) if found else ({}, {})
-            client["vehicles"] = [status(v, zones, covered, renewals) for v in found["vehicles"]] if found else None
+            # Read even when PayByPhone does not answer for this client (a login expired…): their renewals and
+            # their errors still show, with the vehicles they cover, so they are among « À traiter ».
+            renewals = renewals_of(owner)
+            vehicles = found["vehicles"] if found else [{"plate": p, "expire": None} for p in renewals[2].values()]
+            client["vehicles"] = [status(v, zones, covered, renewals) for v in vehicles] if found or vehicles else None
             client["cards"] = found["cards"] if found else None
     return clients
 

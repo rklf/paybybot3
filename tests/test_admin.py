@@ -65,3 +65,26 @@ class CardDates(unittest.TestCase):
             "paypalAccounts": [{"paymentAccountId": "p"}]})
         self.assertEqual([(c["exp"], c["expired"]) for c in found], [("04/99", False), ("01/20", True), (None, False)])
         self.assertNotIn("4242", str(found))
+
+
+class ClientsWhosePayByPhoneDoesNotAnswer(unittest.TestCase):
+    def test_their_failing_renewal_still_shows(self):
+        # Their PayByPhone login expired: their vehicles cannot be read there, but their renewal and its error can,
+        # so they are among « À traiter » (they are the ones to help).
+        error = "Votre connexion PayByPhone a expiré : reconnectez-vous sur PayByBot pour relancer le renouvellement automatique."
+
+        def store(fn, **k):
+            if fn == "admin_accounts":
+                return [{"owner": "o1", "data": web._fernet("account").encrypt(b'{"email": "a@b.fr"}').decode(),
+                         "created_at": "2026-11-05T17:22:12+00:00", "renewals_active": 1}]
+            if fn == "renewal_list":
+                return [{"id": "r1", "enabled": True, "plate": "FT630FH", "last_error": error}]
+            return None
+        web._admin_parking.clear()
+        with patch.dict(os.environ, {"PAYBYBOT_SECRET": "t"}), patch.object(web, "HOSTED", True), \
+                patch.object(web, "require_admin"), patch.object(web, "store", side_effect=store), \
+                patch.object(web, "with_details", side_effect=lambda r: r), \
+                patch.object(web, "bot_from_refresh", side_effect=RuntimeError("login expired")):
+            clients = web.admin_clients("cookie")
+        self.assertEqual([(v["plate"], v["renewal"], v["failure"]) for v in clients[0]["vehicles"]],
+                         [("FT630FH", "Actif", error)])
