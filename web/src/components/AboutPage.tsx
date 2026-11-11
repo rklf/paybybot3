@@ -1,20 +1,9 @@
-import { Check } from 'lucide-react'
 import { HostedFooter } from '@/components/Footer'
 import { PUBLISHER } from '@/components/Legal'
-import { PayByBot, PayByPhone } from '@/components/signs'
+import { PayByBot } from '@/components/signs'
 import { PublicTopBar } from '@/components/TopBar'
 import { TRY_LABEL, ui } from '@/lib/styles'
 import { cn } from '@/lib/utils'
-
-const NEVER = [
-  <>
-    Votre numéro de carte bancaire pour le stationnement : les tickets sont payés avec la carte déjà enregistrée dans votre
-    compte <PayByPhone />.
-  </>,
-  <>
-    Votre mot de passe <PayByPhone /> : il sert à vous connecter, puis il n’est jamais enregistré.
-  </>,
-]
 
 const STUDIO_URL = 'https://studiopresto.fr/'
 
@@ -39,7 +28,7 @@ const initials = (name: string) =>
     .map((w) => w[0])
     .join('')
 
-/** « Qui sommes-nous », in the top bar: who runs PayByBot and what it never asks for. Text only. */
+/** « Qui sommes-nous », in the top bar: who runs PayByBot. Text only. */
 export function AboutPage({ hosted, signedIn = false }: { hosted: boolean; signedIn?: boolean }) {
   return (
     <div className="flex min-h-dvh flex-col bg-background text-ink">
@@ -79,16 +68,6 @@ export function AboutPage({ hosted, signedIn = false }: { hosted: boolean; signe
                 </a>
               </span>
               <span className="text-sm text-ink/55">{f.role}</span>
-            </li>
-          ))}
-        </ul>
-
-        <h2 className="mt-12 font-heading text-[1.2rem] leading-snug font-semibold tracking-[-0.01em]">Ce que nous ne vous demandons jamais</h2>
-        <ul className="mt-4 space-y-3">
-          {NEVER.map((text, i) => (
-            <li key={i} className="flex gap-3 leading-relaxed text-ink/75">
-              <Check className="mt-1 size-4 shrink-0 text-[#3d7f84]" strokeWidth={2.5} />
-              <span>{text}</span>
             </li>
           ))}
         </ul>
