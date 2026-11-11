@@ -24,7 +24,7 @@ const FEATURE_ICONS = [RefreshCw, Pause, BellRing, Headset]
 const STEP_ICONS = [Link2, RefreshCw, ShieldCheck]
 
 /** Each step's screen (demo account, captured at one size: 1040 × 940). */
-const STEP_SHOTS = ['/how/1-connexion.png?v=11', '/how/2-activation.png?v=11', '/how/3-tableau-de-bord.png?v=11']
+const STEP_SHOTS = ['/how/1-connexion.png?v=12', '/how/2-activation.png?v=12', '/how/3-tableau-de-bord.png?v=12']
 const STEP_MS = 3500
 
 const STEPS = [
@@ -139,20 +139,18 @@ export function HowItWorks({ page = false, cta }: { page?: boolean; /** Under th
             <span className="ml-3 truncate text-xs text-ink/40">paybybot.fr</span>
           </div>
           <div className="relative aspect-[1040/940]">
-            {/* Each picture fades as one block with what is laid over it (step 2: its switch turning on before step 3),
-                so nothing of the picture under the switch shows through while it fades. */}
             {STEP_SHOTS.map((src, i) => (
-              <div key={src} className={cn('absolute inset-0 transition-opacity duration-500', i === active ? 'opacity-100' : 'opacity-0')}>
-                <img
-                  src={src}
-                  alt={i === active ? STEPS[i][0] : ''}
-                  aria-hidden={i !== active}
-                  loading="lazy"
-                  className="size-full object-cover object-top"
-                />
-                {i === 1 && <ShotSwitch play={active === 1} auto={auto} />}
-              </div>
+              <img
+                key={src}
+                src={src}
+                alt={i === active ? STEPS[i][0] : ''}
+                aria-hidden={i !== active}
+                loading="lazy"
+                className={cn('absolute inset-0 size-full object-cover object-top transition-opacity duration-500', i === active ? 'opacity-100' : 'opacity-0')}
+              />
             ))}
+            {/* Step 2: the picture's switch turns on before step 3 shows it on. */}
+            <ShotSwitch play={active === 1} auto={auto} />
           </div>
         </div>
       </div>
@@ -191,7 +189,7 @@ function ShotSwitch({ play, auto }: { play: boolean; auto: boolean }) {
       ref={ref}
       aria-hidden
       inert
-      className="pointer-events-none absolute top-[47.47%] left-[82.12%] origin-top-left rounded-full bg-white"
+      className={cn('pointer-events-none absolute top-[47.47%] left-[82.12%] origin-top-left rounded-full bg-white transition-opacity duration-500', play ? 'opacity-100' : 'opacity-0')}
       style={{ transform: `scale(${scale})` }}
     >
       <ToggleSwitch checked={on} label="" onPress={() => {}} />
