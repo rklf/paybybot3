@@ -215,6 +215,29 @@ test('inscription : le code à 6 chiffres se colle d’un coup et se vérifie se
   await expect.poll(() => verified).toEqual(['123456'])
 })
 
+test('inscription : le code copié depuis l’e-mail se colle (Ctrl+V), même avec espace ou retour à la ligne', async ({ page, context, browserName }) => {
+  test.skip(browserName !== 'chromium', 'presse-papiers réel : Chromium')
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.route('**/api/login', (r) => r.fulfill({ json: { pending: true, email: 'a@b.fr' } }))
+  const verified: string[] = []
+  await page.route('**/api/signup/verify', (r) => {
+    verified.push(JSON.parse(r.request().postData() ?? '{}').code)
+    return r.fulfill({ status: 400, json: { detail: 'Code incorrect.' } })
+  })
+  await page.goto(LINK + '#/inscription')
+  await page.getByPlaceholder('Numéro PayByPhone').fill('612345678')
+  await page.getByPlaceholder('Votre e-mail').fill('a@b.fr')
+  await page.getByPlaceholder('Mot de passe PayByPhone').fill('secret')
+  await page.getByRole('checkbox').first().check()
+  await page.getByRole('button', { name: /Continuer/ }).click()
+  await expect(page.getByRole('heading', { name: 'Vérifiez votre e-mail' })).toBeVisible()
+  // As copied from the e-mail: a space in the middle, a line break after.
+  await page.evaluate(() => navigator.clipboard.writeText(' 123 456\n'))
+  await page.getByLabel('Code à 6 chiffres').focus()
+  await page.keyboard.press('ControlOrMeta+V')
+  await expect.poll(() => verified).toEqual(['123456'])
+})
+
 test('pause : le calendrier ne propose pas les jours passés', async ({ page }) => {
   await demo(page)
   await press(page, /Renouvellement/)

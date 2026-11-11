@@ -533,6 +533,9 @@ function CodeStep({
           <InputOTP
             maxLength={6}
             pattern={REGEXP_ONLY_DIGITS}
+            // A code copied from the e-mail often comes with a space or a line break: only its digits are kept (else
+            // the whole paste is refused, and nothing happens).
+            pasteTransformer={(pasted) => pasted.replace(/\D/g, '').slice(0, 6)}
             autoComplete="one-time-code"
             aria-label="Code à 6 chiffres"
             value={code}
