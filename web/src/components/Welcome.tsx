@@ -138,6 +138,8 @@ export function Welcome({
           <h1 className={cn(ui.subtitle, 'mt-10 lg:mt-0')}>
             Vos informations <PayByPhone />.
           </h1>
+          {/* What PayByBot keeps, said where the account's details show (same line as « Comment ça marche »). */}
+          <p className="mt-2 text-sm text-ink/55">Ni carte bancaire, ni mot de passe enregistrés.</p>
 
           {/* Three lines, the label on the left and what PayByPhone gave on the right: nothing else. */}
           {/* Lines arriving with PayByPhone's answer: the block grows smoothly, never in one jump. */}
