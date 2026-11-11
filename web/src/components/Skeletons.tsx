@@ -6,7 +6,8 @@ import { cn } from '@/lib/utils'
 
 /** One grey shape; its size and corners come from `className`. */
 export function Bone({ className }: { className?: string }) {
-  return <Skeleton animationType="shimmer" className={cn('rounded-lg bg-ink/[0.07]', className)} />
+  // The shimmer's light band in white: HeroUI's own grey is the shape's grey, so it would not show.
+  return <Skeleton animationType="shimmer" className={cn('rounded-lg bg-ink/[0.07] after:via-white/80', className)} />
 }
 
 /** A plate's shape (the « sm » plate's size). */
