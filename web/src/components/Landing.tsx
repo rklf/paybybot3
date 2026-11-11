@@ -27,10 +27,11 @@ const STEP_ICONS = [Link2, RefreshCw, ShieldCheck]
 const STEP_SHOTS = ['/how/1-connexion.png?v=12', '/how/2-activation.png?v=12', '/how/3-tableau-de-bord.png?v=12']
 const STEP_MS = 3500
 
+// One short line each: read at a glance.
 const STEPS = [
-  ['Connectez PayByPhone', 'Reliez votre compte PayByPhone existant.'],
-  ['Activez le renouvellement', 'Choisissez votre véhicule et activez le renouvellement hebdomadaire en un clic.'],
-  ['Vous êtes tranquilles', 'PayByBot veille 24/7 et renouvelle votre stationnement avant chaque expiration.'],
+  ['Connectez PayByPhone', 'Votre compte existant.'],
+  ['Activez le renouvellement', 'Un clic, une seule fois.'],
+  ['Vous êtes tranquilles', 'Renouvelé chaque semaine.'],
 ]
 
 /**
