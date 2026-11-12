@@ -347,6 +347,11 @@ export function Dashboard({
     keep(ACCOUNT_KEY, me.username, a)
   }
   const [checkoutDone, setCheckoutDone] = useState(false)
+  // The free month starts with the first activation: the account is asked again then, so its bar shows at once.
+  const automations = data?.autopilots.length ?? 0
+  useEffect(() => {
+    if (automations && account && !account.trialEnd && !account.plan && !me.demo) api.account().then(setAccount, () => {})
+  }, [automations])
   useEffect(() => {
     // Back from Stripe Checkout: record the subscription, then show the account as it is now.
     const done = window.location.hash.match(/session_id=(cs_[A-Za-z0-9_]+)/)

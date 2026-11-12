@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { LineBone, PlateBone } from '@/components/Skeletons'
 import { ui } from '@/lib/styles'
 import { SmoothHeight } from '@/components/ui/smooth-height'
+import { PlansDialog } from '@/components/Pricing'
 
 /** "Mon compte" in the top bar: what PayByBot reads from the PayByPhone account, the home zone and e-mail. */
 export function AccountButton({
@@ -54,6 +55,7 @@ function AccountDialog({
 }) {
   const [email, setEmail] = useState<string | undefined>(undefined)
   const [deleting, setDeleting] = useState(false)
+  const [plans, setPlans] = useState(false)
   const [account, setAccount] = useState<Account | null | undefined>(undefined)
   // Only the « riverain » vehicles, each with the arrondissement PayByPhone gives it the resident rate in (never
   // typed); undefined: looking.
@@ -91,6 +93,7 @@ function AccountDialog({
     )
   }, [])
 
+  if (plans) return <PlansDialog onClose={onClose} />
   if (deleting) return <DeleteConfirm data={data} onCancel={() => setDeleting(false)} onDeleted={onDeleted} />
 
   const cards = data.payments.filter((p) => p.kind === 'card')
@@ -168,6 +171,14 @@ function AccountDialog({
                     <Receipt className="size-[1.15rem] shrink-0 text-ink/45" aria-hidden />
                     <LineBone className="w-44" />
                   </li>
+                )}
+                {/* No subscription yet (free month or over): the way to activate it, here too. */}
+                {!demo && account && !account.plan && (
+                  <Row icon={Receipt} label="Abonnement">
+                    <button onClick={() => setPlans(true)} className={ui.link}>
+                      Activer mon compte
+                    </button>
+                  </Row>
                 )}
                 {!demo && account?.plan && (
                   <Row icon={Receipt} label="Abonnement">

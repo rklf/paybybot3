@@ -354,7 +354,7 @@ test('bienvenue sans carte bancaire valide : croix rouge, on ne passe pas', asyn
   })
   await demo(page)
   await page.goto('/#/bienvenue')
-  const next = page.getByRole('button', { name: /^Activer le renouvellement|^Continuer/ }) // a resident car: activated from here
+  const next = page.getByRole('button', { name: /^Commencer mon essai gratuit/ }) // a resident car: activated from here
   await expect(page.getByText(/Carte expirée/)).toBeVisible()
   await expect(page.getByText(/Apple Pay, Google Pay et PayPal/)).toBeVisible()
   await expect(next).toBeDisabled()
@@ -729,7 +729,7 @@ test('impasses : arrêter le renouvellement juste après la bienvenue ne rouvre 
   await demo(page)
   await page.goto(LINK + '#/bienvenue')
   // The welcome page activates the resident car's renewal itself: no second window.
-  await page.getByRole('button', { name: /^Activer le renouvellement/ }).click()
+  await page.getByRole('button', { name: /^Commencer mon essai gratuit/ }).click()
   const renewal = page.getByRole('switch', { name: /Renouvellement/ }).first()
   await expect(renewal).toBeChecked({ timeout: 15_000 })
   await press(page, /Renouvellement/)
@@ -796,7 +796,7 @@ test('bienvenue : on choisit un seul véhicule ; un résident est renouvelé aus
   await expect(page.getByRole('radio')).toHaveCount(3) // every car, one to choose
   await expect(page.getByRole('radio', { name: /AB-?123/ })).toHaveAttribute('aria-checked', 'true') // the resident one first
   await page.getByRole('radio', { name: /GH-?456/ }).click()
-  await page.getByRole('button', { name: /^Activer le renouvellement$/ }).click()
+  await page.getByRole('button', { name: /^Commencer mon essai gratuit/ }).click()
   await expect(page.getByRole('switch', { name: /Renouvellement/ }).first()).toBeChecked({ timeout: 15_000 })
   const overview = await page.evaluate(() => fetch('/api/overview').then((r) => r.json()))
   expect(overview.autopilots.map((a: { plate: string }) => a.plate.replace(/[^A-Z0-9]/g, ''))).toEqual(['GH456JK'])
@@ -806,7 +806,7 @@ test('bienvenue : un véhicule non résident choisi mène à l’assistant de ti
   await demo(page)
   await page.goto(LINK + '#/bienvenue')
   await page.getByRole('radio', { name: /LM-?789/ }).click()
-  await page.getByRole('button', { name: /^Continuer/ }).click()
+  await page.getByRole('button', { name: /^Commencer mon essai gratuit/ }).click()
   const wizard = page.getByRole('dialog')
   await expect(wizard.getByText(/Étape 1 sur/)).toBeVisible()
   await expect(wizard.getByRole('button', { name: /LM-789-NP/ })).toHaveAttribute('aria-pressed', 'true')
@@ -817,6 +817,6 @@ test('bienvenue, aucun véhicule résident : « C’est bien moi, continuer » m
   await demo(page)
   await page.goto(LINK + '#/bienvenue')
   await expect(page.getByRole('button', { name: /^Activer le renouvellement/ })).toHaveCount(0)
-  await page.getByRole('button', { name: /^Continuer/ }).click()
+  await page.getByRole('button', { name: /^Commencer mon essai gratuit/ }).click()
   await expect(page.getByRole('dialog').getByText(/Étape 1 sur/)).toBeVisible()
 })

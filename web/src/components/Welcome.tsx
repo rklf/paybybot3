@@ -278,7 +278,7 @@ export function Welcome({
             disabled={activating || !vehicles?.length || !valid.length}
             className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-eu text-lg font-bold text-white transition hover:bg-[#173f86] disabled:opacity-60"
           >
-            {activating ? <Loader2 className="size-5 animate-spin" /> : resident ? 'Activer le renouvellement' : <>Continuer <ArrowRight className="size-5" /></>}
+            {activating ? <Loader2 className="size-5 animate-spin" /> : <>Commencer mon essai gratuit <ArrowRight className="size-5" /></>}
           </button>
           <p className="mt-4 flex flex-wrap justify-center gap-x-5 gap-y-2 text-sm text-ink/60">
             <button onClick={refresh} disabled={refreshing} className={cn('inline-flex items-center gap-1.5', ui.link)}>
