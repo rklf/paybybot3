@@ -244,6 +244,35 @@ def connect(username, password):
     raise error
 
 
+def member_key(bot):
+    """Keyed fingerprint of PayByPhone's own id for the account (memberid in its token), or None."""
+    try:
+        part = bot.authorization.split(" ", 1)[1].split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
+        member = claims.get("memberid") or claims.get("sub")
+    except Exception:
+        return None
+    return hmac.new(_subkey(_secrets()[0], "member"), str(member).encode(), hashlib.sha256).hexdigest() if member else None
+
+
+def canonical_login(bot, username):
+    """One PayByPhone account, one PayByBot account: the login first seen for this PayByPhone account (kept encrypted),
+    whatever way it is typed now (0777…, +33 7 77…), so its account, renewals and subscription are found again."""
+    if not HOSTED:
+        return username
+    key = member_key(bot)
+    if not key:
+        return username
+    try:
+        kept = store("member_login_get", p_key=key)
+        if kept:
+            return _fernet("member").decrypt(kept.encode()).decode()
+        store("member_login_set", p_key=key, p_login=_fernet("member").encrypt(username.encode()).decode())
+    except Exception as e:
+        log.warning("login of the PayByPhone account not matched: %s", type(e).__name__)
+    return username
+
+
 class UserSession:
     def __init__(self, username, password, demo=False):
         self.username = username
@@ -254,6 +283,7 @@ class UserSession:
             self.bot = DemoBot()
         else:
             self.bot, self.username = connect(username, password)
+            self.username = canonical_login(self.bot, self.username)
         self.autopilots = {}  # id -> dict
         self.account = {}  # e-mail and home zone (hosted accounts live in the database instead)
         self.history = []  # most recent first
