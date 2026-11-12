@@ -112,7 +112,7 @@ async function takeTickets(ap: Autopilot, onChanged: () => void) {
 const KINDS: ['light' | 'heavy' | 'cmis', string, string][] = [
   ['light', 'Véhicule léger', 'Moins de 1,6 t (2 t électrique)'],
   ['heavy', 'Véhicule lourd', 'Plus de 1,6 t (2 t électrique)'],
-  ['cmis', 'Carte mobilité CMI-S', 'Tout Paris, un ticket gratuit par arrondissement'],
+  ['cmis', 'Carte mobilité CMI-S', 'Gratuit'], // one line, like the two others
 ]
 
 /** PayByPhone does not check the card: the holder states it, kept with the ticket. */
@@ -1117,7 +1117,6 @@ export function DailyWizard({
                         <span className="block font-medium text-ink">{title}</span>
                         <span className="block text-sm text-ink/50">{hint}</span>
                       </span>
-                      {k === 'cmis' && <span className="shrink-0 text-sm font-medium text-ink">Gratuit</span>}
                     </button>
                   ))}
                 </div>
