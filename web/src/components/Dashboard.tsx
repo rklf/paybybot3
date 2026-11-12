@@ -121,7 +121,7 @@ function Ticket({
       {/* Still looking whether the car is resident: the switch's line holds its place (the card does not grow later). */}
       {!renewable && pending && (
         <div className="flex items-center justify-between gap-4 border-t border-ink/[0.06] px-5 py-4" aria-hidden>
-          <span className="text-[1.05rem] text-ink/40">Renouvellement hebdomadaire automatique</span>
+          <span className="text-[1.05rem] text-ink/45">Renouvellement hebdomadaire automatique</span>
           <span className="h-7 w-12 shrink-0 rounded-full bg-ink/10" />
         </div>
       )}
@@ -150,7 +150,7 @@ function Ticket({
               details={
                 <>
                   {note && (
-                    <p className="mt-2 text-sm text-ink/70">
+                    <p className="mt-2 text-sm text-ink/60">
                       <RenewalNote ap={renewal} onChanged={onRefresh} next={session.expire} />
                     </p>
                   )}
@@ -206,7 +206,7 @@ function NoVehicle({ onRefresh }: { onRefresh: () => void }) {
   return (
     <div className="mt-5 rounded-2xl border border-ink/10 bg-white p-5">
       <p className="font-semibold text-ink">Aucun véhicule sur votre compte <PayByPhone /></p>
-      <p className="mt-1 text-ink/65">
+      <p className="mt-1 text-ink/60">
         Ajoutez votre véhicule dans l’application <PayByPhone />, puis rafraîchissez cette page.
       </p>
       <div className="mt-4 flex flex-wrap gap-2">

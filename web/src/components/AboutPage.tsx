@@ -50,7 +50,7 @@ export function AboutPage({ hosted, signedIn = false }: { hosted: boolean; signe
               {f.photo ? (
                 <img src={f.photo} alt={f.name} className="size-32 rounded-full object-cover sm:size-36" />
               ) : (
-                <span aria-hidden className="grid size-32 place-items-center rounded-full sm:size-36 bg-ink/[0.05] font-heading text-2xl font-medium text-ink/40">
+                <span aria-hidden className="grid size-32 place-items-center rounded-full sm:size-36 bg-ink/[0.05] font-heading text-2xl font-medium text-ink/45">
                   {initials(f.name)}
                 </span>
               )}
@@ -67,13 +67,13 @@ export function AboutPage({ hosted, signedIn = false }: { hosted: boolean; signe
                   <LinkedInIcon className="size-4" />
                 </a>
               </span>
-              <span className="text-sm text-ink/55">{f.role}</span>
+              <span className="text-sm text-ink/60">{f.role}</span>
             </li>
           ))}
         </ul>
 
         {!signedIn && (
-          <a href="#/inscription" className={cn(ui.primary, 'mt-14 h-12 w-full text-base sm:w-fit sm:px-8')}>
+          <a href="#/inscription" className={cn(ui.primary, 'mt-14 w-full sm:w-fit sm:px-8')}>
             {TRY_LABEL}
           </a>
         )}

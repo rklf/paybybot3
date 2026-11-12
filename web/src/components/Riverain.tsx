@@ -159,7 +159,7 @@ export function PlannedPause({ ap, className }: { ap: Autopilot; className?: str
   const { start, end, later } = pauseState(ap)
   if (!later || !ap.enabled) return null
   return (
-    <p className={cn('flex items-center gap-2.5 rounded-xl border border-eu/15 bg-eu/[0.04] px-4 py-3 text-sm text-ink/75', className)}>
+    <p className={cn('flex items-center gap-2.5 rounded-xl border border-eu/15 bg-eu/[0.04] px-4 py-3 text-sm text-ink/60', className)}>
       <Pause className="size-4 shrink-0 text-eu" />
       <span>
         Pause prévue du {dayText(start!)} {end ? `au ${dayText(end - 1)}` : 'sans date de fin'}
@@ -539,7 +539,7 @@ export function ZoneTag({ zone, resident = true, kind }: { zone: string; residen
   const short = badge?.replace(/^Véhicule (\S)/, (_, c: string) => c.toUpperCase()).replace(/^Carte mobilité /, '')
   // Plain text, no shape and no colour: « Résident – 75001 ».
   return (
-    <span className="inline-flex shrink-0 items-center text-[0.875rem] leading-none whitespace-nowrap text-ink/60">
+    <span className="inline-flex shrink-0 items-center text-sm leading-none whitespace-nowrap text-ink/60">
       {badge && (
         <span>
           <span className="sm:hidden">{short}</span>
@@ -1073,7 +1073,7 @@ export function RiverainDialog({
                   covered.has(plate) ? (
                     <span key={plate} className="inline-flex flex-col items-center gap-1 rounded-xl border border-ink/10 p-2 opacity-60">
                       <Plate plate={plate} size="sm" />
-                      <span className="text-xs text-ink/55">Déjà renouvelé</span>
+                      <span className="text-sm text-ink/60">Déjà renouvelé</span>
                     </span>
                   ) : (
                     <button
@@ -1084,7 +1084,7 @@ export function RiverainDialog({
                     >
                       <span
                         className={cn(
-                          'grid size-5 place-items-center rounded-md border',
+                          'grid size-5 place-items-center rounded-[10px] border',
                           selected.includes(plate) ? 'border-eu bg-eu text-white' : 'border-ink/25',
                         )}
                       >
@@ -1146,7 +1146,7 @@ export function RiverainDialog({
                       </span>
                       {cents != null && !f?.error && (
                         <span className="mt-4 block font-heading text-[1.3rem] leading-none text-ink tabular-nums">
-                          {(cents / 100).toFixed(2).replace('.', ',')} € <span className="text-base text-ink/50">par semaine</span>
+                          {(cents / 100).toFixed(2).replace('.', ',')} € <span className="text-[0.95rem] text-ink/60">par semaine</span>
                         </span>
                       )}
                       {(() => {
@@ -1155,7 +1155,7 @@ export function RiverainDialog({
                         // Whether a ticket already runs for this car: the renewal follows it, never on top of it.
                         return (
                           <>
-                            <span className="mt-2 block text-sm text-ink/50">
+                            <span className="mt-2 block text-sm text-ink/60">
                               {t ? (
                                 <>
                                   Ticket en cours : <span className="whitespace-nowrap text-ink">jusqu’au {when(new Date(t.expire).getTime())}</span>
@@ -1164,7 +1164,7 @@ export function RiverainDialog({
                                 'Aucun ticket en cours'
                               )}
                             </span>
-                            <span className="mt-0.5 block text-sm text-ink/50">
+                            <span className="mt-0.5 block text-sm text-ink/60">
                               Premier paiement : <span className="whitespace-nowrap text-ink">{t ? when(nextRenewal(null, t.expire)) : 'maintenant'}</span>
                             </span>
                           </>
@@ -1407,13 +1407,13 @@ function ManageDialog({
   const start = ap.pausedFrom ? new Date(ap.pausedFrom).getTime() : null
   const end = ap.pausedUntil ? new Date(ap.pausedUntil).getTime() : null
   const pauseSet = start !== null && (end === null || now < end)
-  const row = 'flex w-full items-center gap-3 rounded-xl px-4 py-3.5 text-left text-base font-normal transition hover:bg-muted'
+  const row = 'flex w-full items-center gap-3 rounded-xl px-4 py-3.5 text-left text-[0.95rem] font-normal transition hover:bg-muted'
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="gap-0 rounded-2xl bg-white p-2 sm:max-w-sm">
         <div className="flex items-center gap-3 px-4 pt-4 pb-3">
           <Plate plate={ap.plate} size="sm" />
-          <DialogTitle className="text-base font-normal">Renouvellement zone {ap.location}</DialogTitle>
+          <DialogTitle className="text-[0.95rem] font-normal">Renouvellement zone {ap.location}</DialogTitle>
           <DialogDescription className="sr-only">Options du renouvellement</DialogDescription>
         </div>
         {!ap.enabled ? (
@@ -1456,13 +1456,13 @@ function FullScreenNotice({ title, intro, steps, children }: { title: string; in
       aria-labelledby="full-screen-notice-title"
       className="fixed inset-0 z-50 grid center-safe overflow-y-auto bg-white/60 p-4 backdrop-blur-md sm:p-6"
     >
-      <div className="rise w-full max-w-lg rounded-3xl border border-ink/10 bg-white p-7 shadow-[0_40px_80px_-30px_rgb(11_16_36/0.35)] sm:p-9">
+      <div className="rise w-full max-w-lg rounded-2xl border border-ink/10 bg-white p-7 shadow-[0_40px_80px_-30px_rgb(11_16_36/0.35)] sm:p-9">
         <span className="grid size-12 place-items-center rounded-2xl bg-eu font-heading text-2xl font-bold text-white">P</span>
         <h2 id="full-screen-notice-title" className="mt-5 font-heading text-[1.9rem] leading-[1.1] font-semibold tracking-[-0.03em] text-ink">
           {title}
         </h2>
-        <p className="mt-3 leading-relaxed text-ink/70">{intro}</p>
-        <ol className="mt-5 space-y-2.5 text-[0.95rem] leading-relaxed text-ink/80">
+        <p className="mt-3 leading-relaxed text-ink/60">{intro}</p>
+        <ol className="mt-5 space-y-2.5 text-[0.95rem] leading-relaxed text-ink/60">
           {steps.map((step, i) => (
             <li key={step} className="flex gap-3">
               <span className="grid size-6 shrink-0 place-items-center rounded-full bg-eu/[0.08] text-sm font-bold text-eu">

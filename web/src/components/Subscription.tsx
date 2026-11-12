@@ -65,9 +65,9 @@ export function SubscriptionDialog({ onClose }: { onClose: () => void }) {
         ) : (
           <div className="px-6 pb-6">
             <div className="mt-4 rounded-2xl border border-ink/10 p-5">
-              <p className="text-sm text-ink/55">{sub.plan === 'yearly' ? 'Annuel' : 'Mensuel'}</p>
+              <p className="text-sm text-ink/60">{sub.plan === 'yearly' ? 'Annuel' : 'Mensuel'}</p>
               <p className="mt-1 font-heading text-[2rem] leading-none font-semibold tracking-tight text-ink">
-                {euros(sub.amount)} <span className="text-base font-normal text-ink/50">{sub.plan === 'yearly' ? '/ an' : '/ mois'}</span>
+                {euros(sub.amount)} <span className="text-[0.95rem] font-normal text-ink/60">{sub.plan === 'yearly' ? '/ an' : '/ mois'}</span>
               </p>
               <p className={cn('mt-3 text-sm', sub.cancelAtPeriodEnd ? 'font-medium text-destructive' : 'text-ink/60')}>
                 {sub.cancelAtPeriodEnd ? `Résilié : actif jusqu’au ${day(sub.nextBilling)}` : `Prochain paiement le ${day(sub.nextBilling)}`}
@@ -76,10 +76,10 @@ export function SubscriptionDialog({ onClose }: { onClose: () => void }) {
 
             <dl className="mt-2 divide-y divide-ink/[0.06]">
               <div className={row}>
-                <dt className="text-ink/55">Carte</dt>
+                <dt className="text-ink/60">Carte</dt>
                 <dd className="flex items-center gap-3">
                   <span className="flex items-center gap-2 text-ink">
-                    <CreditCard className="size-4 text-ink/50" />
+                    <CreditCard className="size-4 text-ink/60" />
                     {sub.card?.last4 ? `${BRANDS[sub.card.brand ?? ''] ?? 'Carte'} •••• ${sub.card.last4}` : 'Aucune'}
                   </span>
                   <button onClick={changeCard} disabled={!!busy} className={cn('text-sm', ui.link)}>
@@ -89,7 +89,7 @@ export function SubscriptionDialog({ onClose }: { onClose: () => void }) {
               </div>
               {sub.invoices.length > 0 && (
                 <div className="py-4">
-                  <dt className="text-ink/55">Factures</dt>
+                  <dt className="text-ink/60">Factures</dt>
                   <dd className="mt-2 space-y-2">
                     {sub.invoices.map((i) => (
                       <a
@@ -100,7 +100,7 @@ export function SubscriptionDialog({ onClose }: { onClose: () => void }) {
                         className="flex items-center justify-between text-sm text-ink hover:underline"
                       >
                         <span>{day(i.date)}</span>
-                        <span className="flex items-center gap-1.5 text-ink/70">
+                        <span className="flex items-center gap-1.5 text-ink/60">
                           {euros(i.amount)} <ExternalLink className="size-3.5" />
                         </span>
                       </a>
@@ -121,10 +121,10 @@ export function SubscriptionDialog({ onClose }: { onClose: () => void }) {
                     Résilier ? Votre abonnement reste actif jusqu’au {day(sub.nextBilling)}, puis les renouvellements s’arrêtent.
                   </p>
                   <div className="mt-3 flex gap-2">
-                    <button onClick={() => setConfirming(false)} className="flex-1 rounded-lg px-3 py-2 text-sm font-semibold text-ink/70 hover:bg-ink/[0.05]">
+                    <button onClick={() => setConfirming(false)} className="flex-1 rounded-[10px] px-3 py-2 text-sm font-semibold text-ink/60 hover:bg-ink/[0.05]">
                       Annuler
                     </button>
-                    <button onClick={() => cancel(true)} disabled={!!busy} className="flex-1 rounded-lg bg-destructive px-3 py-2 text-sm font-semibold text-white">
+                    <button onClick={() => cancel(true)} disabled={!!busy} className="flex-1 rounded-[10px] bg-destructive px-3 py-2 text-sm font-semibold text-white">
                       {busy === 'cancel' ? <Loader2 className="mx-auto size-4 animate-spin" /> : 'Résilier'}
                     </button>
                   </div>

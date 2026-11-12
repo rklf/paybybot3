@@ -72,7 +72,7 @@ export function HowItWorks({ page = false, cta }: { page?: boolean; /** Under th
       {page ? (
         <h1 className={ui.title}>Comment ça marche</h1>
       ) : (
-        <h2 className="text-center font-heading text-[2rem] leading-[1.05] font-medium tracking-[-0.035em] text-ink sm:text-[2.6rem] lg:text-[3rem]">
+        <h2 className={cn(ui.title, 'text-center')}>
           Comment ça marche
         </h2>
       )}
@@ -105,7 +105,7 @@ export function HowItWorks({ page = false, cta }: { page?: boolean; /** Under th
                   <span
                     className={cn(
                       'grid size-12 shrink-0 place-items-center rounded-full transition-colors',
-                      on ? 'bg-eu/[0.1] text-eu' : 'bg-ink/[0.04] text-ink/40 group-hover:text-ink/60',
+                      on ? 'bg-eu/[0.1] text-eu' : 'bg-ink/[0.04] text-ink/45 group-hover:text-ink/60',
                     )}
                   >
                     <Icon className="size-5" strokeWidth={1.75} />
@@ -114,7 +114,7 @@ export function HowItWorks({ page = false, cta }: { page?: boolean; /** Under th
                     <strong className={cn('block font-heading text-xl font-semibold tracking-[-0.02em] transition-colors lg:text-2xl', on ? 'text-ink' : 'text-ink/45')}>
                       {i + 1}. {withPayByPhone(title)}
                     </strong>
-                    <span className={cn('mt-1.5 block text-[1.05rem] leading-relaxed transition-colors lg:text-lg', on ? 'text-ink/65' : 'text-ink/35')}>
+                    <span className={cn('mt-1.5 block text-[1.05rem] leading-relaxed transition-colors lg:text-lg', on ? 'text-ink/60' : 'text-ink/45')}>
                       {withPayByPhone(text)}
                     </span>
                   </span>
@@ -206,7 +206,7 @@ export function TrustRow({ className }: { className?: string }) {
     [Trash2, 'Effaçable en un clic'],
   ]
   return (
-    <ul className={cn('flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-ink/65', className)}>
+    <ul className={cn('flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-ink/60', className)}>
       {items.map(([Icon, text]) => (
         <li key={text} className="flex items-center gap-1.5">
           <Icon className="size-4 text-eu" strokeWidth={1.75} /> {withPayByPhone(text)}
@@ -270,7 +270,7 @@ function Testimonials() {
         )}
         <div className="min-w-0">
           <p className="font-semibold text-ink">{name}</p>
-          {place && <p className="text-sm text-ink/50">{place}</p>}
+          {place && <p className="text-sm text-ink/60">{place}</p>}
         </div>
       </div>
       <p className="mt-3 flex gap-0.5 text-[#f5b301]" aria-label="5 étoiles sur 5">
@@ -278,12 +278,12 @@ function Testimonials() {
           <Star key={i} className="size-4 fill-current" strokeWidth={0} />
         ))}
       </p>
-      <p title={text} className="mt-2 line-clamp-2 leading-relaxed text-ink/70">{withPayByPhone(text)}</p>
+      <p title={text} className="mt-2 line-clamp-2 leading-relaxed text-ink/60">{withPayByPhone(text)}</p>
     </li>
   )
   return (
     <section className="flex flex-col justify-center pt-10 pb-24 lg:min-h-[calc(85dvh-4rem)] lg:pt-12 lg:pb-20" aria-label="Ils nous font confiance">
-      <h2 className="text-center font-heading text-[2rem] leading-[1.05] font-medium tracking-[-0.035em] text-ink sm:text-[2.6rem] lg:text-[3rem]">
+      <h2 className={cn(ui.title, 'text-center')}>
         Ils nous font confiance.
       </h2>
       <p className="mt-5 text-center text-lg text-ink/60">
@@ -363,7 +363,7 @@ export function SampleTicket({ className, interactive }: { className?: string; i
           </span>
           <Plate plate="AB123CD" size="sm" className="shrink-0 whitespace-nowrap" />
         </span>
-        <span className="text-sm whitespace-nowrap text-ink/50">Paris 5e</span>
+        <span className="text-sm whitespace-nowrap text-ink/60">Paris 5e</span>
       </div>
       <div className="border-t border-ink/[0.06] px-5 py-4">
         <div className="flex items-center justify-between">
@@ -387,11 +387,11 @@ export function SampleTicket({ className, interactive }: { className?: string; i
         </div>
         <dl className="mt-3 space-y-1 text-sm">
           <div className="flex justify-between gap-4">
-            <dt className="text-ink/50">Prochain renouvellement</dt>
+            <dt className="text-ink/60">Prochain renouvellement</dt>
             <dd className="text-ink">jeudi à 20h</dd>
           </div>
           <div className="flex justify-between gap-4">
-            <dt className="text-ink/50">Dernier paiement</dt>
+            <dt className="text-ink/60">Dernier paiement</dt>
             <dd className="text-ink tabular-nums">il y a 6 jours</dd>
           </div>
         </dl>
@@ -431,7 +431,7 @@ export function Landing({ hosted, heroOnly = false, lean = false }: { hosted: bo
           </h1>
           <p className="mt-6 max-w-[36rem] text-[1.05rem] leading-relaxed text-ink/60 lg:mt-8 lg:text-[1.2rem] lg:leading-[1.6]">
             <PayByBot /> renouvelle votre stationnement résident sur <PayByPhone />, sans interruption.{' '}
-            <span className="font-semibold text-ink/80">Zéro oubli, zéro amende.</span>
+            <span className="font-semibold text-ink">Zéro oubli, zéro amende.</span>
           </p>
           <a
             ref={cta}
@@ -443,7 +443,7 @@ export function Landing({ hosted, heroOnly = false, lean = false }: { hosted: bo
           </a>
           {!heroOnly && !lean && (
             <>
-              <p className="mt-4 text-sm text-ink/55">
+              <p className="mt-4 text-sm text-ink/60">
                 Une amende : jusqu’à 125 €. <PayByBot /> : 9,50 €/mois.
               </p>
               <TrustRow className="mt-14 lg:mt-20" />
@@ -462,7 +462,7 @@ export function Landing({ hosted, heroOnly = false, lean = false }: { hosted: bo
         {!lean && (
         <>
         <section id="fonctionnalites" className="scroll-mt-16 py-10 lg:py-12">
-          <h2 className="text-center font-heading text-[2rem] leading-[1.05] font-medium tracking-[-0.035em] text-ink sm:text-[2.6rem] lg:text-[3rem]">
+          <h2 className={cn(ui.title, 'text-center')}>
             Fonctionnalités
           </h2>
           <ul className="mt-12 grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:mt-16 lg:grid-cols-4">
@@ -484,7 +484,7 @@ export function Landing({ hosted, heroOnly = false, lean = false }: { hosted: bo
         <Testimonials />
 
         <section id="tarifs" className="scroll-mt-16 py-12 lg:py-16">
-          <h2 className="text-center font-heading text-[2rem] leading-[1.05] font-medium tracking-[-0.035em] text-ink sm:text-[2.6rem] lg:text-[3rem]">
+          <h2 className={cn(ui.title, 'text-center')}>
             Tarifs
           </h2>
           <p className="mx-auto mt-4 max-w-[32rem] text-center text-[1.05rem] text-ink/60 sm:text-lg">
@@ -515,7 +515,7 @@ export function Landing({ hosted, heroOnly = false, lean = false }: { hosted: bo
         )}
         aria-hidden={!sticky}
       >
-        <a href="#/inscription" tabIndex={sticky ? 0 : -1} className={cn('h-12 text-base', ui.primary)}>
+        <a href="#/inscription" tabIndex={sticky ? 0 : -1} className={cn(ui.primary)}>
           {TRY_LABEL} <ArrowRight className="size-5" />
         </a>
       </div>
@@ -598,7 +598,7 @@ const FAQ_TITLE = 'Questions fréquentes.'
 
 function FaqTitle({ as: Tag = 'h1' }: { as?: 'h1' | 'h2' }) {
   return (
-    <Tag className="text-center font-heading text-[2rem] leading-[1.05] font-medium tracking-[-0.035em] text-ink sm:text-[2.6rem] lg:text-[3rem]">
+    <Tag className={cn(ui.title, 'text-center')}>
       {FAQ_TITLE}
     </Tag>
   )
@@ -610,7 +610,7 @@ function Rows({ items, className }: { items: Question[]; className?: string }) {
     <Accordion className={cn('border-t border-ink/12', className)}>
       {items.map(([q, a]) => (
         <AccordionItem key={q} value={q} className="border-b border-ink/12 not-last:border-b">
-          <AccordionTrigger className="group/q items-center gap-6 rounded-none py-6 text-[1.05rem] font-normal text-ink/70 transition-colors hover:text-ink hover:no-underline focus-visible:ring-0 aria-expanded:font-semibold aria-expanded:text-ink sm:text-[1.15rem] **:data-[slot=accordion-trigger-icon]:hidden">
+          <AccordionTrigger className="group/q items-center gap-6 rounded-none py-6 text-[1.05rem] font-normal text-ink/60 transition-colors hover:text-ink hover:no-underline focus-visible:ring-0 aria-expanded:font-semibold aria-expanded:text-ink sm:text-[1.15rem] **:data-[slot=accordion-trigger-icon]:hidden">
             <span>{withBrands(q)}</span>
             <Plus
               aria-hidden

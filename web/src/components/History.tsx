@@ -50,7 +50,7 @@ function HistoryDialog({ onClose }: { onClose: () => void }) {
             <p className="mt-6 rounded-xl bg-ink/[0.04] px-4 py-5 text-center text-ink/60">Aucun ticket pour l’instant.</p>
           ) : (
             <>
-              <p className="mt-5 text-sm text-ink/55">
+              <p className="mt-5 text-sm text-ink/60">
                 {rows.length} ticket{rows.length > 1 ? 's' : ''}
                 {total > 0 && <> · {euros(total)}</>}
               </p>
@@ -64,7 +64,7 @@ function HistoryDialog({ onClose }: { onClose: () => void }) {
                         <Plate plate={r.plate} size="sm" />
                         <ZoneTag zone={r.location} resident={r.resident !== false} kind={r.kind} />
                       </div>
-                      <p className="mt-2.5 flex justify-between gap-4 text-sm text-ink/55">
+                      <p className="mt-2.5 flex justify-between gap-4 text-sm text-ink/60">
                         <span>
                           Pris le {when(new Date(r.start).getTime())}
                           {running && ' · en cours'}

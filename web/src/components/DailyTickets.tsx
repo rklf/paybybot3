@@ -118,7 +118,7 @@ const KINDS: ['light' | 'heavy' | 'cmis', string, string][] = [
 /** PayByPhone does not check the card: the holder states it, kept with the ticket. */
 function CmisAttest({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-ink/[0.03] px-4 py-3 text-sm leading-relaxed text-ink/80">
+    <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-ink/[0.03] px-4 py-3 text-sm leading-relaxed text-ink/60">
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-1 size-4 shrink-0 accent-[#4e9aa0]" />
       <span>
         Je suis titulaire d’une carte mobilité inclusion mention stationnement (CMI-S) et je la place derrière le
@@ -250,7 +250,7 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
   const modify = !finished && (
     <button
       onClick={() => setEditing(true)}
-      className="inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-ink/55 transition hover:text-ink"
+      className="inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-ink/60 transition hover:text-ink"
     >
       <Pencil className="size-3.5" /> Modifier
     </button>
@@ -270,7 +270,7 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
 
   const row = (term: string, value: string) => (
     <div className="flex justify-between gap-4">
-      <dt className="text-ink/50">{term}</dt>
+      <dt className="text-ink/60">{term}</dt>
       <dd className="text-ink tabular-nums">{value}</dd>
     </div>
   )
@@ -291,7 +291,7 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
               which zones). */}
           <CoveredLine end={liveEnd.getTime()} />
           {live.length < zones.length && (
-            <p className="mt-1 text-sm text-ink/55">
+            <p className="mt-1 text-sm text-ink/60">
               {live.length} / {zones.length} arrondissements
             </p>
           )}
@@ -354,8 +354,8 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
             <span
               key={d}
               className={cn(
-                'rounded-full px-2.5 py-0.5 text-xs',
-                daysOf(ap).includes(i) ? 'bg-[#4e9aa0]/15 font-medium text-[#3d7f84]' : 'bg-ink/[0.04] text-ink/35',
+                'rounded-full px-2.5 py-0.5 text-sm',
+                daysOf(ap).includes(i) ? 'bg-[#4e9aa0]/15 font-medium text-[#3d7f84]' : 'bg-ink/[0.04] text-ink/45',
               )}
             >
               {d}
@@ -365,10 +365,10 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
         )}
         </>
         )}
-        {finished && !single && <p className="mt-3 text-sm text-ink/55">Période terminée : plus aucun ticket ne sera pris.</p>}
-        {finished && single && !last && !ap.lastError && <p className="mt-3 text-sm text-ink/55">Ce ticket n’a pas été pris.</p>}
+        {finished && !single && <p className="mt-3 text-sm text-ink/60">Période terminée : plus aucun ticket ne sera pris.</p>}
+        {finished && single && !last && !ap.lastError && <p className="mt-3 text-sm text-ink/60">Ce ticket n’a pas été pris.</p>}
         {now?.busy ? (
-          <p className={cn('flex items-center gap-2 text-sm text-ink/70', !ap.cmis && 'mt-3')}>
+          <p className={cn('flex items-center gap-2 text-sm text-ink/60', !ap.cmis && 'mt-3')}>
             <Loader2 className="size-4 animate-spin text-[#4e9aa0]" />
             {/* The tickets already visible count as they come, before their wave's answer. */}
             {now.total > 1 ? `Prise des tickets : ${Math.max(now.covered, live.length)} / ${now.total} arrondissements` : 'Prise du ticket en cours…'}
@@ -570,11 +570,11 @@ function ZoneInput({ value, onChange, hint }: { value: string; onChange: (zone: 
               aria-selected={i === active}
               onMouseDown={(e) => (e.preventDefault(), pick(x.zone))}
               onMouseEnter={() => setActive(i)}
-              className={cn('flex cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-[0.95rem]', i === active && 'bg-ink/[0.05]')}
+              className={cn('flex cursor-pointer items-center justify-between gap-3 rounded-[10px] px-3 py-2.5 text-[0.95rem]', i === active && 'bg-ink/[0.05]')}
             >
               <span className="text-ink tabular-nums">{label(x.zone)}</span>
               <span className="flex shrink-0 items-center gap-2 text-sm text-ink/45 tabular-nums">
-                {x.used && <span className="rounded-full bg-[#4e9aa0]/12 px-2 py-0.5 text-xs font-medium text-[#3d7f84]">Déjà utilisée</span>}
+                {x.used && <span className="rounded-full bg-[#4e9aa0]/12 px-2 py-0.5 text-sm font-medium text-[#3d7f84]">Déjà utilisée</span>}
                 {arrondissement(x.zone) && x.zone}
               </span>
             </li>
@@ -582,7 +582,7 @@ function ZoneInput({ value, onChange, hint }: { value: string; onChange: (zone: 
         </ul>
       )}
       {!shown && (
-        <p key={known ? `ok-${value}` : 'hint'} className={cn('mt-2 text-sm', known ? 'rise font-medium text-[#3d7f84]' : 'text-ink/50')}>
+        <p key={known ? `ok-${value}` : 'hint'} className={cn('mt-2 text-sm', known ? 'rise font-medium text-[#3d7f84]' : 'text-ink/60')}>
           {known ? (arrondissement(value) ?? `Zone ${value}`) + ' · zone PayByPhone reconnue' : hint}
         </p>
       )}
@@ -722,7 +722,7 @@ export function DailyWizard({
   const [cost, setCost] = useState<Money | null | undefined>(undefined)
   // The ticket now, not at the next window (5 h for CMI-S): the user sees at once that it works.
   const nowBox = today && (
-    <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-ink/[0.03] px-4 py-3 text-sm leading-relaxed text-ink/80">
+    <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-ink/[0.03] px-4 py-3 text-sm leading-relaxed text-ink/60">
       <input type="checkbox" checked={takeNow} onChange={(e) => setFirstNow(e.target.checked)} className="mt-1 size-4 shrink-0 accent-[#4e9aa0]" />
       <span>
         {kind === 'cmis'
@@ -1024,7 +1024,7 @@ export function DailyWizard({
     <Dialog open onOpenChange={(o) => !o && !saving && !locked && onClose()}>
       <DialogContent className={ui.dialog} showCloseButton={!locked}>
         <div className="px-6 pt-6">
-          <p className="text-xs font-medium tracking-wide text-ink/45 uppercase">
+          <p className="text-sm font-medium tracking-wide text-ink/45 uppercase">
             Étape {shown} sur {labels.length} · {labels[shown - 1]}
           </p>
           <DialogTitle className={cn(ui.dialogTitle, 'mt-1')}>{editing ? 'Modifier le ticket' : initialTicket ? 'Renouveler ce ticket' : 'Programmer un ticket'}</DialogTitle>
@@ -1103,7 +1103,7 @@ export function DailyWizard({
                     >
                       <span className="min-w-0 flex-1">
                         <span className="block font-medium text-ink">{title}</span>
-                        <span className="block text-sm text-ink/50">{hint}</span>
+                        <span className="block text-sm text-ink/60">{hint}</span>
                       </span>
                     </button>
                   ))}
@@ -1123,7 +1123,7 @@ export function DailyWizard({
                         Arrondissements couverts
                         {handiZones.length > 0 && ` · ${handiZones.length >= 20 ? 'tout Paris' : handiZones.length}`}
                       </p>
-                      <label className="flex cursor-pointer items-center gap-2 text-sm text-ink/80">
+                      <label className="flex cursor-pointer items-center gap-2 text-sm text-ink/60">
                         <input
                           type="checkbox"
                           checked={handiZones.length >= 20}
@@ -1144,8 +1144,8 @@ export function DailyWizard({
                             onClick={() => setZones(on ? handiZones.filter((x) => x !== z) : [...handiZones, z])}
                             // Grey cells; a ticked one keeps its grey with a green border.
                             className={cn(
-                              'h-10 rounded-lg border-2 bg-ink/[0.05] text-sm tabular-nums transition',
-                              on ? 'border-[#4e9aa0] font-semibold text-ink' : 'border-transparent text-ink/55 hover:bg-ink/[0.08]',
+                              'h-10 rounded-[10px] border-2 bg-ink/[0.05] text-sm tabular-nums transition',
+                              on ? 'border-[#4e9aa0] font-semibold text-ink' : 'border-transparent text-ink/60 hover:bg-ink/[0.08]',
                             )}
                           >
                             {i === 0 ? '1er' : `${i + 1}e`}
@@ -1153,7 +1153,7 @@ export function DailyWizard({
                         )
                       })}
                     </div>
-                    <p className="mt-2 text-xs text-ink/45">Un ticket gratuit est pris dans chaque arrondissement coché.</p>
+                    <p className="mt-2 text-sm text-ink/45">Un ticket gratuit est pris dans chaque arrondissement coché.</p>
                   </div>
                   {nowBox}
                   <CmisAttest checked={cmis} onChange={setCmis} />
@@ -1183,20 +1183,20 @@ export function DailyWizard({
                       >
                         <span className="min-w-0 flex-1">
                           <span className="block font-medium text-ink">{title}</span>
-                          <span className="block text-sm text-ink/50">{hint}</span>
+                          <span className="block text-sm text-ink/60">{hint}</span>
                         </span>
                         <span className="shrink-0 text-right tabular-nums">
                           <span className="block text-sm font-medium text-ink">
-                            {handi(r) ? 'Gratuit' : price === undefined ? <Loader2 className="inline size-3.5 animate-spin text-ink/40" /> : euros(price)}
+                            {handi(r) ? 'Gratuit' : price === undefined ? <Loader2 className="inline size-3.5 animate-spin text-ink/45" /> : euros(price)}
                           </span>
-                          {!handi(r) && <span className="block text-xs text-ink/45">par jour</span>}
+                          {!handi(r) && <span className="block text-sm text-ink/45">par jour</span>}
                         </span>
                       </button>
                     )
                   })}
                 </div>
                 {hasWeight && (
-                  <p className="mt-2 text-xs text-ink/45">
+                  <p className="mt-2 text-sm text-ink/45">
                     {withPayByPhone('PayByPhone ne connaît pas le poids du véhicule : choisissez le tarif qui lui correspond.')}
                   </p>
                 )}
@@ -1238,8 +1238,8 @@ export function DailyWizard({
                               setDuration(MAX[u])
                             }}
                             className={cn(
-                              'min-w-0 flex-1 rounded-lg px-2 text-sm transition',
-                              unit === u ? 'bg-white font-medium text-ink shadow-[0_1px_2px_rgb(0_0_0/0.08)]' : 'text-ink/50 hover:text-ink/70',
+                              'min-w-0 flex-1 rounded-[10px] px-2 text-sm transition',
+                              unit === u ? 'bg-white font-medium text-ink shadow-[0_1px_2px_rgb(0_0_0/0.08)]' : 'text-ink/60 hover:text-ink/60',
                             )}
                           >
                             {u === 'Minutes' ? 'min' : unitLabel(u, duration)}
@@ -1248,7 +1248,7 @@ export function DailyWizard({
                       </div>
                     </div>
                     {over && (
-                      <p className="mt-2 text-xs text-[#741b11]/80">
+                      <p className="mt-2 text-sm text-[#741b11]/80">
                         {MAX[unit]} {unitLabel(unit, MAX[unit])} maximum pour ce tarif.
                       </p>
                     )}
@@ -1256,7 +1256,7 @@ export function DailyWizard({
                   <div>
                     <p className={ui.label}>Heure de prise</p>
                     <TimeInput label="Heure de prise" value={start} onChange={(v) => setStart(v || nextHour())} />
-                    <p className="mt-2 text-xs text-ink/45">
+                    <p className="mt-2 text-sm text-ink/45">
                       {!chainFrom && (
                         <>
                           Fin du ticket : <span className="font-medium text-ink tabular-nums">{endText(start, duration, unit)}</span>
@@ -1291,8 +1291,8 @@ export function DailyWizard({
                       aria-pressed={planMode === id}
                       onClick={() => setPlanMode(id)}
                       className={cn(
-                        'rounded-lg py-2 text-sm font-semibold transition',
-                        planMode === id ? 'bg-white text-ink shadow-sm' : 'text-ink/50 hover:text-ink/70',
+                        'rounded-[10px] py-2 text-sm font-semibold transition',
+                        planMode === id ? 'bg-white text-ink shadow-sm' : 'text-ink/60 hover:text-ink/60',
                       )}
                     >
                       {label}
@@ -1342,9 +1342,9 @@ export function DailyWizard({
                       )}
                     </div>
                     {handi(effective) && paris && (
-                      <p className="mt-3 text-sm text-ink/70">Le ticket carte mobilité CMI-S d’une journée est pris automatiquement à 5 h, chaque jour choisi.</p>
+                      <p className="mt-3 text-sm text-ink/60">Le ticket carte mobilité CMI-S d’une journée est pris automatiquement à 5 h, chaque jour choisi.</p>
                     )}
-                    {paris && <p className="mt-2 text-xs text-ink/45">À Paris, le dimanche et les jours fériés sont gratuits : aucun ticket n’est pris.</p>}
+                    {paris && <p className="mt-2 text-sm text-ink/45">À Paris, le dimanche et les jours fériés sont gratuits : aucun ticket n’est pris.</p>}
                   </div>
                 )}
               </div>
@@ -1354,22 +1354,22 @@ export function DailyWizard({
                     the days ticked, each week, and one ticket's price under it. */}
                 {chainFrom ? (
                   <div className="flex items-baseline justify-between gap-4">
-                    <span className="text-ink/55">Prix par jour</span>
-                    <span className="text-base font-semibold text-ink tabular-nums">
-                      {cost === undefined ? <Loader2 className="inline size-4 animate-spin text-ink/40" /> : euros(cost ?? { amount: 0, currency: 'EUR' })}
+                    <span className="text-ink/60">Prix par jour</span>
+                    <span className="text-[0.95rem] font-semibold text-ink tabular-nums">
+                      {cost === undefined ? <Loader2 className="inline size-4 animate-spin text-ink/45" /> : euros(cost ?? { amount: 0, currency: 'EUR' })}
                     </span>
                   </div>
                 ) : (
                 <>
                 <div className="flex items-baseline justify-between gap-4">
-                  <span className="text-ink/55">
+                  <span className="text-ink/60">
                     {calendar
                       ? `Au total : ${count} ticket${count > 1 ? 's' : ''}${cost ? ` à ${euros(cost)}` : ''}`
                       : `Par semaine (${days.length} jour${days.length > 1 ? 's' : ''})`}
                   </span>
-                  <span className="text-base font-semibold text-ink tabular-nums">
+                  <span className="text-[0.95rem] font-semibold text-ink tabular-nums">
                     {cost === undefined ? (
-                      <Loader2 className="inline size-4 animate-spin text-ink/40" />
+                      <Loader2 className="inline size-4 animate-spin text-ink/45" />
                     ) : (
                       euros({ amount: (cost?.amount ?? 0) * count, currency: cost?.currency ?? 'EUR' })
                     )}
@@ -1385,7 +1385,7 @@ export function DailyWizard({
                 </div>
                 </>
                 )}
-                <p className={cn('mt-2 text-xs text-ink/45', calendar && 'hidden')}>{withPayByPhone('Payé à PayByPhone au tarif habituel, à chaque ticket.')}</p>
+                <p className={cn('mt-2 text-sm text-ink/45', calendar && 'hidden')}>{withPayByPhone('Payé à PayByPhone au tarif habituel, à chaque ticket.')}</p>
               </div>
             </>
           )}
@@ -1427,7 +1427,7 @@ export function DailyWizard({
                   ],
                 ].map(([k, v]) => (
                   <div key={String(k)} className="flex items-center justify-between gap-4 px-4 py-2.5">
-                    <dt className="text-ink/55">{k}</dt>
+                    <dt className="text-ink/60">{k}</dt>
                     <dd className="text-right text-ink">{v}</dd>
                   </div>
                 ))}

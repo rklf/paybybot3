@@ -37,7 +37,7 @@ function Option({
   const body = (
     <>
       <span className={round}>{icon}</span>
-      <span className="text-[0.8rem] leading-tight text-ink/70">{label}</span>
+      <span className="text-sm leading-tight text-ink/60">{label}</span>
     </>
   )
   // No square outline when the sheet opens with the focus on the first option; a ring on the round for the keyboard.
@@ -110,10 +110,10 @@ export function InviteShare({ withLink = false, className }: { withLink?: boolea
 
       {withLink && (
         <div className="mt-4 flex items-center gap-3 rounded-xl bg-ink/[0.04] py-2 pr-2 pl-4">
-          <span className="min-w-0 flex-1 truncate text-left text-sm text-ink/70">
+          <span className="min-w-0 flex-1 truncate text-left text-sm text-ink/60">
             {url.replace(/^https?:\/\//, '')}
           </span>
-          <button onClick={copy} className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-ink shadow-[0_1px_2px_rgb(0_0_0/0.08)]">
+          <button onClick={copy} className="shrink-0 rounded-[10px] bg-white px-3 py-1.5 text-sm font-semibold text-ink shadow-[0_1px_2px_rgb(0_0_0/0.08)]">
             {copied ? 'Copié' : 'Copier'}
           </button>
         </div>

@@ -20,11 +20,11 @@ export function HowPage({ hosted, signedIn = false }: { hosted: boolean; signedI
           cta={
             <>
               {!signedIn && (
-                <a href="#/inscription" className={cn(ui.primary, 'mt-6 h-12 w-full text-base sm:w-fit sm:px-8')}>
+                <a href="#/inscription" className={cn(ui.primary, 'mt-6 w-full sm:w-fit sm:px-8')}>
                   {TRY_LABEL}
                 </a>
               )}
-              <p className="mt-4 flex items-center gap-2 text-sm text-ink/55">
+              <p className="mt-4 flex items-center gap-2 text-sm text-ink/60">
                 <ShieldCheck className="size-4 shrink-0 text-[#3d7f84]" />
                 Ni carte bancaire, ni mot de passe enregistrés.
               </p>

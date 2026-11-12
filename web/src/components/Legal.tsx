@@ -1,3 +1,5 @@
+import { cn } from '@/lib/utils'
+import { ui } from '@/lib/styles'
 import type { ReactNode } from 'react'
 import { ArrowLeft, Check, X } from 'lucide-react'
 import { PayByBot, PayByPhone, withPayByPhone } from '@/components/signs'
@@ -41,7 +43,7 @@ function BaseSection({ title, children, plain = false }: { title: string; childr
   return (
     <section className="mt-7">
       <h2 className="text-[0.95rem] leading-[1.5] font-semibold text-ink">{plain ? title : withPayByPhone(title)}</h2>
-      <div className="mt-1.5 space-y-3 text-[0.95rem] leading-[1.5] text-ink/70 [&_li]:ml-5 [&_li]:list-disc [&_li]:pl-1 [&_strong]:font-semibold [&_strong]:text-ink [&_ul]:space-y-1">
+      <div className="mt-1.5 space-y-3 text-[0.95rem] leading-[1.5] text-ink/60 [&_li]:ml-5 [&_li]:list-disc [&_li]:pl-1 [&_strong]:font-semibold [&_strong]:text-ink [&_ul]:space-y-1">
         {children}
       </div>
     </section>
@@ -54,7 +56,7 @@ function DataTable({ rows }: { rows: [string, string, string, string][] }) {
     <div className="-mx-1 overflow-x-auto">
       <table className="w-full min-w-[34rem] border-separate border-spacing-0 text-left text-[0.95rem]">
         <thead>
-          <tr className="text-sm text-muted-foreground">
+          <tr className="text-sm text-ink/60">
             {['Donnée', 'Où', 'Protection', 'Combien de temps'].map((h) => (
               <th key={h} className="border-b-2 border-border px-2 py-2 font-bold">
                 {h}
@@ -673,15 +675,15 @@ export function LegalView({ page, signedIn = false }: { page: LegalPage; hosted:
   return (
     <div className="min-h-dvh bg-background text-ink">
       <main className="max-w-[34rem] px-4 pt-5 pb-20 sm:px-6">
-        <a href={back.href} className="inline-flex items-center gap-1.5 text-[0.95rem] text-ink hover:text-ink/70">
+        <a href={back.href} className="inline-flex items-center gap-1.5 text-[0.95rem] text-ink hover:text-ink/60">
           <ArrowLeft className="size-4" strokeWidth={1.75} /> {back.label}
         </a>
-        <h1 className="mt-9 text-[1.6rem] leading-[1.3] font-semibold tracking-[-0.01em]">{title}</h1>
+        <h1 className={cn(ui.title, 'mt-9')}>{title}</h1>
         <p className="mt-4 text-[0.95rem] text-ink/60">Dernière mise à jour le {LEGAL_UPDATED}</p>
-        <div className="mt-4 text-[0.95rem] leading-[1.5] text-ink/70 [&>p]:mt-3">
+        <div className="mt-4 text-[0.95rem] leading-[1.5] text-ink/60 [&>p]:mt-3">
           <Body />
         </div>
-        <p className="mt-10 text-[0.95rem] leading-[1.5] text-ink/70">
+        <p className="mt-10 text-[0.95rem] leading-[1.5] text-ink/60">
           Une question ? <Mailto />
         </p>
       </main>

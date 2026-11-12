@@ -4,6 +4,10 @@ import { cn } from '@/lib/utils'
 export const TRY_LABEL = 'Essayer 1 mois gratuit'
 
 /** The few building blocks of the minimal look (blue accent), shared by every screen. */
+/** The one norm, everywhere (checked by measuring every screen): text in ink, or ink at 60 % (secondary) or 45 %
+ *  (discreet), nothing else; sizes 14 px (text-sm), 15 px (text-[0.95rem]), 16.8 px (card titles, text-[1.05rem]),
+ *  24 px (window titles), page titles (ui.title); buttons 56 px (main), 44 px, 36 px (top bar); corners 10 px (small
+ *  things), rounded-xl (buttons, fields), rounded-2xl (cards, windows), full (pills). */
 export const ui = {
   /** The one main action of a screen: blue outline on a clear background, a light blue fill on hover. */
   primary:
@@ -16,7 +20,7 @@ export const ui = {
     'inline-flex h-9 items-center rounded-[10px] bg-ink/[0.06] px-3 text-sm sm:h-10 sm:px-4 sm:text-[0.95rem] font-semibold whitespace-nowrap text-ink transition hover:bg-ink/[0.1]',
   /** A top bar action as plain text: a light highlight on hover and while pressed. */
   navText:
-    'inline-flex h-9 items-center rounded-[10px] px-3 text-sm font-medium whitespace-nowrap text-ink/75 transition hover:bg-ink/[0.04] hover:text-ink active:bg-ink/[0.08] disabled:opacity-50 sm:h-10 sm:text-[0.95rem]',
+    'inline-flex h-9 items-center rounded-[10px] px-3 text-sm font-medium whitespace-nowrap text-ink/60 transition hover:bg-ink/[0.04] hover:text-ink active:bg-ink/[0.08] disabled:opacity-50 sm:h-10 sm:text-[0.95rem]',
   pillBlue:
     'inline-flex h-9 items-center rounded-[10px] border-[1.5px] border-eu bg-transparent px-3 text-sm font-semibold whitespace-nowrap text-eu sm:h-10 sm:px-4 sm:text-[0.95rem] transition hover:bg-eu/[0.06]',
   /** A secondary action, outlined. */
@@ -36,7 +40,7 @@ export const ui = {
   /** Every window's title (« Mon compte », « Programmer un ticket », « Inviter un proche »…): one size, one weight. */
   dialogTitle: 'font-heading text-2xl font-semibold tracking-tight text-ink',
   error: 'rounded-xl bg-destructive/8 px-4 py-3 text-destructive',
-  note: 'rounded-xl bg-muted px-4 py-3 text-ink/70',
+  note: 'rounded-xl bg-muted px-4 py-3 text-ink/60',
 }
 
 /** A selectable option (card, chip): hairline border, PayByBot blue when selected. */

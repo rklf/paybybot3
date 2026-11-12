@@ -125,7 +125,7 @@ function AccountDialog({
                     return (
                       <li key={v.plate} className={rowClass}>
                         <Plate plate={v.plate} size="sm" />
-                        <span className={cn('text-right', v.zone ? 'text-ink' : 'text-ink/50')}>
+                        <span className={cn('text-right', v.zone ? 'text-ink' : 'text-ink/60')}>
                           {zone ? `Résident · ${zone}` : v.zone ? <ZonePlate zone={v.zone} /> : 'Non résident'}
                         </span>
                       </li>
@@ -158,7 +158,7 @@ function AccountDialog({
                       ))}
                     </span>
                   ) : (
-                    <span className="text-ink/50">Aucune carte</span>
+                    <span className="text-ink/60">Aucune carte</span>
                   )}
                 </Row>
                 {/* Paying subscribers: Stripe's portal (card, invoices, cancelling) — the offer itself is not shown here. While
@@ -198,12 +198,12 @@ function AccountDialog({
 // One look for every part of the window: a section title, a white box of rows of one height, the label on the left
 // and the value on the right, all in the same text size.
 const rowClass = 'flex min-h-14 items-center justify-between gap-4 px-4 py-3 text-[0.95rem]'
-const note = 'mt-2 px-1 text-sm text-ink/55'
+const note = 'mt-2 px-1 text-sm text-ink/60'
 
 function Section({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
     <section>
-      {title && <h3 className="mb-2 px-1 text-[0.95rem] font-semibold text-ink">{title}</h3>}
+      {title && <h3 className="mb-2 px-1 text-[1.05rem] text-ink/60">{title}</h3>}
       {children}
     </section>
   )
@@ -264,7 +264,7 @@ function DeleteConfirm({ data, onCancel, onDeleted }: { data: Overview; onCancel
       <DialogContent className={ui.dialog}>
         <div className="p-6 pt-7">
           <DialogTitle className={ui.dialogTitle}>Supprimer votre compte ?</DialogTitle>
-          <DialogDescription className="mt-2 leading-relaxed text-ink/65">
+          <DialogDescription className="mt-2 leading-relaxed text-ink/60">
             Tout ce que <PayByBot /> garde est effacé, et votre compte <PayByPhone /> n’est pas touché. Vous recevrez une
             confirmation par e-mail.
           </DialogDescription>
@@ -278,7 +278,7 @@ function DeleteConfirm({ data, onCancel, onDeleted }: { data: Overview; onCancel
                     <li key={t.plate} className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <Plate plate={t.plate} size="sm" />
                       <ZonePlate zone={zonesText(t.zones)} />
-                      <span className="text-ink/70">expire {clock(t.expire)}</span>
+                      <span className="text-ink/60">expire {clock(t.expire)}</span>
                     </li>
                   ))}
                 </ul>

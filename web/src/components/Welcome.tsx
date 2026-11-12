@@ -18,9 +18,9 @@ function phoneText(username: string) {
 /** One line of the welcome page: the label on the left, the value on the right. */
 function Line({ label, icon: Icon, children }: { label: string; icon?: LucideIcon; children: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-6 py-3.5">
+    <div className="flex items-start justify-between gap-6 py-3.5 text-[1.05rem]">
       {/* An icon in place of the label (the label kept for screen readers), as in « Mon compte ». */}
-      <dt className="pt-0.5 text-ink/55">
+      <dt className="pt-0.5 text-ink/60">
         {Icon ? (
           <>
             <Icon className="mt-0.5 size-[1.15rem] text-ink/45" aria-hidden />
@@ -139,7 +139,7 @@ export function Welcome({
             Vos informations <PayByPhone />.
           </h1>
           {/* What PayByBot keeps, said where the account's details show (same line as « Comment ça marche »). */}
-          <p className="mt-2 text-sm text-ink/55">Ni carte bancaire, ni mot de passe enregistrés.</p>
+          <p className="mt-2 text-sm text-ink/60">Ni carte bancaire, ni mot de passe enregistrés.</p>
 
           {/* Three lines, the label on the left and what PayByPhone gave on the right: nothing else. */}
           {/* Lines arriving with PayByPhone's answer: the block grows smoothly, never in one jump. */}
@@ -196,7 +196,7 @@ export function Welcome({
                       <span key={p.id} className={cn(p.expired && 'text-ink/45 line-through decoration-ink/30')}>
                         {p.label.replace(/ — exp\..*$/, '')}
                         {/* Its end date, quieter (« exp. 07/31 »). */}
-                        {/ — exp\..*$/.test(p.label) && <span className="ml-2 font-sans text-ink/55">{p.label.replace(/^.* — /, '')}</span>}
+                        {/ — exp\..*$/.test(p.label) && <span className="ml-2 font-sans text-ink/60">{p.label.replace(/^.* — /, '')}</span>}
                         {p.expired && <span className="ml-2 text-sm font-normal text-destructive">expirée</span>}
                       </span>
                     ))}
@@ -218,7 +218,7 @@ export function Welcome({
                       : 'Aucune carte bancaire : ajoutez-en une dans l’application PayByPhone, puis touchez « Rafraîchir ».',
                 )}
                 {vehicles.length > 0 && (
-                  <span className="mt-1 block text-ink/55">
+                  <span className="mt-1 block text-ink/60">
                     Apple Pay, Google Pay et PayPal ne fonctionnent pas avec <PayByBot /> : seule une carte bancaire convient.
                   </span>
                 )}
@@ -234,7 +234,7 @@ export function Welcome({
           {/* The vehicle to automate: one, chosen with a tap (the resident one first). */}
           {offered.length > 0 && (
             <div className="mt-6" role="radiogroup" aria-label="Stationnement à automatiser">
-              <p className="mb-2 text-sm text-ink/55">{offered.length > 1 ? 'Quel stationnement automatiser ?' : 'Stationnement à automatiser :'}</p>
+              <p className="mb-2 text-sm text-ink/60">{offered.length > 1 ? 'Quel stationnement automatiser ?' : 'Stationnement à automatiser :'}</p>
               <div className="space-y-1.5">
                 {offered.map((v) => {
                   const on = v.plate === choice?.plate
@@ -259,8 +259,8 @@ export function Welcome({
                       <Plate plate={v.plate} size="sm" />
                       {/* On the right, one above the other: resident or not, then its ticket now (from PayByPhone). */}
                       <span className="ml-auto flex flex-col items-end gap-1 text-right">
-                        {v.zone ? <ZoneTag zone={v.zone} /> : <span className="text-sm text-ink/45">Non résident</span>}
-                        <span className="text-xs text-ink/50">
+                        {v.zone ? <ZoneTag zone={v.zone} /> : <span className="text-sm text-ink/60">Non résident</span>}
+                        <span className="text-sm text-ink/60">
                           {(() => {
                             const end = ticketEnd(v.plate)
                             return end ? `Ticket jusqu’au ${when(end)}` : 'Aucun ticket en cours'
@@ -280,7 +280,7 @@ export function Welcome({
           >
             {activating ? <Loader2 className="size-5 animate-spin" /> : resident ? 'Activer le renouvellement' : <>Continuer <ArrowRight className="size-5" /></>}
           </button>
-          <p className="mt-4 flex flex-wrap justify-center gap-x-5 gap-y-2 text-sm text-ink/55">
+          <p className="mt-4 flex flex-wrap justify-center gap-x-5 gap-y-2 text-sm text-ink/60">
             <button onClick={refresh} disabled={refreshing} className={cn('inline-flex items-center gap-1.5', ui.link)}>
               {refreshing && <Loader2 className="size-3.5 animate-spin" />} Rafraîchir
             </button>

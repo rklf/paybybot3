@@ -1,3 +1,5 @@
+import { cn } from '@/lib/utils'
+import { ui } from '@/lib/styles'
 import { useEffect } from 'react'
 import { X } from 'lucide-react'
 import { InviteButton } from '@/components/Invite'
@@ -93,8 +95,8 @@ export function CheckoutDone({ vehicle, onClose }: { vehicle?: DoneVehicle | nul
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       {/* About 70 % of the page: the scene above (grows with the space), the sentence and the button below. */}
-      <div className="relative flex min-h-[70vh] w-full flex-col overflow-hidden rounded-3xl border border-ink/10 bg-white text-center shadow-[0_40px_80px_-30px_rgb(11_16_36/0.35)] sm:w-[70vw] sm:max-w-4xl">
-        <button onClick={onClose} aria-label="Fermer" className="absolute top-3 right-3 z-10 grid size-9 place-items-center rounded-full text-ink/50 transition hover:bg-ink/[0.06] hover:text-ink">
+      <div className="relative flex min-h-[70vh] w-full flex-col overflow-hidden rounded-2xl border border-ink/10 bg-white text-center shadow-[0_40px_80px_-30px_rgb(11_16_36/0.35)] sm:w-[70vw] sm:max-w-4xl">
+        <button onClick={onClose} aria-label="Fermer" className="absolute top-3 right-3 z-10 grid size-9 place-items-center rounded-full text-ink/60 transition hover:bg-ink/[0.06] hover:text-ink">
           <X className="size-5" />
         </button>
         {/* Qonto-like: the scene on light grey, the sentence on white */}
@@ -104,7 +106,7 @@ export function CheckoutDone({ vehicle, onClose }: { vehicle?: DoneVehicle | nul
         <div className="px-7 pt-9 pb-10">
           <h1
             id="checkout-done-title"
-            className="animate-[rise_.6s_ease-out_2.3s_both] font-heading text-[1.9rem] leading-[1.1] sm:text-[2.4rem] font-medium tracking-[-0.035em] text-ink motion-reduce:animate-none"
+            className={cn(ui.title, 'animate-[rise_.6s_ease-out_2.3s_both] motion-reduce:animate-none')}
           >
             Votre stationnement est désormais automatisé
           </h1>

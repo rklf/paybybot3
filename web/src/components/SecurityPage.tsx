@@ -1,3 +1,5 @@
+import { cn } from '@/lib/utils'
+import { ui } from '@/lib/styles'
 import type { ReactNode } from 'react'
 import { ArrowLeft, Building2, KeyRound, Lock, ShieldCheck } from 'lucide-react'
 import { legalBack, LEGAL_UPDATED, Mailto, PUBLISHER } from '@/components/Legal'
@@ -45,12 +47,12 @@ export function SecurityPage({ signedIn = false }: { hosted: boolean; signedIn?:
   return (
     <div className="min-h-dvh bg-background text-ink">
       <main className="max-w-[34rem] px-4 pt-5 pb-20 sm:px-6">
-        <a href={back.href} className="inline-flex items-center gap-1.5 text-[0.95rem] text-ink hover:text-ink/70">
+        <a href={back.href} className="inline-flex items-center gap-1.5 text-[0.95rem] text-ink hover:text-ink/60">
           <ArrowLeft className="size-4" strokeWidth={1.75} /> {back.label}
         </a>
-        <h1 className="mt-9 text-[1.6rem] leading-[1.3] font-semibold tracking-[-0.01em]">Sécurité et données</h1>
+        <h1 className={cn(ui.title, 'mt-9')}>Sécurité et données</h1>
         <p className="mt-4 text-[0.95rem] text-ink/60">Dernière mise à jour le {LEGAL_UPDATED}</p>
-        <p className="mt-4 text-[0.95rem] leading-[1.5] text-ink/70">
+        <p className="mt-4 text-[0.95rem] leading-[1.5] text-ink/60">
           Votre mot de passe n’est jamais stocké. Vos données sont chiffrées, hébergées à Paris, et effacées dès que vous
           arrêtez.
         </p>
@@ -85,7 +87,7 @@ export function SecurityPage({ signedIn = false }: { hosted: boolean; signedIn?:
           </ul>
         </Part>
 
-        <p className="mt-10 text-[0.95rem] leading-[1.5] text-ink/70">
+        <p className="mt-10 text-[0.95rem] leading-[1.5] text-ink/60">
           Une question sur la sécurité ? <Mailto />
         </p>
       </main>
@@ -98,7 +100,7 @@ function Part({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="mt-7">
       <h2 className="text-[0.95rem] leading-[1.5] font-semibold text-ink">{title}</h2>
-      <div className="mt-1.5 space-y-3 text-[0.95rem] leading-[1.5] text-ink/70">{children}</div>
+      <div className="mt-1.5 space-y-3 text-[0.95rem] leading-[1.5] text-ink/60">{children}</div>
     </section>
   )
 }

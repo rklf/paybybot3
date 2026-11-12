@@ -37,23 +37,23 @@ export function PlanCards({ signedIn }: { signedIn: boolean }) {
           <div
             key={c.name}
             className={cn(
-              'relative flex flex-col rounded-3xl border bg-white p-7 text-center',
+              'relative flex flex-col rounded-2xl border bg-white p-7 text-center',
               c.popular
                 ? 'border-eu shadow-[0_30px_60px_-30px_color-mix(in_srgb,var(--eu)_55%,transparent)] ring-1 ring-eu md:py-10'
                 : 'border-ink/10',
             )}
           >
             {c.badge && (
-              <span className="absolute top-5 right-5 rounded-full bg-[#4e9aa0]/[0.12] px-2.5 py-1 text-xs font-semibold text-[#3d7f84]">{c.badge}</span>
+              <span className="absolute top-5 right-5 rounded-full bg-[#4e9aa0]/[0.12] px-2.5 py-1 text-sm font-semibold text-[#3d7f84]">{c.badge}</span>
             )}
-            <p className="text-sm font-semibold tracking-[0.12em] text-ink/55 uppercase">{c.name}</p>
+            <p className="text-sm font-semibold tracking-[0.12em] text-ink/60 uppercase">{c.name}</p>
             <p className="mt-5 font-heading leading-none font-semibold tracking-tight text-ink">
               <span className="text-[3.2rem]">{euros(c.perMonth).replace(' €', '')}</span>
               <span className="text-[2rem]"> €</span>
-              <span className="ml-1.5 text-base font-normal text-ink/50">/ mois</span>
+              <span className="ml-1.5 text-[0.95rem] font-normal text-ink/60">/ mois</span>
             </p>
-            <p className="mt-2 text-sm text-ink/50">{c.note}</p>
-            <ul className="mt-7 space-y-2.5 border-t border-ink/10 pt-6 text-left text-[0.95rem] text-ink/75">
+            <p className="mt-2 text-sm text-ink/60">{c.note}</p>
+            <ul className="mt-7 space-y-2.5 border-t border-ink/10 pt-6 text-left text-[0.95rem] text-ink/60">
               {INCLUDED.map((x) => (
                 <li key={x} className="flex items-start gap-2">
                   <Check className="mt-0.5 size-4 shrink-0 text-eu" /> {x}
@@ -79,7 +79,7 @@ export function PricingPage({ hosted, signedIn = false }: { hosted: boolean; sig
     <div className="flex min-h-dvh flex-col bg-background">
       <PublicTopBar signedIn={signedIn} />
       <main className="mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-5xl flex-1 flex-col justify-center px-6 py-10 lg:py-12">
-        <h1 className="rise text-center font-heading text-[2rem] leading-[1.05] font-medium tracking-[-0.035em] text-ink sm:text-[2.6rem] lg:text-[3rem]">
+        <h1 className={cn(ui.title, 'rise text-center')}>
           Tarifs
         </h1>
         <p className="mx-auto mt-4 max-w-[32rem] text-center text-[1.05rem] text-ink/60 sm:text-lg">
@@ -88,7 +88,7 @@ export function PricingPage({ hosted, signedIn = false }: { hosted: boolean; sig
         <div className="mt-8 lg:mt-10">
           <PlanCards signedIn={signedIn} />
         </div>
-        <p className="mt-8 text-center text-sm text-ink/50">
+        <p className="mt-8 text-center text-sm text-ink/60">
           Prix TTC, sans engagement.
         </p>
       </main>
@@ -147,7 +147,7 @@ export function TrialBanner({
           <button
             onClick={unlock}
             disabled={busy}
-            className="inline-flex items-center rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-ink transition hover:bg-white/90 disabled:opacity-60"
+            className="inline-flex items-center rounded-[10px] bg-white px-3 py-1.5 text-sm font-semibold text-ink transition hover:bg-white/90 disabled:opacity-60"
           >
             {busy ? <Loader2 className="size-4 animate-spin" /> : 'Se régulariser'}
           </button>
@@ -171,8 +171,8 @@ export function FreeMonthCard({ trialEnd }: { trialEnd: string | null }) {
   return (
     <div className="rise mb-6 rounded-2xl border border-ink/10 bg-white p-5">
       <p className="font-heading text-xl font-semibold tracking-tight text-ink">{left > 1 ? `Plus que ${left} jours offerts` : 'Dernier jour offert'}</p>
-      <p className="mt-2 leading-relaxed text-ink/70">Ensuite, votre renouvellement continue pour 9,50 € par mois, tous vos véhicules, sans engagement.</p>
-      <button onClick={() => setOpen(true)} className={cn(ui.primary, 'mt-4 h-12 text-base')}>
+      <p className="mt-2 leading-relaxed text-ink/60">Ensuite, votre renouvellement continue pour 9,50 € par mois, tous vos véhicules, sans engagement.</p>
+      <button onClick={() => setOpen(true)} className={cn(ui.primary, 'mt-4')}>
         Continuer pour 9,50 €/mois
       </button>
       {open && <PlansDialog onClose={() => setOpen(false)} text="Le renouvellement reprend dès que le paiement est fait." />}
@@ -201,11 +201,11 @@ export function ReactivateCard({ kind, ticketEnd }: { kind: 'trialOver' | 'unpai
     }
   }
   return (
-    <div role="dialog" aria-labelledby="reactivate-title" className="rise fixed inset-x-4 top-1/2 z-30 mx-auto max-w-lg -translate-y-1/2 rounded-3xl bg-white p-8 shadow sm:p-12-[0_30px_60px_-20px_rgb(11_16_36/0.4)] ring-1 ring-ink/10">
+    <div role="dialog" aria-labelledby="reactivate-title" className="rise fixed inset-x-4 top-1/2 z-30 mx-auto max-w-lg -translate-y-1/2 rounded-2xl bg-white p-8 shadow sm:p-12-[0_30px_60px_-20px_rgb(11_16_36/0.4)] ring-1 ring-ink/10">
       <p id="reactivate-title" className="font-heading text-[1.75rem] leading-tight font-semibold tracking-tight text-ink">
         {trial ? 'Activez votre abonnement' : 'Réactivez votre compte'}
       </p>
-      <p className="mt-4 text-lg leading-relaxed text-ink/70">
+      <p className="mt-4 text-lg leading-relaxed text-ink/60">
         {trial
           ? 'Votre mois offert est terminé : le renouvellement automatique est en pause.'
           : 'Le paiement de votre abonnement n’a pas été régularisé : le renouvellement automatique est en pause.'}
@@ -303,15 +303,15 @@ export function PlansDialog({
               <div className="mt-5 flex w-full items-center gap-4 rounded-2xl border border-eu bg-eu/[0.04] px-4 py-3 ring-1 ring-eu">
                 <span className="flex-1">
                   <span className="block font-semibold text-ink">Mensuel</span>
-                  <span className="block text-sm text-ink/55">Tous vos véhicules, sans engagement</span>
+                  <span className="block text-sm text-ink/60">Tous vos véhicules, sans engagement</span>
                 </span>
                 <span className="text-right">
                   <span className="font-heading text-xl font-semibold text-ink">{euros(MONTHLY)}</span>{' '}
-                  <span className="text-sm text-ink/50">/ mois</span>
+                  <span className="text-sm text-ink/60">/ mois</span>
                 </span>
               </div>
 
-              <ul className="mt-4 grid gap-1.5 text-sm text-ink/70 sm:grid-cols-2">
+              <ul className="mt-4 grid gap-1.5 text-sm text-ink/60 sm:grid-cols-2">
                 {INCLUDED.map((x) => (
                   <li key={x} className="flex items-start gap-2">
                     <Check className="mt-0.5 size-4 shrink-0 text-eu" /> {x}
@@ -322,7 +322,7 @@ export function PlansDialog({
               <button onClick={pay} disabled={busy} className={cn('mt-5', ui.primary)}>
                 {busy ? <Loader2 className="size-5 animate-spin" /> : 'Continuer vers le paiement'}
               </button>
-              <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-sm text-ink/50">
+              <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-sm text-ink/60">
                 <Lock className="size-3.5" /> Paiement sécurisé par Stripe. Sans engagement.
               </p>
             </div>

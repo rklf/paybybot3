@@ -229,10 +229,7 @@ export function LoginView({
           }}
         >
           <h1
-            className={cn(
-              'font-heading leading-[1.05] font-medium tracking-[-0.035em] text-ink',
-              title || signup ? 'text-[2rem] sm:text-[2.2rem]' : 'text-[2.6rem]',
-            )}
+            className={ui.title}
           >
             {title ?? (signup ? <>Inscrivez-vous avec vos identifiants <PayByPhone /></> : <>Connexion à <PayByBot /></>)}
           </h1>
@@ -266,8 +263,8 @@ export function LoginView({
                     setInvalid(new Set())
                   }}
                   className={cn(
-                    'h-10 flex-1 rounded-lg text-[0.95rem] font-semibold transition',
-                    mode === id ? 'bg-white text-ink shadow-[0_1px_3px_rgb(11_16_36/0.12)]' : 'text-ink/55 hover:text-ink',
+                    'h-10 flex-1 rounded-[10px] text-[0.95rem] font-semibold transition',
+                    mode === id ? 'bg-white text-ink shadow-[0_1px_3px_rgb(11_16_36/0.12)]' : 'text-ink/60 hover:text-ink',
                   )}
                 >
                   {label}
@@ -361,7 +358,7 @@ export function LoginView({
                 onClick={() => setShowPassword((v) => !v)}
                 aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
                 aria-pressed={showPassword}
-                className="mr-1.5 grid size-11 shrink-0 place-items-center rounded-lg text-ink/40 transition hover:text-ink focus-visible:ring-3 focus-visible:ring-ink/10 focus-visible:outline-none"
+                className="mr-1.5 grid size-11 shrink-0 place-items-center rounded-[10px] text-ink/45 transition hover:text-ink focus-visible:ring-3 focus-visible:ring-ink/10 focus-visible:outline-none"
               >
                 {showPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
               </button>
@@ -369,7 +366,7 @@ export function LoginView({
 
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pt-1">
               {!signup && (
-                <label className="flex cursor-pointer items-center gap-3 text-[0.95rem] text-ink/70">
+                <label className="flex cursor-pointer items-center gap-3 text-[0.95rem] text-ink/60">
                   <input
                     type="checkbox"
                     checked={remember}
@@ -392,13 +389,13 @@ export function LoginView({
 
           </div>
           {signup && mode === 'email' && (
-            <p className="mt-2 text-sm text-ink/50">Cette adresse reçoit aussi les confirmations de paiement et les alertes. Gardée chiffrée.</p>
+            <p className="mt-2 text-sm text-ink/60">Cette adresse reçoit aussi les confirmations de paiement et les alertes. Gardée chiffrée.</p>
           )}
-          {signup && <p className="mt-4 text-sm leading-relaxed text-ink/50">{withPayByPhone(CARD_NOTE)}</p>}
+          {signup && <p className="mt-4 text-sm leading-relaxed text-ink/60">{withPayByPhone(CARD_NOTE)}</p>}
 
 
           {signup && (
-            <label className="mt-6 lg:mt-4 flex cursor-pointer items-start gap-3 text-sm leading-relaxed text-ink/70">
+            <label className="mt-6 lg:mt-4 flex cursor-pointer items-start gap-3 text-sm leading-relaxed text-ink/60">
               <input
                 type="checkbox"
                 checked={accepted}
@@ -455,7 +452,7 @@ export function LoginView({
           {/* Cloudflare's check runs unseen (the widget is « Invisible » on Cloudflare): no box, no space kept for it. */}
           {human.enabled && (
             <div className="relative mt-4">
-              <p className="flex items-center justify-center gap-1.5 text-xs text-ink/40">
+              <p className="flex items-center justify-center gap-1.5 text-sm text-ink/45">
                 <Lock className="size-3" /> Connexion protégée par Cloudflare
               </p>
               <div ref={human.box} className="absolute inset-0 overflow-hidden" />
@@ -464,7 +461,7 @@ export function LoginView({
 
           {/* Signing up: no « Déjà inscrit ? » line, the top bar's « Se connecter » is there. */}
           {!signup && (
-            <p className="mt-6 lg:mt-4 text-center text-sm text-ink/50">
+            <p className="mt-6 lg:mt-4 text-center text-sm text-ink/60">
               Pas encore inscrit ?{' '}
               <a href="#/inscription" className={link}>
                 S'inscrire
@@ -545,7 +542,7 @@ function CodeStep({
             check()
           }}
         >
-          <h1 className="font-heading text-[2.6rem] leading-[1.05] font-medium tracking-[-0.035em] text-ink">
+          <h1 className={ui.title}>
             Vérifiez votre e-mail
           </h1>
           <p className="mt-3 text-[1.05rem] leading-relaxed text-ink/60">
@@ -591,7 +588,7 @@ function CodeStep({
           >
             {checking ? <Loader2 className="size-5 animate-spin" /> : 'Valider'}
           </button>
-          <p className="mt-6 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-sm text-ink/50">
+          <p className="mt-6 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-sm text-ink/60">
             <button type="button" onClick={resend} disabled={wait > 0} className={link}>
               {wait > 0 ? `Renvoyer le code (${wait} s)` : 'Renvoyer le code'}
             </button>

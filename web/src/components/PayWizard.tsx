@@ -206,7 +206,7 @@ export function PayWizard({
             {STEPS.map((label, i) => (
               <li key={label} className="flex-1" aria-current={i === step ? 'step' : undefined}>
                 <span className={cn('block h-1 rounded-full transition-colors', i <= step ? 'bg-eu' : 'bg-border')} />
-                <span className={cn('mt-1.5 hidden text-xs sm:block', i === step ? 'font-bold text-eu' : 'text-ink/40')}>
+                <span className={cn('mt-1.5 hidden text-sm sm:block', i === step ? 'font-bold text-eu' : 'text-ink/45')}>
                   {label}
                 </span>
               </li>
@@ -216,7 +216,7 @@ export function PayWizard({
       </header>
 
       <main key={step} className="rise mx-auto w-full max-w-2xl flex-1 px-5 pt-10 pb-36">
-        <p className="text-sm text-ink/50">
+        <p className="text-sm text-ink/60">
           Étape {step + 1} sur {STEPS.length}
         </p>
 
@@ -308,7 +308,7 @@ export function PayWizard({
                       setUnit(u)
                       setDuration(PRESETS[u][0])
                     }}
-                    className={cn('rounded-lg px-5 py-2.5 font-bold capitalize transition', unit === u ? 'bg-white text-eu shadow-sm' : 'text-ink/50')}
+                    className={cn('rounded-[10px] px-5 py-2.5 font-bold capitalize transition', unit === u ? 'bg-white text-eu shadow-sm' : 'text-ink/60')}
                   >
                     {unitLabel(u, 2)}
                   </button>
@@ -369,7 +369,7 @@ export function PayWizard({
                 <Plate plate={plate} size="sm" />
                 <ZonePlate zone={parking.location} />
               </div>
-              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-4 p-5 text-base sm:gap-y-5 sm:p-6 sm:text-lg">
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-4 p-5 text-[0.95rem] sm:gap-y-5 sm:p-6 sm:text-lg">
                 <dt className="text-muted-foreground">Tarif</dt>
                 <dd className="text-right font-bold">{rate?.name}</dd>
                 <dt className="text-muted-foreground">Durée</dt>
