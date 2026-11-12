@@ -548,17 +548,17 @@ export function Dashboard({
           onClick={() => (setBackPlate(undefined), setProgramAsked((n) => n + 1))}
           disabled={!data}
           aria-label="Programmer un ticket"
-          className={cn(ui.pillGray, 'gap-2')}
+          className={cn(ui.pillGray, 'hidden gap-2 sm:inline-flex')} // on a phone, the big button below does it (the bar must fit 375 px)
         >
-          <Plus className="size-4" /> <span className="hidden sm:inline">Programmer un ticket</span>
+          <Plus className="size-4" /> <span className="hidden lg:inline">Programmer un ticket</span>
         </button>
         )}
         {!me.demo && <InviteButton disabled={!data} />}
         <HistoryButton disabled={!data} />
         <AccountButton data={data} onDeleted={onDeleted ?? onLogout} demo={me.demo} />
         <button onClick={onLogout} className={ui.navText} aria-label="Déconnexion">
-          <LogOut className="size-5 sm:hidden" />
-          <span className="hidden sm:inline">Déconnexion</span>
+          <LogOut className="size-5 lg:hidden" />
+          <span className="hidden lg:inline">Déconnexion</span>
         </button>
       </TopBar>
 

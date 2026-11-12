@@ -16,8 +16,8 @@ export function HistoryButton({ disabled = false }: { disabled?: boolean }) {
     <>
       {/* On a phone, the icon alone (the top bar must fit 375 px). */}
       <button onClick={() => setOpen(true)} disabled={disabled} className={ui.navText} aria-label="Historique">
-        <HistoryIcon className="size-5 sm:hidden" />
-        <span className="hidden sm:inline">Historique</span>
+        <HistoryIcon className="size-5 lg:hidden" />
+        <span className="hidden lg:inline">Historique</span>
       </button>
       {open && <HistoryDialog onClose={() => setOpen(false)} />}
     </>

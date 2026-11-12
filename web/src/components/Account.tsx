@@ -32,8 +32,8 @@ export function AccountButton({
       ) : (
         // On a phone, the icon alone (the top bar must fit 375 px).
         <button onClick={() => setOpen(true)} disabled={!data} className={ui.navText} aria-label="Mon compte">
-          <UserRound className="size-5 sm:hidden" />
-          <span className="hidden sm:inline">Mon compte</span>
+          <UserRound className="size-5 lg:hidden" />
+          <span className="hidden lg:inline">Mon compte</span>
         </button>
       )}
       {open && data && <AccountDialog data={data} onClose={() => setOpen(false)} onDeleted={onDeleted} demo={demo} />}
