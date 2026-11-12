@@ -1561,25 +1561,21 @@ export function ResidentRequired({
 export const ADD_CARD_STEPS = [
   'Dans PayByPhone, touchez Compte puis Modes de paiement.',
   'Touchez « Ajouter une carte » : une carte bancaire, ni Apple Pay ni Google Pay.',
-  'Revenez ici.',
 ]
 const shot = (src: string, alt: string, height: number) => (
   <img src={src} alt={alt} width={600} height={height} loading="lazy" className="w-full rounded-lg" />
 )
 export const ADD_CARD_FIGURES = [
-  shot('/how/paybyphone-modes-de-paiement.webp', 'PayByPhone, onglet Compte : Modes de paiement', 452),
+  shot('/how/paybyphone-modes-de-paiement.webp', 'PayByPhone, onglet Compte : Modes de paiement', 394),
   shot('/how/paybyphone-ajouter-carte.webp', 'PayByPhone, Modes de paiement : le bouton Ajouter une carte', 394),
 ]
 
-/** The screens of the steps side by side, small, each with its step's number, right after the last step they show. */
+/** The screens of the steps side by side, small and the same size, right after the last step they show. */
 function Shots({ figures }: { figures: ReactNode[] }) {
   return (
     <li className="grid grid-cols-2 items-start gap-3 pl-9">
       {figures.map((f, i) => (
-        <figure key={i} className="relative">
-          {f}
-          <span className="absolute -top-2 -left-2 grid size-5 place-items-center rounded-full bg-eu text-xs font-bold text-white">{i + 1}</span>
-        </figure>
+        <figure key={i}>{f}</figure>
       ))}
     </li>
   )
@@ -1587,8 +1583,7 @@ function Shots({ figures }: { figures: ReactNode[] }) {
 
 /** The same steps, inline (the welcome page when the account has no card yet). */
 export function AddCardGuide() {
-  // Here the page's own « Rafraîchir » checks again: the last step says so.
-  const steps = [...ADD_CARD_STEPS.slice(0, -1), 'Revenez ici et touchez « Rafraîchir ».']
+  const steps = ADD_CARD_STEPS
   return (
     <ol className="mt-4 space-y-2.5 text-[0.95rem] leading-relaxed text-ink/60">
       {steps.map((step, i) => (
