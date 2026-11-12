@@ -9,7 +9,7 @@ import { DailyTickets, DailyWizard, isDaily, ruleState, when as whenAt } from '@
 import { AccountButton } from '@/components/Account'
 import { RippleButton } from '@/components/ui/ripple-button'
 import { HistoryButton } from '@/components/History'
-import { FreeMonthCard, ReactivateCard, TrialBanner } from '@/components/Pricing'
+import { FreeMonthCard, PlansDialog, ReactivateCard, TrialBanner } from '@/components/Pricing'
 import { ui } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 import { HostedFooter } from '@/components/Footer'
@@ -347,6 +347,7 @@ export function Dashboard({
     keep(ACCOUNT_KEY, me.username, a)
   }
   const [checkoutDone, setCheckoutDone] = useState(false)
+  const [plansOpen, setPlansOpen] = useState(false)
   // The free month starts with the first activation: the account is asked again then, so its bar shows at once.
   const automations = data?.autopilots.length ?? 0
   useEffect(() => {
@@ -462,7 +463,7 @@ export function Dashboard({
   // The free month needs no card: the offer is asked only once it is over (then before any automation).
   const needsOffer = !!me.hosted && !me.demo && !!account && account.blocked === 'trialOver'
   // Local preview only, on the demo: ?apercu=j25 (5 days left) or ?apercu=fin (the free month over).
-  const freeMonthPreview = import.meta.env.DEV ? (/apercu=(j25|fin|impaye)/.exec(location.search)?.[1] ?? null) : null
+  const freeMonthPreview = import.meta.env.DEV ? (/apercu=(j25|fin|impaye|essai)/.exec(location.search)?.[1] ?? null) : null
   // Renewals paused (free month over, or a card still refused after the grace week): the page blurred behind one card.
   const paused: 'trialOver' | 'unpaid' | null =
     freeMonthPreview === 'fin' ? 'trialOver' : freeMonthPreview === 'impaye' ? 'unpaid'
@@ -526,18 +527,32 @@ export function Dashboard({
         graceEnd={account?.graceEnd ?? null}
       />
       {/* Free month running: the same light blue bar, with the days left. */}
-      {!needsOffer && !me.demo && !account?.blocked && account?.trialEnd &&
-        new Date(account.trialEnd).getTime() > Date.now() && (() => {
-          const days = Math.ceil((new Date(account.trialEnd).getTime() - Date.now()) / 86_400_000)
+      {/* …and, without a subscription yet, the way to activate the account from it. */}
+      {(() => {
+        const trialEnd = freeMonthPreview === 'essai' ? new Date(Date.now() + 30 * 86_400_000).toISOString()
+          : !needsOffer && !me.demo && !account?.blocked ? (account?.trialEnd ?? null) : null
+        if (!trialEnd || new Date(trialEnd).getTime() <= Date.now()) return null
+        {
+          const days = Math.ceil((new Date(trialEnd).getTime() - Date.now()) / 86_400_000)
           return (
             <div className="trial-bar flex w-full items-center justify-center gap-1.5 bg-[#e3efff] px-4 py-2 text-sm font-semibold text-[#1f55e6]">
               Mois offert
               <span className="font-normal text-[#1f55e6]/70">
                 · {days} jour{days > 1 ? 's' : ''} restant{days > 1 ? 's' : ''}
               </span>
+              {!account?.plan && (
+                <>
+                  <span className="font-normal text-[#1f55e6]/70">·</span>
+                  <button onClick={() => setPlansOpen(true)} className="underline decoration-[#1f55e6]/40 underline-offset-[3px] transition hover:decoration-[#1f55e6]">
+                    Activer mon compte
+                  </button>
+                </>
+              )}
             </div>
           )
-        })()}
+        }
+      })()}
+      {plansOpen && <PlansDialog onClose={() => setPlansOpen(false)} />}
       <TopBar>
         {me.demo && (
           <span className="hidden h-9 items-center rounded-full bg-amber/25 px-3 text-sm font-semibold text-ink min-[400px]:inline-flex sm:h-10 sm:px-4 sm:text-[0.95rem]">
