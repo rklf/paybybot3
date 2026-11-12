@@ -211,7 +211,7 @@ export function ReactivateCard({ kind, ticketEnd }: { kind: 'trialOver' | 'unpai
           : 'Le paiement de votre abonnement n’a pas été régularisé : le renouvellement automatique est en pause.'}
         {until && <> Votre ticket actuel reste valable jusqu’au <strong className="font-semibold text-ink">{until}</strong>.</>}
       </p>
-      <button onClick={go} disabled={busy} className="mt-8 flex h-14 w-full items-center justify-center rounded-xl bg-eu text-lg font-bold text-white transition hover:bg-[#173f86] disabled:opacity-60">
+      <button onClick={go} disabled={busy} className={cn(ui.primary, 'mt-8')}>
         {busy ? <Loader2 className="size-5 animate-spin" /> : trial ? 'Activer mon abonnement' : 'Réactiver mon compte'}
       </button>
       {open && <PlansDialog onClose={() => setOpen(false)} text="Le renouvellement reprend dès que le paiement est fait." />}
@@ -286,13 +286,13 @@ export function PlansDialog({
               {text && <DialogDescription className={ui.subtitle}>{text}</DialogDescription>}
 
               {trialEnd && (
-                <div className="mt-5 flex items-center gap-3 rounded-2xl bg-[#e7f6ec] px-4 py-2.5 text-[#14703a]">
-                  <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[#1a9a4a] text-white">
+                <div className="mt-5 flex items-center gap-3 rounded-2xl bg-ink/[0.04] px-4 py-2.5 text-ink">
+                  <span className="grid size-10 shrink-0 place-items-center rounded-full bg-ink/[0.06] text-ink">
                     <Gift className="size-5" />
                   </span>
                   <span>
-                    <span className="block font-heading text-lg leading-tight font-bold">{trialStarted ? 'Reste de votre mois offert' : '1er mois offert'}</span>
-                    <span className="block text-sm text-[#14703a]/80">
+                    <span className="block text-[1.05rem] leading-tight font-medium">{trialStarted ? 'Reste de votre mois offert' : '1er mois offert'}</span>
+                    <span className="block text-sm text-ink/60">
                       Rien à payer avant le {trialEnd.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', timeZone: 'Europe/Paris' })}.
                     </span>
                   </span>
