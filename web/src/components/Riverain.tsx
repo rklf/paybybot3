@@ -296,14 +296,14 @@ export function RenewalActions({
       <div className={cn('space-y-3', className)}>
         <div className="flex items-center justify-between gap-4">
             <span className="min-w-0">
-              <span className="block text-[1.05rem] text-ink">{switchLabel}</span>
+              <span className="block text-[1.05rem] font-medium text-ink">{switchLabel}</span>
               {detail}
             </span>
             {/* The pause on the switch's line (one line less on the card). */}
             <span className="ml-auto" />
             {aside}
             {withPause && !later && !paused && (
-              <button onClick={() => setPausing(true)} className="inline-flex shrink-0 items-center gap-1.5 text-sm whitespace-nowrap text-ink/55 transition hover:text-ink">
+              <button onClick={() => setPausing(true)} className="inline-flex shrink-0 items-center gap-1.5 text-sm whitespace-nowrap text-ink/60 transition hover:text-ink">
                 <Pause className="size-3.5" />
                 Pause
               </button>
@@ -537,16 +537,71 @@ export function ZoneTag({ zone, resident = true, kind }: { zone: string; residen
   const badge = resident ? 'Résident' : kind
   // On a phone, the short word (« Léger », « Lourd », « CMI-S »): the plate and the zone must fit beside it.
   const short = badge?.replace(/^Véhicule (\S)/, (_, c: string) => c.toUpperCase()).replace(/^Carte mobilité /, '')
+  // Plain text, no shape and no colour: « Résident – 75001 ».
   return (
-    <span className="inline-flex shrink-0 items-center overflow-hidden rounded-full border border-ink/10 text-[0.875rem] leading-none">
+    <span className="inline-flex shrink-0 items-center text-[0.875rem] leading-none whitespace-nowrap text-ink/60">
       {badge && (
-        <span className="bg-[#4e9aa0]/10 px-2.5 py-1.5 font-medium text-[#3d7f84]">
+        <span>
           <span className="sm:hidden">{short}</span>
           <span className="hidden sm:inline">{badge}</span>
+          <span className="px-1.5">–</span>
         </span>
       )}
-      <span className="px-2.5 py-1.5 text-ink/70 tabular-nums">{zone}</span>
+      <span className="tabular-nums">{zone}</span>
     </span>
+  )
+}
+
+/** PayByPhone's own app link (as in the e-mails): on an iPhone it opens the app when installed, else its store page.
+ *  PayByPhone offers no link to one vehicle or ticket: the app opens on its home screen. */
+export const PAYBYPHONE_APP = 'https://paybyphone.onelink.me/ZQkh/'
+
+/** A ticket card's status, said plainly: « Véhicule couvert » with a green tick, until when under it, and PayByPhone's
+ *  mark to check it there. In its last 15 minutes: in red, « Bientôt terminé ». */
+/** « 6 j 23 h » (minutes only under a day), « 2 h 05 min », « 12 min »: what is left of a ticket. */
+function timeLeft(ms: number) {
+  const min = Math.max(1, Math.floor(ms / 60_000))
+  const d = Math.floor(min / 1440)
+  const h = Math.floor((min % 1440) / 60)
+  const m = min % 60
+  if (d) return `${d} j ${h} h`
+  return h ? `${h} h ${String(m).padStart(2, '0')} min` : `${m} min`
+}
+
+export function CoveredLine({ end, soon = false }: { end: number; soon?: boolean }) {
+  // Counted down once a minute.
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(id)
+  }, [])
+  return (
+    <div className="flex items-center gap-3">
+      <span className="min-w-0 flex-1">
+        {/* The tick alone, before the words (no round behind it): light, still reassuring. */}
+        <span className={cn('flex items-center gap-1.5 text-[1.05rem] font-medium', soon ? 'text-destructive' : 'text-ink')}>
+          <Check className={cn('size-4 shrink-0', soon ? 'text-destructive' : 'text-[#1a9a4a]')} strokeWidth={3} />
+          {soon ? 'Bientôt terminé' : 'Véhicule couvert'}
+        </span>
+        {/* The time left, in days, hours and minutes (the exact end on hover). */}
+        <span className="block text-sm text-ink/60" title={`Jusqu’au ${when(end)}`}>
+          Temps restant : <span className="text-ink">{timeLeft(end - now)}</span>
+        </span>
+      </span>
+      {/* PayByPhone's mark alone (its green keypad): check the ticket in its app. */}
+      <a
+        href={PAYBYPHONE_APP}
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Voir dans l’application PayByPhone"
+        title="Voir dans PayByPhone"
+        className="-mr-1 shrink-0 p-1 transition hover:opacity-75"
+      >
+        <svg viewBox="0 0 30 30" className="size-5" aria-hidden>
+          {[0, 1, 2].flatMap((r) => [0, 1, 2].map((c) => <rect key={`${r}${c}`} x={c * 10 + 0.5} y={r * 10 + 0.5} width="9" height="9" rx="2.4" fill="#7ab943" />))}
+        </svg>
+      </a>
+    </div>
   )
 }
 
@@ -570,7 +625,7 @@ export function nextRenewal(nextCheck: string | null | undefined, expire: string
 function SwitchLabel({ children, status }: { on: boolean; children?: ReactNode; status?: ReactNode }) {
   return (
     <span className="min-w-0">
-      <span className="block text-base text-ink sm:text-[1.05rem]">Renouvellement auto</span>
+      <span className="block text-[1.05rem] font-medium text-ink">Renouvellement auto</span>
       {/* The switch says on or off: only a line of its own (the next renewal) when the card gives one. */}
       {(status || children) && (
         <span className="flex items-center gap-3">
@@ -665,7 +720,7 @@ export function RenewalSwitch({
       <SwitchLabel on={on} status={on ? status : undefined} />
       <span className="ml-auto" />
       {pausable && (
-        <button onClick={() => setPausing(true)} className="inline-flex shrink-0 items-center gap-1.5 text-sm text-ink/55 transition hover:text-ink">
+        <button onClick={() => setPausing(true)} className="inline-flex shrink-0 items-center gap-1.5 text-sm text-ink/60 transition hover:text-ink">
           <Pause className="size-3.5" /> Pause
         </button>
       )}

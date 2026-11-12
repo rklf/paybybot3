@@ -16,7 +16,8 @@ export function TopBar({ center, children, className }: { center?: ReactNode; ch
         <nav className="flex items-center gap-1 sm:gap-3" aria-label="Pages">
           {center}
         </nav>
-        {children ? <div className="flex items-center gap-2 justify-self-end sm:gap-2.5">{children}</div> : <span />}
+        {/* Tight on a phone: logo and five icons in 375 px. */}
+        {children ? <div className="flex items-center gap-0.5 justify-self-end sm:gap-2.5 [&>*]:max-sm:px-2.5">{children}</div> : <span />}
       </div>
     </header>
   )

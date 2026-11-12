@@ -1,21 +1,20 @@
 import { Loading } from '@/components/Loading'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
-import { Accessibility, LogOut, Plus } from 'lucide-react'
-import { PayByPhone, Plate, vehicleType, withPayByPhone } from '@/components/signs'
+import { LogOut, Plus } from 'lucide-react'
+import { PayByPhone, Plate, withPayByPhone } from '@/components/signs'
 import { TopBar } from '@/components/TopBar'
 import { InviteButton } from '@/components/Invite'
 import { DailyTickets, DailyWizard, isDaily, ruleState, when as whenAt } from '@/components/DailyTickets'
 import { AccountButton } from '@/components/Account'
+import { RippleButton } from '@/components/ui/ripple-button'
 import { HistoryButton } from '@/components/History'
 import { FreeMonthCard, ReactivateCard, TrialBanner } from '@/components/Pricing'
 import { ui } from '@/lib/styles'
 import { cn } from '@/lib/utils'
-import { LineBone } from '@/components/Skeletons'
 import { HostedFooter } from '@/components/Footer'
 import { CheckoutDone } from '@/components/CheckoutDone'
-import { ActivateRenewal, CardGate, OpeningSwitch, RenewalActions, RenewalNote, RenewalSwitch, RiverainDialog, pauseState, nextRenewal, when, ZoneTag, RiverainCard, WEEKLY_LABEL, renewalOf, runPendingRenewals } from '@/components/Riverain'
-import { RippleButton } from '@/components/ui/ripple-button'
+import { ActivateRenewal, CardGate, CoveredLine, RenewalActions, RenewalNote, RenewalSwitch, RiverainDialog, pauseState, nextRenewal, when, ZoneTag, RiverainCard, WEEKLY_LABEL, renewalOf, runPendingRenewals } from '@/components/Riverain'
 import { ToggleSwitch } from '@/components/ui/toggle-switch'
 import { api, type Account, type Me, type Overview, type Session } from '@/lib/api'
 
@@ -93,7 +92,7 @@ function Ticket({
     <article data-renewal-card className="rise overflow-hidden rounded-2xl border border-ink/10 bg-white">
       {/* The car and where: the plate on the left, the zone on the right, on one line. */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-4">
-        <span className="shrink-0">
+        <span className="flex shrink-0">
           <Plate plate={session.plate} size="sm" />
         </span>
         <ZoneTag zone={place ?? session.location} resident={!daily} kind={session.kind} />
@@ -102,7 +101,7 @@ function Ticket({
       {/* The ticket: when it ends (renewal on) or the time left, large, with the end beside it. */}
       <div className="border-t border-ink/[0.06] px-5 py-5">
         {/* One line: until when (the time left would say it twice); in red in its last 15 minutes. */}
-        <p className={cn(soon ? 'font-semibold text-destructive' : 'text-ink')}>Couvert jusqu’au {when(end)}</p>
+        <CoveredLine end={end} soon={soon} />
         {renewing && (
           <DailyWizard
             data={data}
@@ -142,7 +141,7 @@ function Ticket({
               onLogout={onLogout}
               status={
                 calm && renewal ? (
-                  <span className="mt-0.5 text-sm text-ink/50">
+                  <span className="mt-0.5 text-sm text-ink/60">
                     Prochain :{' '}
                     <span className="whitespace-nowrap text-ink tabular-nums">{when(nextRenewal(renewal.nextCheck, session.expire))}</span>
                   </span>
@@ -173,7 +172,7 @@ function Ticket({
       {/* A non-resident ticket with nothing after it: the same switch, off; turning it on takes it again from its end. */}
       {daily && !renewal && !data.autopilots.some((ap) => ap.enabled && sameCar(ap.plate, session.plate)) && (
         <div className="flex items-center justify-between gap-4 border-t border-ink/[0.06] px-5 py-4">
-          <span className="text-[1.05rem] text-ink">Renouvellement auto</span>
+          <span className="text-[1.05rem] font-medium text-ink">Renouvellement auto</span>
           <ToggleSwitch checked={renewing} label="Renouvellement auto" onPress={() => setRenewing(true)} />
         </div>
       )}
@@ -226,72 +225,72 @@ function NoVehicle({ onRefresh }: { onRefresh: () => void }) {
 const plateKey = (p: string) => p.replace(/[^0-9a-z]/gi, '').toUpperCase()
 const sameCar = (a: string, b: string) => a.replace(/[^0-9a-z]/gi, '').toUpperCase() === b.replace(/[^0-9a-z]/gi, '').toUpperCase()
 
-function IdleVehicles({ data, onChanged, hosted, demo, autoPlate, locked, onLogout }: { data: Overview; onChanged: () => void; hosted: boolean; demo?: boolean; autoPlate?: string | null; locked?: boolean; onLogout?: () => void }) {
+/** The cars with nothing on them (no ticket running, nothing automated): one quiet list, a line each, its
+ *  « Automatiser » button. A resident car says it (Résident | zone) and opens its weekly renewal; another opens the
+ *  ticket wizard on it. The big cards above are only for what runs. */
+function IdleVehicles({ data, onChanged, hosted, demo, autoPlate, locked, onLogout, others, onProgram, title, residents }: { data: Overview; onChanged: () => void; hosted: boolean; demo?: boolean; autoPlate?: string | null; locked?: boolean; onLogout?: () => void; others: Overview['vehicles']; onProgram: (plate: string) => void; title: string; /** The resident cars, as the page knows them (one source: never two answers). */ residents: Set<string> }) {
   const key = (p: string) => p.replace(/[^0-9a-z]/gi, '').toUpperCase()
-  // The vehicles with the resident rate on PayByPhone (a zone in the pricing); null while looking.
-  const [residents, setResidents] = useState<Set<string> | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    api.pricing().then(
-      (p) => {
-        if (cancelled) return
-        setResidents(new Set((p.vehicles ?? []).filter((v) => v.zone).map((v) => key(v.plate))))
-      },
-      () => {},
-    )
-    return () => {
-      cancelled = true
-    }
-  }, [data.vehicles.length])
   const renewed = new Set(data.autopilots.filter((ap) => ap.label === WEEKLY_LABEL).map((ap) => key(ap.plate)))
   const parked = new Set(data.sessions.filter((s) => !s.stopped && new Date(s.expire).getTime() > Date.now()).map((s) => key(s.plate)))
   // Only vehicles with the resident rate get « Activer le renouvellement résident »: the others take tickets on
   // chosen days (Tickets non-résident, below).
-  const isResident = (v: { plate: string; zone?: string | null }) => (residents ? residents.has(key(v.plate)) : !!v.zone)
+  const isResident = (v: { plate: string }) => residents.has(key(v.plate))
   const cars = data.vehicles.filter((v) => isResident(v) && !renewed.has(key(v.plate)) && !parked.has(key(v.plate)))
-  if (!cars.length) return null
+  if (!cars.length && !others.length) return null
+  // Résident or Non résident: plain grey text, no colour (as on the ticket cards).
+  const tag = (resident: boolean) => <span className="text-sm text-ink/60">{resident ? 'Résident' : 'Non résident'}</span>
+  const automate = 'h-9 shrink-0 rounded-[10px] bg-ink/[0.06] px-4 text-sm font-semibold text-ink transition hover:bg-ink/[0.1]'
+  const row = (v: Overview['vehicles'][number], status: ReactNode, button: ReactNode) => (
+    <li key={v.plate} className="flex items-center gap-4 px-5 py-3 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+      {/* Plate, then Résident (or Non résident) in the middle, then the button: on a phone the tag goes under
+          the plate, the plate keeping its width. */}
+      <span className="flex min-w-0 flex-col items-start gap-1.5 sm:contents">
+        <span className="flex shrink-0">
+          <Plate plate={v.plate} size="sm" />
+        </span>
+        <span className="flex sm:justify-self-center">{status}</span>
+      </span>
+      <span className="ml-auto flex sm:ml-0 sm:justify-self-end">{button}</span>
+    </li>
+  )
   return (
-    <div className="mt-5 space-y-3">
-      {cars.map((v) => {
-        return (
-          <div key={v.plate} data-renewal-card className="flex flex-col items-center rounded-2xl border border-border p-5 text-center">
-            <Plate plate={v.plate} />
-            <span className="mt-3 rounded-full bg-[#4e9aa0]/12 px-2.5 py-1 text-xs font-medium text-[#3d7f84]">Résident</span>
-            <dl className="mt-4 space-y-1 text-[0.95rem] text-ink/60">
-              {vehicleTypeLabel(v.type) && (
-                <div>
-                  <dt className="inline">Véhicule : </dt>
-                  <dd className="inline text-ink">{vehicleTypeLabel(v.type)}</dd>
-                </div>
+    <section className="mt-10 first:mt-5">
+      <h2 className="text-[1.05rem] text-ink/60">{title}</h2>
+      <ul className="mt-2 divide-y divide-ink/[0.07] rounded-2xl border border-ink/10 bg-white">
+        {cars.map((v) =>
+          row(
+            v,
+            tag(true),
+            // Its weekly renewal (the switch's window, auto-opened after the welcome page as before).
+            <ActivateRenewal
+              key={v.plate}
+              data={data}
+              onChanged={onChanged}
+              hosted={hosted}
+              demo={demo}
+              plate={v.plate}
+              autoOpen={!!autoPlate && key(autoPlate) === key(v.plate)}
+              locked={!!locked && !!autoPlate && key(autoPlate) === key(v.plate)}
+              onLogout={onLogout}
+              trigger={(open) => (
+                <RippleButton onClick={open} rippleColor="#9ca3af" className={automate}>
+                  Automatiser
+                </RippleButton>
               )}
-              {/* The zone comes a moment after the card: its line holds its place meanwhile. */}
-              {v.zone ? (
-                <div>
-                  <dt className="inline">Zone : </dt>
-                  <dd className="inline text-ink">{v.zone}</dd>
-                </div>
-              ) : (
-                <LineBone className="mx-auto mt-1.5 h-[1.15rem] w-44" />
-              )}
-            </dl>
-            {/* « Renouvellement auto » switch, off: turning it on opens the renewal setup (same as the ticket card). */}
-            <div className="mt-4 w-full border-t border-ink/[0.06] pt-4 text-left">
-              <ActivateRenewal
-                data={data}
-                onChanged={onChanged}
-                hosted={hosted}
-                demo={demo}
-                plate={v.plate}
-                autoOpen={!!autoPlate && key(autoPlate) === key(v.plate)}
-                locked={!!locked && !!autoPlate && key(autoPlate) === key(v.plate)}
-                onLogout={onLogout}
-                trigger={(open, isOpen) => <OpeningSwitch open={open} isOpen={isOpen} />}
-              />
-            </div>
-          </div>
-        )
-      })}
-    </div>
+            />,
+          ),
+        )}
+        {others.map((v) =>
+          row(
+            v,
+            tag(false),
+            <RippleButton onClick={() => onProgram(v.plate)} rippleColor="#9ca3af" className={automate}>
+              Automatiser
+            </RippleButton>,
+          ),
+        )}
+      </ul>
+    </section>
   )
 }
 
@@ -466,7 +465,6 @@ export function Dashboard({
   const [backPlate, setBackPlate] = useState<string | undefined>() // back to the wizard, on the car it left
   const [residentFor, setResidentFor] = useState<string | null>(null) // a resident car chosen in « Programmer un ticket »
   const [programAsked, setProgramAsked] = useState(0) // « Programmer un ticket »: each click opens the ticket wizard
-  const [cmisAsked, setCmisAsked] = useState(0) // « Carte mobilité CMI-S »: the wizard on that ticket only
   useEffect(() => {
     if (ticketPlate) (setBackPlate(ticketPlate), setProgramAsked((n) => n + 1))
   }, [ticketPlate])
@@ -548,7 +546,7 @@ export function Dashboard({
           onClick={() => (setBackPlate(undefined), setProgramAsked((n) => n + 1))}
           disabled={!data}
           aria-label="Programmer un ticket"
-          className={cn(ui.pillGray, 'hidden gap-2 sm:inline-flex')} // on a phone, the big button below does it (the bar must fit 375 px)
+          className={cn(ui.pillGray, 'gap-2')}
         >
           <Plus className="size-4" /> <span className="hidden lg:inline">Programmer un ticket</span>
         </button>
@@ -620,7 +618,6 @@ export function Dashboard({
 
         {/* The renewal is the one action of the app: no one-off payment button. */}
         {/* The cars with neither a ticket nor a renewal: one card each, with its button. */}
-        {data && <IdleVehicles data={data} onChanged={onRefresh} hosted={!!me.hosted} demo={me.demo} autoPlate={autoPlate} locked={locked} onLogout={onLogout} />}
 
         {/* Tickets on precise days (visitor, Handi…), for everyone. */}
         {data && (
@@ -629,7 +626,6 @@ export function Dashboard({
             onChanged={onRefresh}
             needsOffer={needsOffer}
             openAsked={programAsked}
-            cmisAsked={cmisAsked}
             onResident={(p) => (setBackPlate(undefined), setResidentFor(p))}
             openPlate={backPlate}
             // Just past the welcome page (or no offer yet) without a resident car to renew: the wizard opens by itself.
@@ -652,24 +648,26 @@ export function Dashboard({
 
         {/* The page's call to action, always: any car, any ticket (the wizard asks the car first, then the resident
             renewal or the vehicle type). It replaces « Renouveler un autre véhicule », which did the same. */}
-        {data && data.vehicles.length > 0 && programmable && (
-          <div className="mt-6">
-            <RippleButton
-              onClick={() => (setBackPlate(undefined), setProgramAsked((n) => n + 1))}
-              rippleColor="#ADD8E6"
-              className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-eu text-lg font-bold text-white shadow-[0_6px_20px_-8px_rgb(29_78_163/0.55)] transition hover:bg-[#173f86] active:scale-[0.99]"
-            >
-              <span className="inline-flex items-center gap-2">
-                <Plus className="size-5" /> Programmer un ticket
-              </span>
-            </RippleButton>
-          </div>
-        )}
-        {/* The CMI-S card's free ticket, on its own: for any vehicle of the account, resident or not. */}
-        {data && data.vehicles.length > 0 && (
-          <button onClick={() => setCmisAsked((n) => n + 1)} className={cn(ui.primary, programmable ? 'mt-3' : 'mt-6')}>
-            <Accessibility className="size-5" /> Carte mobilité CMI-S
-          </button>
+        {/* The cars with nothing on them, after the cards of what runs: resident ones and the others alike. */}
+        {data && residentPlates && (
+          <IdleVehicles
+            data={data}
+            onChanged={onRefresh}
+            hosted={!!me.hosted}
+            demo={me.demo}
+            autoPlate={autoPlate}
+            locked={locked}
+            onLogout={onLogout}
+            others={data.vehicles.filter(
+              (v) =>
+                !residentPlates?.has(plateKey(v.plate)) &&
+                !running.some((x) => sameCar(x.plate, v.plate)) &&
+                !data.autopilots.some((ap) => ap.enabled && !ruleState(ap).finished && sameCar(ap.plate, v.plate)),
+            )}
+            residents={residentPlates}
+            onProgram={(plate) => (setBackPlate(plate), setProgramAsked((n) => n + 1))}
+            title={running.length || data.autopilots.some((ap) => ap.enabled && !ruleState(ap).finished) ? 'Vos autres véhicules' : 'Vos véhicules'}
+          />
         )}
         {data && residentFor && (
           <RiverainDialog
@@ -694,8 +692,3 @@ export function Dashboard({
   )
 }
 
-/** PayByPhone's vehicle type, in French (unknown: as given). */
-function vehicleTypeLabel(type?: string) {
-  if (!type) return null
-  return vehicleType(type) ?? type
-}

@@ -137,7 +137,7 @@ test('un seul véhicule, résident et déjà renouvelé : aucun bouton qui mène
     await route.fulfill({ json: { ...json, vehicles: json.vehicles.filter((v: { plate: string }) => /AB.?123.?CD/.test(v.plate)) } })
   })
   await demo(page)
-  await press(page, /Renouvellement/)
+  await page.getByRole('button', { name: 'Automatiser' }).first().click() // the resident car's line: its renewal
   await page.getByRole('dialog').getByRole('button', { name: /^Activer le renouvellement/ }).click()
   await expect(page.getByRole('switch', { name: /Renouvellement/ }).first()).toBeChecked({ timeout: 15_000 })
   // Nothing left to programme: neither the big button nor the top bar's.
@@ -147,13 +147,12 @@ test('un seul véhicule, résident et déjà renouvelé : aucun bouton qui mène
 
 test('assistant : une voiture résidente déjà renouvelée se voit, mais ne se choisit pas', async ({ page }) => {
   await demo(page)
-  await press(page, /Renouvellement/)
+  await page.getByRole('button', { name: 'Automatiser' }).first().click() // the resident car's line: its renewal
   await page.getByRole('dialog').getByRole('button', { name: /^Activer le renouvellement/ }).click()
   await expect(page.getByRole('switch', { name: /Renouvellement/ }).first()).toBeChecked({ timeout: 15_000 })
   await page.getByRole('button', { name: 'Programmer un ticket' }).last().click() // the big one (the top bar's has the same name)
   const wizard = page.getByRole('dialog')
   await expect(wizard.getByRole('button', { name: /AB-123-CD/ })).toBeDisabled()
-  await expect(wizard.getByText('Déjà renouvelé')).toBeVisible()
   await expect(wizard.getByRole('button', { name: /GH-456-JK/ })).toHaveAttribute('aria-pressed', 'true')
 })
 
@@ -276,7 +275,7 @@ test('connexion sans compte puis « S’inscrire » : le message de la connexion
 
 test('pause : le calendrier ne propose pas les jours passés', async ({ page }) => {
   await demo(page)
-  await press(page, /Renouvellement/)
+  await page.getByRole('button', { name: 'Automatiser' }).first().click() // the resident car's line: its renewal
   await page.getByRole('dialog').getByRole('button', { name: /^Activer le renouvellement/ }).click()
   await expect(page.getByRole('switch', { name: /Renouvellement/ }).first()).toBeChecked({ timeout: 15_000 })
   await page.getByRole('button', { name: 'Pause' }).first().click()
@@ -290,7 +289,7 @@ test('pause : le calendrier ne propose pas les jours passés', async ({ page }) 
 
 test('renouvellement : l’éteindre demande confirmation, « Annuler » le laisse actif', async ({ page }) => {
   await demo(page)
-  await press(page, /Renouvellement/)
+  await page.getByRole('button', { name: 'Automatiser' }).first().click() // the resident car's line: its renewal
   await page.getByRole('dialog').getByRole('button', { name: /^Activer le renouvellement/ }).click()
   const renewal = page.getByRole('switch', { name: /Renouvellement/ }).first()
   await expect(renewal).toBeChecked({ timeout: 15_000 })
@@ -432,18 +431,6 @@ test('impasses : sans carte bancaire, « Mon compte » reste accessible', async 
   await expect(page.getByRole('heading', { name: 'Mon compte' })).toBeVisible()
 })
 
-test('« Carte mobilité CMI-S » : son propre bouton, l’assistant ne propose que ce ticket', async ({ page }) => {
-  await demo(page)
-  await page.getByRole('button', { name: 'Carte mobilité CMI-S' }).click()
-  const wizard = page.getByRole('dialog')
-  await expect(wizard.getByRole('heading', { name: 'Carte mobilité CMI-S' })).toBeVisible()
-  await wizard.getByRole('button', { name: 'Suivant' }).click() // the vehicle (any, a resident one too)
-  await expect(wizard.getByRole('button', { name: /Carte mobilité CMI-S/ })).toHaveAttribute('aria-pressed', 'true')
-  await expect(wizard.getByRole('button', { name: /Véhicule léger|Véhicule lourd/ })).toHaveCount(0)
-  await wizard.getByRole('button', { name: 'Suivant' }).click()
-  await expect(wizard.getByRole('checkbox', { name: 'Tous' })).toBeVisible() // the arrondissements, no zone typed
-})
-
 test('programmer un ticket : carte mobilité CMI-S, « Tous » coche tout Paris', async ({ page }) => {
   await demo(page)
   await wizardButton(page).click()
@@ -542,7 +529,7 @@ test('retour de paiement : un ticket programmé n’affiche pas « automatisé �
 
 test('renouvellement résident : s’active depuis la carte du véhicule', async ({ page }) => {
   await demo(page)
-  await press(page, /Renouvellement/) // the switch alone, off, opens it
+  await page.getByRole('button', { name: 'Automatiser' }).first().click() // the resident car's line: its renewal
   await page.getByRole('dialog').getByRole('button', { name: /^Activer le renouvellement/ }).click()
   // Under the switch: « Activé » or the next renewal, depending on the ticket.
   await expect(page.getByRole('switch', { name: /Renouvellement/ }).first()).toBeChecked({ timeout: 15_000 })
@@ -734,7 +721,7 @@ test.describe('téléphone réglé sur une autre heure que Paris', () => {
       await route.fulfill({ json: { ...json, sessions: [ticket] } })
     })
     await demo(page)
-    await expect(page.getByText(/Couvert jusqu’au mardi 15 décembre, 12h/)).toBeVisible()
+    await expect(page.getByTitle(/Jusqu’au mardi 15 décembre, 12h/)).toBeVisible() // the exact end, on hover of the time left
   })
 })
 
@@ -763,7 +750,7 @@ test('un seul véhicule résident renouvelé : « Programmer un ticket » n’ap
     await route.fulfill({ json: { ...json, vehicles: json.vehicles.slice(0, 1), sessions } })
   })
   await demo(page)
-  await press(page, /Renouvellement/)
+  await page.getByRole('button', { name: 'Automatiser' }).first().click() // the resident car's line: its renewal
   await page.getByRole('dialog').getByRole('button', { name: /^Activer le renouvellement/ }).click()
   await expect(page.getByRole('switch', { name: /Renouvellement/ }).first()).toBeChecked({ timeout: 15_000 })
   // Back later in a new tab: the tariffs (which say which car is resident) answer 3 seconds after the page.

@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { NoPayment } from '@/components/NoPayment'
 import { PlansDialog } from '@/components/Pricing'
 import { periodDays, periodText, RangeCalendar } from '@/components/RangeCalendar'
-import { clearPending, pauseState, RenewalActions, RenewalNote, savePending, when as longWhen, WEEKLY_LABEL, ZoneTag, type PendingRenewal } from '@/components/Riverain'
+import { clearPending, CoveredLine, pauseState, RenewalActions, RenewalNote, savePending, when as longWhen, WEEKLY_LABEL, ZoneTag, type PendingRenewal } from '@/components/Riverain'
 import { arrondissement, Plate, withPayByPhone } from '@/components/signs'
 import { api, ApiError, unitLabel, type Autopilot, type Money, type Overview, type Rate, type Unit } from '@/lib/api'
 import { ui } from '@/lib/styles'
@@ -279,7 +279,7 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
     <article className={cn('rise overflow-hidden rounded-2xl border border-ink/10 bg-white', finished && 'opacity-80')}>
       {/* The same header as the running-ticket card: the plate, then the kind of ticket and its zone in one pill. */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-4">
-        <span className="shrink-0">
+        <span className="flex shrink-0">
           <Plate plate={ap.plate} size="sm" />
         </span>
         <ZoneTag zone={zoneOf(ap)} resident={false} kind={ap.cmis ? 'Carte mobilité CMI-S' : 'Non-résident'} />
@@ -289,7 +289,7 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
         <div className="border-t border-ink/[0.06] px-5 py-4">
           {/* As on any ticket card: until when; how many arrondissements only when some are missing (the pill says
               which zones). */}
-          <p className="text-ink">Couvert jusqu’au {longWhen(liveEnd.getTime())}</p>
+          <CoveredLine end={liveEnd.getTime()} />
           {live.length < zones.length && (
             <p className="mt-1 text-sm text-ink/55">
               {live.length} / {zones.length} arrondissements
@@ -316,7 +316,7 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
             detail={
               ap.cmis && ap.enabled && nextTake ? (
                 // As on a resident card: when the next tickets are taken.
-                <span className="mt-0.5 block text-sm text-ink/50">
+                <span className="mt-0.5 block text-sm text-ink/60">
                   Prochain : <span className="whitespace-nowrap text-ink tabular-nums">{longWhen(nextTake.getTime())}</span>
                 </span>
               ) : undefined
@@ -399,7 +399,6 @@ export function DailyTickets({
   onLogout,
   residentPlates,
   openAsked = 0,
-  cmisAsked = 0,
   openPlate,
   onResident,
 }: {
@@ -407,8 +406,6 @@ export function DailyTickets({
   onChanged: () => void
   /** Counts the clicks on « Programmer un ticket » (top bar): each one opens the wizard. */
   openAsked?: number
-  /** Counts the clicks on « Carte mobilité CMI-S »: each one opens the wizard on that ticket only. */
-  cmisAsked?: number
   /** The car the wizard opens on (back from a resident car's renewal). */
   openPlate?: string
   /** A car with the resident rate chosen in the wizard: its weekly renewal opens instead. */
@@ -424,7 +421,6 @@ export function DailyTickets({
   onLogout?: () => void
 }) {
   const [open, setOpen] = useState(false)
-  const [cmisOnly, setCmisOnly] = useState(false)
   const [forPlate, setForPlate] = useState<string | undefined>()
   useEffect(() => {
     if (locked || autoOpen) setOpen(true)
@@ -444,11 +440,8 @@ export function DailyTickets({
   }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     // A car with nothing on it first (not the resident one, renewed above).
-    if (openAsked) (setCmisOnly(false), setForPlate(openPlate ?? idle[0]?.plate), setOpen(true))
+    if (openAsked) (setForPlate(openPlate ?? idle[0]?.plate), setOpen(true))
   }, [openAsked]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (cmisAsked) (setCmisOnly(true), setForPlate(undefined), setOpen(true))
-  }, [cmisAsked])
   // A one-off ticket (a single day) that has ended is no longer shown.
   const daily = data.autopilots.filter((ap) => {
     if (!isDaily(ap)) return false
@@ -478,7 +471,6 @@ export function DailyTickets({
         <DailyWizard data={data} onClose={() => setOpen(false)} onDone={onChanged} needsOffer={needsOffer} locked={locked} onLogout={onLogout} initialPlate={forPlate}
           isResidentPlate={(p) => data.vehicles.some((v) => key(v.plate) === key(p) && isResident(v))}
           onResident={onResident}
-          cmisOnly={cmisOnly}
         />
       )}
     </section>
@@ -613,14 +605,11 @@ export function DailyWizard({
   editing,
   isResidentPlate,
   onResident,
-  cmisOnly = false,
 }: {
   data: Overview
   onClose: () => void
   onDone: () => void
   needsOffer: boolean
-  /** « Carte mobilité CMI-S » (its own button): only that ticket, for any of the account's vehicles. */
-  cmisOnly?: boolean
   locked?: boolean
   onLogout?: () => void
   /** Opened from a running ticket: its vehicle and zone, already filled in. */
@@ -643,7 +632,7 @@ export function DailyWizard({
   // with nothing left to tick). Non-resident cars and resident ones without renewal are offered.
   const renewedAlready = (p: string) =>
     !!isResidentPlate?.(p) && data.autopilots.some((ap) => ap.label === WEEKLY_LABEL && keyOf(ap.plate) === keyOf(p))
-  const offered = cmisOnly ? data.vehicles : data.vehicles.filter((v) => !renewedAlready(v.plate))
+  const offered = data.vehicles.filter((v) => !renewedAlready(v.plate))
   // One vehicle or several, the same ticket for each; the first one chosen is the one the rates are looked up for.
   const [picked, setPicked] = useState<string[]>(() => {
     const first =
@@ -665,7 +654,7 @@ export function DailyWizard({
   const [zoneTyped, setZoneTyped] = useState(editing && !editing.cmis ? editing.location : (initialZone ?? zoneFor(plate)))
   const [zone, setZone] = useState(editing?.location ?? initialZone ?? zoneFor(plate))
   // The first question, the vehicle's type: it picks the rate (light or heavy visitor, or the free CMI-S ticket).
-  const [kind, setKind] = useState<'light' | 'heavy' | 'cmis'>(editing?.cmis || cmisOnly ? 'cmis' : 'light')
+  const [kind, setKind] = useState<'light' | 'heavy' | 'cmis'>(editing?.cmis ? 'cmis' : 'light')
   // CMI-S, in Paris only for now: the arrondissements covered, none until the user ticks some (or « Tous »).
   const [zones, setZones] = useState<string[]>(editing?.cmis ? (editing.locations ?? [editing.location]) : [])
   const handiZones = kind === 'cmis' ? [...zones].sort() : []
@@ -1025,8 +1014,7 @@ export function DailyWizard({
   const shown = split ? (step === 1 ? (typing ? 2 : 1) : step + 1) : step
 
   function nextFromVehicle() {
-    // CMI-S only: the card's free ticket, a resident car too (never its weekly renewal instead).
-    if (!cmisOnly && onResident && isResidentPlate?.(plate)) {
+    if (onResident && isResidentPlate?.(plate)) {
       onClose()
       onResident(plate)
     } else setTyping(true)
@@ -1039,7 +1027,7 @@ export function DailyWizard({
           <p className="text-xs font-medium tracking-wide text-ink/45 uppercase">
             Étape {shown} sur {labels.length} · {labels[shown - 1]}
           </p>
-          <DialogTitle className={cn(ui.dialogTitle, 'mt-1')}>{editing ? 'Modifier le ticket' : initialTicket ? 'Renouveler ce ticket' : cmisOnly ? 'Carte mobilité CMI-S' : 'Programmer un ticket'}</DialogTitle>
+          <DialogTitle className={cn(ui.dialogTitle, 'mt-1')}>{editing ? 'Modifier le ticket' : initialTicket ? 'Renouveler ce ticket' : 'Programmer un ticket'}</DialogTitle>
           {/* The sentence under the title only on the first step: the others need the height. */}
           <DialogDescription className={cn('mt-1 text-ink/60', step > 1 && 'sr-only')}>
             {editing
@@ -1061,9 +1049,9 @@ export function DailyWizard({
                 <div className="flex flex-wrap gap-2">
                   {data.vehicles.filter((v) => !editing || keyOf(v.plate) === keyOf(editing.plate)).map((v) =>
                     !editing && renewedAlready(v.plate) ? (
+                      // Renewed already: shown greyed out, not to pick (no word: the grey says it).
                       <button key={v.plate} disabled className="inline-flex flex-col items-center gap-1 rounded-xl border border-ink/10 p-2 opacity-60">
                         <Plate plate={v.plate} size="sm" />
-                        <span className="text-xs text-ink/55">Déjà renouvelé</span>
                       </button>
                     ) : (
                       <button
@@ -1103,7 +1091,7 @@ export function DailyWizard({
               <div>
                 <p className={ui.label}>Type de véhicule</p>
                 <div className="space-y-2">
-                  {KINDS.filter(([k]) => !cmisOnly || k === 'cmis').map(([k, title, hint]) => (
+                  {KINDS.map(([k, title, hint]) => (
                     <button
                       key={k}
                       onClick={() => setKind(k)}
