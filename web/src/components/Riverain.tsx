@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Check, Loader2, Mail, Pause, Play, Repeat, RotateCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
@@ -1506,16 +1506,15 @@ function FullScreenNotice({ title, intro, steps, figures = [], children }: { tit
         <p className="mt-2 text-[0.95rem] leading-relaxed text-ink/60">{intro}</p>
         <ol className="mt-5 space-y-2.5 text-[0.95rem] leading-relaxed text-ink/60">
           {steps.map((step, i) => (
-            <li key={step} className="flex gap-3">
-              <span className="grid size-6 shrink-0 place-items-center rounded-full bg-eu/[0.08] text-sm font-bold text-eu">
-                {i + 1}
-              </span>
-              <span className="min-w-0">
-                {withPayByPhone(step)}
-                {/* Under a step: what it looks like there. */}
-                {figures[i]}
-              </span>
-            </li>
+            <Fragment key={step}>
+              <li className="flex gap-3">
+                <span className="grid size-6 shrink-0 place-items-center rounded-full bg-eu/[0.08] text-sm font-bold text-eu">
+                  {i + 1}
+                </span>
+                <span className="min-w-0">{withPayByPhone(step)}</span>
+              </li>
+              {figures.length > 0 && i === figures.length - 1 && <Shots figures={figures} />}
+            </Fragment>
           ))}
         </ol>
         {children}
@@ -1565,12 +1564,26 @@ export const ADD_CARD_STEPS = [
   'Revenez ici.',
 ]
 const shot = (src: string, alt: string, height: number) => (
-  <img src={src} alt={alt} width={600} height={height} loading="lazy" className="mt-3 w-full max-w-72 rounded-xl" />
+  <img src={src} alt={alt} width={600} height={height} loading="lazy" className="w-full rounded-lg" />
 )
 export const ADD_CARD_FIGURES = [
   shot('/how/paybyphone-modes-de-paiement.webp', 'PayByPhone, onglet Compte : Modes de paiement', 452),
   shot('/how/paybyphone-ajouter-carte.webp', 'PayByPhone, Modes de paiement : le bouton Ajouter une carte', 394),
 ]
+
+/** The screens of the steps side by side, small, each with its step's number, right after the last step they show. */
+function Shots({ figures }: { figures: ReactNode[] }) {
+  return (
+    <li className="grid grid-cols-2 items-start gap-3 pl-9">
+      {figures.map((f, i) => (
+        <figure key={i} className="relative">
+          {f}
+          <span className="absolute -top-2 -left-2 grid size-5 place-items-center rounded-full bg-eu text-xs font-bold text-white">{i + 1}</span>
+        </figure>
+      ))}
+    </li>
+  )
+}
 
 /** The same steps, inline (the welcome page when the account has no card yet). */
 export function AddCardGuide() {
@@ -1579,13 +1592,13 @@ export function AddCardGuide() {
   return (
     <ol className="mt-4 space-y-2.5 text-[0.95rem] leading-relaxed text-ink/60">
       {steps.map((step, i) => (
-        <li key={step} className="flex gap-3">
-          <span className="grid size-6 shrink-0 place-items-center rounded-full bg-eu/[0.08] text-sm font-bold text-eu">{i + 1}</span>
-          <span className="min-w-0">
-            {withPayByPhone(step)}
-            {ADD_CARD_FIGURES[i]}
-          </span>
-        </li>
+        <Fragment key={step}>
+          <li className="flex gap-3">
+            <span className="grid size-6 shrink-0 place-items-center rounded-full bg-eu/[0.08] text-sm font-bold text-eu">{i + 1}</span>
+            <span className="min-w-0">{withPayByPhone(step)}</span>
+          </li>
+          {i === ADD_CARD_FIGURES.length - 1 && <Shots figures={ADD_CARD_FIGURES} />}
+        </Fragment>
       ))}
     </ol>
   )
