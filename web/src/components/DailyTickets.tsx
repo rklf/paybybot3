@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, Loader2, Pencil } from 'lucide-react'
+import { Check, Loader2, Pencil, RotateCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { NoPayment } from '@/components/NoPayment'
@@ -243,6 +243,7 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
   const live = data.sessions.filter(
     (x) => !x.stopped && keyOf(x.plate) === keyOf(ap.plate) && zones.includes(x.location) && new Date(x.expire).getTime() > Date.now(),
   )
+  const failedTake = !!now && !now.busy && Math.max(now.covered, live.length) < now.total
   const liveEnd = live.length ? new Date(Math.max(...live.map((x) => new Date(x.expire).getTime()))) : null
   // The next ticket is taken when its day's window opens, or when the ticket running then ends (a day ticket
   // taken at 14 h covers until 14 h the next day: the next one is taken then, not at 5 h).
@@ -328,7 +329,7 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
         )}
       </div>
       {/* CMI-S: no details (one free ticket a day, all set); only the progress or a message, when there is one. */}
-      {(!ap.cmis || now?.busy || (ap.lastError && !finished)) && (
+      {(!ap.cmis || now?.busy || failedTake || (ap.lastError && !finished)) && (
       <div className={cn('border-t border-ink/[0.06] px-5', ap.cmis ? 'py-3' : 'pt-3.5 pb-4')}>
         {!ap.cmis && (
         <>
@@ -367,6 +368,15 @@ function DailyCard({ ap, data, onChanged, needsOffer }: { ap: Autopilot; data: O
         )}
         {finished && !single && <p className="mt-3 text-sm text-ink/60">Période terminée : plus aucun ticket ne sera pris.</p>}
         {finished && single && !last && !ap.lastError && <p className="mt-3 text-sm text-ink/60">Ce ticket n’a pas été pris.</p>}
+        {failedTake && !now?.busy && !ap.lastError && (
+          // Taken now, but not (all) of it: said on the card with a way to try again, never a silent spinner's end.
+          <p className={cn('flex flex-wrap items-center gap-x-3 gap-y-1 text-sm', !ap.cmis && 'mt-3')}>
+            <span className="text-destructive">{now?.error || 'Le ticket n’a pas pu être pris pour l’instant.'}</span>
+            <button onClick={() => void takeTickets(ap, onChanged)} className={cn('inline-flex items-center gap-1.5', ui.link)}>
+              <RotateCw className="size-3.5" /> Réessayer
+            </button>
+          </p>
+        )}
         {now?.busy ? (
           <p className={cn('flex items-center gap-2 text-sm text-ink/60', !ap.cmis && 'mt-3')}>
             <Loader2 className="size-4 animate-spin text-[#4e9aa0]" />
@@ -720,6 +730,9 @@ export function DailyWizard({
     return () => clearTimeout(id)
   }, [hourPast, start])
   const [cost, setCost] = useState<Money | null | undefined>(undefined)
+  // No answer from PayByPhone (not a free ticket): « prix indisponible » with « Réessayer », never 0,00 €.
+  const [costFailed, setCostFailed] = useState(false)
+  const [costTry, setCostTry] = useState(0)
   // The ticket now, not at the next window (5 h for CMI-S): the user sees at once that it works.
   const nowBox = today && (
     <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-ink/[0.03] px-4 py-3 text-sm leading-relaxed text-ink/60">
@@ -929,6 +942,7 @@ export function DailyWizard({
     if (step < 2 || !effective || !payment) return
     let cancelled = false
     setCost(undefined)
+    setCostFailed(false)
     api
       .quote({
         location: zone,
@@ -940,12 +954,12 @@ export function DailyWizard({
       })
       .then(
         (q) => !cancelled && setCost(q.cost),
-        () => !cancelled && setCost(null),
+        () => !cancelled && (setCost(null), setCostFailed(true)),
       )
     return () => {
       cancelled = true
     }
-  }, [step, effective?.ratePolicyId, duration, unit, zone, plate, payment]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [step, effective?.ratePolicyId, duration, unit, zone, plate, payment, costTry]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const rule = (forPlate = plate): PendingRenewal => ({
     location: zone,
@@ -976,7 +990,7 @@ export function DailyWizard({
       for (const p of picked) made.push(await api.addAutopilot(rule(p) as Parameters<typeof api.addAutopilot>[0]))
       const first = nextTicket(ruleDays, start, chainFrom, period)
       toast.success(chainFrom ? 'Renouvellement activé.' : picked.length > 1 ? `${picked.length} tickets programmés.` : 'Ticket programmé.', {
-        description: takeNow ? 'Le ticket est pris maintenant : suivez-le sur la carte.' : first ? `Prochain ticket ${when(first)}.` : undefined,
+        description: takeNow ? 'Prise du ticket en cours : suivez-la sur la carte.' : first ? `Prochain ticket ${when(first)}.` : undefined,
       })
       onDone()
       onClose()
@@ -994,7 +1008,7 @@ export function DailyWizard({
     setSaving(true)
     try {
       const ap = await api.editAutopilot(editing!.id, rule() as Parameters<typeof api.editAutopilot>[1])
-      toast.success('Ticket modifié.', { description: takeNow ? 'Le ticket est pris maintenant : suivez-le sur la carte.' : undefined })
+      toast.success('Ticket modifié.', { description: takeNow ? 'Prise du ticket en cours : suivez-la sur la carte.' : undefined })
       onDone()
       onClose()
       if (takeNow) void takeTickets(ap, onDone)
@@ -1356,7 +1370,9 @@ export function DailyWizard({
                   <div className="flex items-baseline justify-between gap-4">
                     <span className="text-ink/60">Prix par jour</span>
                     <span className="text-[0.95rem] font-semibold text-ink tabular-nums">
-                      {cost === undefined ? <Loader2 className="inline size-4 animate-spin text-ink/45" /> : euros(cost ?? { amount: 0, currency: 'EUR' })}
+                      {cost === undefined ? <Loader2 className="inline size-4 animate-spin text-ink/45" /> : costFailed ? (
+                      <button onClick={() => setCostTry((n) => n + 1)} className={ui.link}>Prix indisponible · Réessayer</button>
+                    ) : euros(cost ?? { amount: 0, currency: 'EUR' })}
                     </span>
                   </div>
                 ) : (
@@ -1380,7 +1396,9 @@ export function DailyWizard({
                   <span className="text-ink/45">Prix d’un ticket</span>
                   <span className="text-ink/60 tabular-nums">
                     {/* No price from PayByPhone (a free ticket, e.g. Handi): 0 €, not a dash. */}
-                    {cost === undefined ? '…' : euros(cost ?? { amount: 0, currency: 'EUR' })}
+                    {cost === undefined ? '…' : costFailed ? (
+                      <button onClick={() => setCostTry((n) => n + 1)} className={ui.link}>Prix indisponible · Réessayer</button>
+                    ) : euros(cost ?? { amount: 0, currency: 'EUR' })}
                   </span>
                 </div>
                 </>

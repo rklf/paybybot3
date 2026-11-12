@@ -183,7 +183,7 @@ export function FreeMonthCard({ trialEnd }: { trialEnd: string | null }) {
 /** Over the blurred dashboard (the top bar stays usable: « Mon compte », sign out), the one thing to do. The free month
  *  over: activate the subscription (the offer screen). A card still refused after the grace week: reactivate the
  *  account (straight to the invoice to pay). What still runs is said: the ticket running stays valid until its end. */
-export function ReactivateCard({ kind, ticketEnd }: { kind: 'trialOver' | 'unpaid'; ticketEnd?: string | null }) {
+export function ReactivateCard({ kind, ticketEnd, ended = false }: { kind: 'trialOver' | 'unpaid'; ticketEnd?: string | null; ended?: boolean }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const until = ticketEnd && new Date(ticketEnd).getTime() > Date.now()
@@ -207,7 +207,7 @@ export function ReactivateCard({ kind, ticketEnd }: { kind: 'trialOver' | 'unpai
       </p>
       <p className="mt-4 text-[1.05rem] leading-relaxed text-ink/60">
         {trial
-          ? 'Votre mois offert est terminé : le renouvellement automatique est en pause.'
+          ? ended ? 'Votre abonnement est terminé : le renouvellement automatique est en pause.' : 'Votre mois offert est terminé : le renouvellement automatique est en pause.'
           : 'Le paiement de votre abonnement n’a pas été régularisé : le renouvellement automatique est en pause.'}
         {until && <> Votre ticket actuel reste valable jusqu’au <strong className="font-semibold text-ink">{until}</strong>.</>}
       </p>

@@ -87,6 +87,17 @@ export default function App() {
   const [zoneReady, setZoneReady] = useState(true)
 
   // A small ticket bought by hand, to try a bank's validation for real: no button leads here.
+  // Back on the sign-in page after a session expired mid-way: said once.
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem('pbb-expired')) {
+        sessionStorage.removeItem('pbb-expired')
+        toast('Votre session a expiré : reconnectez-vous.')
+      }
+    } catch {
+      // no storage: nothing to say
+    }
+  }, [])
   useEffect(() => {
     const open = () => {
       if (window.location.hash === '#/test-ticket') setPaying(true)

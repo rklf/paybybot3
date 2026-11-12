@@ -359,11 +359,12 @@ export function Dashboard({
     const confirm = done
       ? api.confirmCheckout(done[1]).then(
           async () => {
-            history.replaceState(null, '', window.location.pathname)
             // The renewal or ticket chosen just before Stripe is activated now. The « Votre stationnement est
             // désormais automatisé » screen only when one really was: paid from the banner or « Mon compte » with
             // nothing set up yet, a short word says the account is active and what to do next.
             const { done: renewed, weekly, failed, shown } = await runPendingRenewals()
+            // Only now: a reload while they were being activated confirms again and goes on with the rest.
+            history.replaceState(null, '', window.location.pathname)
             if (renewed) {
               // « Renouvellement auto » is only true of a weekly renewal: a programmed ticket has its own word.
               if (weekly) setCheckoutDone(true)
@@ -380,7 +381,9 @@ export function Dashboard({
             }
             if (failed.length) toast.error(failed.join('\n'))
           },
-          (e) => toast.error((e as Error).message),
+          // Paid on Stripe but not confirmed here (network): kept on screen with « Réessayer » (the link is still in
+          // the address, so loading again confirms and activates what was chosen).
+          (e) => toast.error((e as Error).message, { duration: Infinity, action: { label: 'Réessayer', onClick: () => window.location.reload() } }),
         )
       : Promise.resolve()
     confirm.then(() => api.account().then(setAccount, () => {}).finally(() => setAccountAsked(true)))
@@ -394,19 +397,29 @@ export function Dashboard({
     setPricedResidents(plates)
     keep(RESIDENTS_KEY, me.username, plates && [...plates])
   }
+  // Unknown zones (PayByPhone busy, no answer): asked again a few times, then said with « Réessayer », never a
+  // vehicle list that silently disappears.
+  const [pricingTry, setPricingTry] = useState(0)
+  const [pricingFailed, setPricingFailed] = useState(false)
   useEffect(() => {
+    let gone = false
+    const again = () => {
+      if (gone) return
+      if (pricingTry < 3) setTimeout(() => !gone && setPricingTry((n) => n + 1), 15_000)
+      else setPricingFailed(true)
+    }
     api.pricing().then(
       // Zones not looked up (PayByPhone busy) or no answer: unknown, never taken for « no resident car ».
-      (p) =>
-        setResidentPlates(
-          (p as { zonesKnown?: boolean }).zonesKnown === false
-            ? null
-            : new Set((p.vehicles ?? []).filter((v) => v.zone).map((v) => plateKey(v.plate))),
-        ),
+      (p) => {
+        if ((p as { zonesKnown?: boolean }).zonesKnown === false) return again()
+        setPricingFailed(false)
+        setResidentPlates(new Set((p.vehicles ?? []).filter((v) => v.zone).map((v) => plateKey(v.plate))))
+      },
       // No answer: what was known in this tab stays (unknown is never taken for « no resident car »).
-      () => {},
+      again,
     )
-  }, [me.hosted, me.demo, data?.vehicles.length])
+    return () => void (gone = true)
+  }, [me.hosted, me.demo, data?.vehicles.length, pricingTry])
   // A stopped ticket is not running (PayByPhone still lists it until its end).
   const running = data?.sessions.filter((s) => !s.stopped && new Date(s.expire).getTime() > now) ?? []
   // A Handi ticket in several arrondissements: its tickets (one per zone) shown as one card, the first one.
@@ -586,7 +599,7 @@ export function Dashboard({
       {data && <CardBanner payments={data.payments} />}
 
       {/* Free month over: the page blurred behind « Réactivez votre compte » (the top bar stays usable). */}
-      {paused && <ReactivateCard kind={paused} ticketEnd={live.reduce<string | null>((end, x) => (!end || x.expire > end ? x.expire : end), null)} />}
+      {paused && <ReactivateCard kind={paused} ended={!!account?.subscriptionEnded} ticketEnd={live.reduce<string | null>((end, x) => (!end || x.expire > end ? x.expire : end), null)} />}
       <main
         aria-hidden={!!paused || undefined}
         className={cn('mx-auto w-full max-w-[34rem] flex-1 px-6 pt-4 pb-6', paused && 'pointer-events-none opacity-30 blur-[6px] select-none')}
@@ -672,6 +685,14 @@ export function Dashboard({
         {/* The page's call to action, always: any car, any ticket (the wizard asks the car first, then the resident
             renewal or the vehicle type). It replaces « Renouveler un autre véhicule », which did the same. */}
         {/* The cars with nothing on them, after the cards of what runs: resident ones and the others alike. */}
+        {data && !residentPlates && pricingFailed && (
+          <p className="mt-10 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.95rem] text-ink/60">
+            PayByPhone ne répond pas : vos véhicules ne peuvent pas être lus pour l’instant.
+            <button onClick={() => (setPricingFailed(false), setPricingTry((n) => n + 1))} className={ui.link}>
+              Réessayer
+            </button>
+          </p>
+        )}
         {data && residentPlates && (
           <IdleVehicles
             data={data}

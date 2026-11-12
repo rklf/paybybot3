@@ -100,11 +100,13 @@ export async function runPendingRenewals(): Promise<{ done: number; weekly: numb
   } catch {
     // unreadable: nothing pending
   }
-  clearPending()
+  // Each one is struck off once tried (never before): a reload meanwhile goes on with the rest, none is lost.
+  const keepRest = (rest: PendingRenewal[]) => (rest.length ? savePending(rest) : clearPending())
   const failed: string[] = []
   let shown = 0
   let weekly = 0
-  for (const p of items) {
+  for (const [i, p] of items.entries()) {
+    keepRest(items.slice(i + 1))
     try {
       const { activation } = await api.addAutopilot({ label: WEEKLY_LABEL, ...p } as Parameters<typeof api.addAutopilot>[0])
       if (p.days?.length) {
@@ -622,11 +624,18 @@ export function CoveredLine({ end, soon = false }: { end: number; soon?: boolean
         title="Voir dans PayByPhone"
         className="-mr-1 shrink-0 p-1 transition hover:opacity-75"
       >
-        <svg viewBox="0 0 30 30" className="size-5" aria-hidden>
-          {[0, 1, 2].flatMap((r) => [0, 1, 2].map((c) => <rect key={`${r}${c}`} x={c * 10 + 0.5} y={r * 10 + 0.5} width="9" height="9" rx="2.4" fill="#7ab943" />))}
-        </svg>
+        <PayByPhoneMark className="size-5" />
       </a>
     </div>
+  )
+}
+
+/** PayByPhone's mark: its green keypad. */
+function PayByPhoneMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 30 30" className={className} aria-hidden>
+      {[0, 1, 2].flatMap((r) => [0, 1, 2].map((c) => <rect key={`${r}${c}`} x={c * 10 + 0.5} y={r * 10 + 0.5} width="9" height="9" rx="2.4" fill="#7ab943" />))}
+    </svg>
   )
 }
 
@@ -906,6 +915,7 @@ export function RiverainDialog({
   const [plates, setPlates] = useState<string[] | null>(null) // the « riverain » vehicles (null: looking)
   const [selected, setSelected] = useState<string[]>([])
   const [lookAgain, setLookAgain] = useState(0) // « Réessayer » when PayByPhone gave no resident rate to tick
+  const [quoteTry, setQuoteTry] = useState(0) // « Réessayer » under a vehicle whose price did not come
   const [zones, setZones] = useState<Record<string, string>>({}) // each riverain vehicle's arrondissement, from PayByPhone
   const [knownRates, setKnownRates] = useState<Record<string, Rate | null>>({}) // each one's resident rate, from the prices
   const [weeks, setWeeks] = useState<Record<string, number | null>>({}) // the resident week's price, in cents
@@ -1004,7 +1014,7 @@ export function RiverainDialog({
       clearTimeout(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, selected.join(','), payment])
+  }, [ready, selected.join(','), payment, quoteTry])
 
   function parking(r: Rate, plate: string): Parking {
     return { location: zones[plate], rate: r.ratePolicyId, duration: WEEK_DAYS, unit: 'Days', plate, paymentAccountId: payment }
@@ -1195,7 +1205,14 @@ export function RiverainDialog({
                           </>
                         )
                       })()}
-                      {f?.error && <span className="mt-1 block text-sm text-destructive">{f.error}</span>}
+                      {f?.error && (
+                        <span className="mt-1 block text-sm">
+                          <span className="text-destructive">{f.error}</span>{' '}
+                          <button type="button" onClick={(e) => (e.stopPropagation(), setQuoteTry((n) => n + 1))} className={ui.link}>
+                            Réessayer
+                          </button>
+                        </span>
+                      )}
                     </li>
                   )
                 })}
@@ -1482,11 +1499,11 @@ function FullScreenNotice({ title, intro, steps, children }: { title: string; in
       className="fixed inset-0 z-50 grid center-safe overflow-y-auto bg-white/60 p-4 backdrop-blur-md sm:p-6"
     >
       <div className="rise w-full max-w-lg rounded-2xl border border-ink/10 bg-white p-7 shadow-[0_40px_80px_-30px_rgb(11_16_36/0.35)] sm:p-9">
-        <span className="grid size-12 place-items-center rounded-2xl bg-eu font-heading text-2xl font-bold text-white">P</span>
-        <h2 id="full-screen-notice-title" className="mt-5 font-heading text-[1.9rem] leading-[1.1] font-semibold tracking-[-0.03em] text-ink">
+        <PayByPhoneMark className="size-9" />
+        <h2 id="full-screen-notice-title" className={cn('mt-5', ui.dialogTitle)}>
           {title}
         </h2>
-        <p className="mt-3 leading-relaxed text-ink/60">{intro}</p>
+        <p className="mt-2 text-[0.95rem] leading-relaxed text-ink/60">{intro}</p>
         <ol className="mt-5 space-y-2.5 text-[0.95rem] leading-relaxed text-ink/60">
           {steps.map((step, i) => (
             <li key={step} className="flex gap-3">
@@ -1545,17 +1562,10 @@ export function CardRequired({ children }: { children: ReactNode }) {
   return (
     <FullScreenNotice
       title="Carte bancaire requise"
-      intro={
-        <>
-          Pour renouveler votre forfait automatiquement, <PayByBot /> paie avec une carte bancaire enregistrée sur votre compte{' '}
-          {withPayByPhone('PayByPhone')}. Aucune carte n’y est enregistrée pour le moment. Apple Pay et Google Pay ne
-          permettent pas le paiement automatique : ils demandent une validation sur votre téléphone à chaque paiement.
-        </>
-      }
+      intro={<><PayByBot /> paie avec la carte bancaire de votre compte {withPayByPhone('PayByPhone')}.</>}
       steps={[
-        'Ouvrez l’application PayByPhone, rubrique Moyens de paiement.',
-        'Ajoutez une carte bancaire.',
-        'Revenez ici : l’accès à PayByBot s’ouvre dès que la carte est enregistrée.',
+        'Dans PayByPhone, ajoutez une carte bancaire (ni Apple Pay, ni Google Pay).',
+        'Revenez ici.',
       ]}
     >
       {children}
@@ -1573,9 +1583,12 @@ export function CardGate({ account }: { account?: ReactNode }) {
   return (
     <CardRequired>
       <button onClick={() => window.location.reload()} className={cn('mt-7', ui.primary)}>
-        J’ai ajouté une carte, vérifier à nouveau
+        J’ai ajouté ma carte
       </button>
       <p className="mt-5 flex items-center justify-center gap-5 text-sm">
+        <a href={PAYBYPHONE_APP} target="_blank" rel="noreferrer" className={ui.link}>
+          Ouvrir PayByPhone
+        </a>
         {account}
         <button onClick={logout} className={ui.link}>
           Se déconnecter

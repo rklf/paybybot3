@@ -92,7 +92,25 @@ export function LoginView({
   const [noAccount, setNoAccount] = useState(false)
   const [noResident, setNoResident] = useState<number | null>(null) // sign-up refused: how many vehicles the account has
   const [loading, setLoading] = useState<'login' | 'demo' | null>(null)
-  const [codeSentTo, setCodeSentTo] = useState<string | null>(null)
+  // The code step survives a reload (on a phone, going to the mail app often reloads the tab): the pending sign-up
+  // itself is kept by the server (its cookie), only the e-mail it was sent to is remembered here, for 15 minutes.
+  const [codeSentTo, setCodeSentToState] = useState<string | null>(() => {
+    try {
+      const kept = JSON.parse(sessionStorage.getItem('pbb-code-sent') || 'null')
+      return kept && Date.now() - kept.at < 900_000 ? kept.email : null
+    } catch {
+      return null
+    }
+  })
+  const setCodeSentTo = (email: string | null) => {
+    setCodeSentToState(email)
+    try {
+      if (email) sessionStorage.setItem('pbb-code-sent', JSON.stringify({ at: Date.now(), email }))
+      else sessionStorage.removeItem('pbb-code-sent')
+    } catch {
+      // no storage: a reload shows the form again
+    }
+  }
   const human = useTurnstile()
   const EXISTS = 'Un compte PayByBot existe déjà pour ce compte PayByPhone.'
 
@@ -189,7 +207,7 @@ export function LoginView({
   }
 
   if (codeSentTo) {
-    return <CodeStep email={codeSentTo} hosted={hosted} onLogin={onLogin} onBack={() => setCodeSentTo(null)} />
+    return <CodeStep email={codeSentTo} hosted={hosted} onLogin={(m) => (setCodeSentTo(null), onLogin(m))} onBack={() => setCodeSentTo(null)} />
   }
 
   return (

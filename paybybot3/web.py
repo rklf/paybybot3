@@ -267,10 +267,27 @@ def canonical_login(bot, username):
         kept = store("member_login_get", p_key=key)
         if kept:
             return _fernet("member").decrypt(kept.encode()).decode()
-        store("member_login_set", p_key=key, p_login=_fernet("member").encrypt(username.encode()).decode())
+        # Not linked yet: the format an existing account was made with (never a new, empty one that would hide it).
+        # With none, nothing is kept now: the sign-up links it (remember_login), so a sign-in can never lock anyone out.
+        for login in dict.fromkeys([username] + login_candidates(username)):
+            o = owner_id(login)
+            if store("account_get", p_owner=o) or store("renewal_list", p_owner=o):
+                remember_login(bot, login)
+                return login
     except Exception as e:
         log.warning("login of the PayByPhone account not matched: %s", type(e).__name__)
     return username
+
+
+def remember_login(bot, login):
+    """Links the PayByPhone account to the login its PayByBot account uses (at sign-up, or found at sign-in)."""
+    key = member_key(bot) if HOSTED else None
+    if not key:
+        return
+    try:
+        store("member_login_set", p_key=key, p_login=_fernet("member").encrypt(login.encode()).decode())
+    except Exception as e:
+        log.warning("login of the PayByPhone account not kept: %s", type(e).__name__)
 
 
 class UserSession:
@@ -326,10 +343,12 @@ class UserSession:
         return self
 
     @classmethod
-    def for_bot(cls, bot, username=""):
-        """A session around an already logged-in bot (background renewals)."""
+    def for_bot(cls, bot, username="", owner=None):
+        """A session around an already logged-in bot (background renewals): the renewal's owner, so a login renewed
+        on the way is kept for its account."""
         self = cls.__new__(cls)
         self.username, self._password, self.demo = username, None, False
+        self.owner = owner
         self.lock = threading.Lock()
         self.bot = bot
         self.autopilots, self.history, self.attempts, self.unconfirmed = {}, [], [], {}
@@ -353,7 +372,8 @@ class UserSession:
                 if self._password is None:  # hosted mode: the password is not kept, the refresh token is
                     try:
                         self.bot = bot_from_refresh(getattr(bot, "refresh_token", None),
-                                                    owner_id(self.username) if HOSTED else None)
+                                                    (getattr(self, "owner", None) or owner_id(self.username))
+                                                    if HOSTED else None)
                     except Exception:
                         raise HTTPException(401, "Votre session PayByPhone a expiré, reconnectez-vous.")
                 else:
@@ -536,8 +556,13 @@ def friendly_error(e):
     """Turn a technical exception into a message a non-technical user can act on."""
     text = str(e)
     if isinstance(e, requests.HTTPError) and e.response is not None:
-        if e.response.status_code in (400, 401):
+        login = "auth." in str(getattr(e.response, "url", "") or "auth.")  # the sign-in itself (else an API call)
+        if e.response.status_code in (400, 401) and login:
             return "Identifiant ou mot de passe PayByPhone incorrect."
+        if e.response.status_code == 401:
+            return "Votre session PayByPhone a expiré, reconnectez-vous."
+        if e.response.status_code == 400:
+            return "PayByPhone a refusé la demande. Réessayez dans un instant."
         return "PayByPhone ne répond pas correctement (erreur %s). Réessayez dans un instant." % e.response.status_code
     if isinstance(e, requests.ConnectionError):
         return "Impossible de joindre PayByPhone. Vérifiez votre connexion internet."
@@ -1361,9 +1386,12 @@ def notify(details, event, **info):
     elif event == "problem":
         message = info.get("message", "")
         if message == RELOGIN:  # only a new login on PayByBot fixes it
+            covered = ("Votre ticket actuel se termine le %s : sans reconnexion d'ici là, payez-le vous-même dans "
+                       "PayByPhone pour éviter une amende." % paris_text(info["ends"]) if info.get("ends") else
+                       "Sans reconnexion, payez votre prochain ticket vous-même dans PayByPhone pour éviter une amende.")
             send_email(to, "Action requise · renouvellement %s" % plate_text(details.get("plate")),
                        "Le renouvellement a besoin de vous",
-                       ["Le renouvellement automatique pour %s est en attente :" % car, message], open_app)
+                       ["Le renouvellement automatique pour %s est en attente :" % car, message, covered], open_app)
             return
         next_step = ("Le renouvellement est suspendu : une fois le problème réglé dans PayByPhone, relancez-le "
                      "depuis PayByBot." if info.get("suspended") else
@@ -2135,7 +2163,7 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
         store("renewal_update", p_id=row["id"], p_patch={"enabled": False, "last_error": RELOGIN})
         return "unreadable"
     previous_error = row.get("last_error")
-    refused = refused or bool(previous_error)  # the last try failed: another card of the account goes first
+    refused = refused or card_refused_before(previous_error)  # the last try failed: another card goes first
     rule = rule_of(row)
     if rule and not first_now:
         # Precise days: no PayByPhone login at all outside the ticket windows.
@@ -2162,7 +2190,7 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
             return "blocked"
     owner = row.get("owner")
     if session is None and logins is not None and owner and owner in logins:
-        session = UserSession.for_bot(logins[owner])  # this run logged in for the account already
+        session = UserSession.for_bot(logins[owner], owner=owner)  # this run logged in for the account already
     if session is not None:
         return renewal_with(session, row, rule, now, patch, previous_error, activating, refused, validating)
     try:
@@ -2178,8 +2206,12 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
         log.warning("renewal %s: login with refresh token failed: %s", row["id"], str(e)[:200])
         store("renewal_update", p_id=row["id"],
               p_patch={"last_error": RELOGIN, "next_check": utc_iso(now + timedelta(hours=6))})
-        if previous_error != RELOGIN:
-            notify(row, "problem", message=RELOGIN)
+        # Told at once, with until when the car is covered; told again on the last look before that end (checked
+        # every 6 hours), so a missed e-mail never leaves the car uncovered unannounced.
+        ends = parse_dt(((row.get("paid") or [{}])[-1] or {}).get("until"))
+        last_look = bool(ends and now < ends <= now + timedelta(hours=6))
+        if previous_error != RELOGIN or last_look:
+            notify(row, "problem", message=RELOGIN, ends=utc_iso(ends) if ends and ends > now else None)
         return "relogin"
     if bot.refresh_token and bot.refresh_token != refresh and getattr(bot, "expires_in", None):
         patch["credential"] = encrypt_credential(bot.refresh_token, bot)  # a login just done: its tokens
@@ -2189,7 +2221,7 @@ def process_renewal(row, refresh_token=None, activating=False, refused=False, va
         patch["credential"] = encrypt_credential(refresh)
     if logins is not None and owner:
         logins[owner] = bot
-    return renewal_with(UserSession.for_bot(bot), row, rule, now, patch, previous_error, activating, refused, validating)
+    return renewal_with(UserSession.for_bot(bot, owner=owner), row, rule, now, patch, previous_error, activating, refused, validating)
 
 
 def renewal_with(session, row, rule, now, patch, previous_error, activating, refused, validating):
@@ -3030,6 +3062,8 @@ def verify_signup(body: CodeCheck, response: Response, pbb_pending: str = Cookie
     save_account(session, {"email": pending["email"], "origin": signup_origin(pending.get("src")),
                            **({"trial_start": earlier.isoformat(), "trial_kept": True} if earlier else {}),
                            **({"zone": pending["zone"], "zone_found": True} if pending.get("zone") else {})})
+    if HOSTED and not session.demo:
+        remember_login(session.bot, session.username)  # this PayByPhone account's account, whatever the format later
     if HOSTED and not session.demo and os.environ.get("STRIPE_SECRET_KEY"):
         try:  # back before the paid period of a deleted account ends: its subscription goes on, nothing paid twice
             resume_after_signup(owner_id(session.username), load_account(session))
@@ -3968,7 +4002,9 @@ def check_offer(s):
         raise HTTPException(402, "Compte bloqué : débloquez-le (bandeau en haut de page) pour activer un "
                                  "renouvellement.")
     if state == "trial_over":  # the free month ended without a subscription: the subscription screen
-        raise HTTPException(402, "Abonnez-vous pour activer le renouvellement : votre mois offert est terminé.")
+        ended = bool(guarded(lambda: load_account(s)).get("stripe_subscription"))
+        raise HTTPException(402, "Abonnez-vous pour activer le renouvellement : votre %s." % (
+            "abonnement est terminé" if ended else "mois offert est terminé"))
     # The free month ('trial'): no card asked, activated at once (the subscription is asked near its end).
 
 
@@ -4044,11 +4080,16 @@ def add_autopilot(body: Autopilot, pbb_session: str = Cookie(None)):
                          ["Véhicule %s***, zone %s." % (body.plate[:2], body.location)])
             if message:
                 answer["activation"] = {"title": message[0], "text": message[1], "payYourself": PAY_YOURSELF}
-            elif outcome in ("unconfirmed", "not_payable", "error", "relogin", "blocked", "unreadable"):
+            elif outcome in ("unconfirmed", "not_payable", "error", "relogin", "blocked", "unreadable", "refused",
+                             "bank_wait"):
                 # Paying now failed while the customer is on the page: say it there, they pay this ticket themselves.
-                answer["activation"] = {"failed": True, "title": "Le paiement n'a pas abouti.",
+                answer["activation"] = {"failed": True, "title": "Votre banque demande une validation."
+                                        if outcome == "bank_wait" else "Le paiement n'a pas abouti.",
                                         "text": stored.get("last_error") or UNCONFIRMED,
-                                        "payYourself": "Payez vous-même votre ticket dans l'application PayByPhone : "
+                                        "payYourself": "Validez-le avec le bouton sous votre véhicule : tant que ce "
+                                                       "ne sera pas fait, votre véhicule ne sera pas couvert."
+                                        if outcome == "bank_wait" else
+                                        "Payez vous-même votre ticket dans l'application PayByPhone : "
                                                        "tant que ce ne sera pas fait, votre véhicule ne sera pas "
                                                        "couvert."}
             return answer
@@ -4084,6 +4125,10 @@ def get_account(pbb_session: str = Cookie(None)):
     account = guarded(load)
     start = parse_dt(account.get("trial_start"))
     state, grace_end = billing_status(account, owner_id(s.username)) if HOSTED and not s.demo else ("ok", None)
+    if HOSTED and not s.demo and state in ("ok", "grace", "trial"):
+        # Paid again (the overdue invoice, outside PayByBot): blocked renewals resume now, not up to 2 hours later.
+        guarded(lambda: [store("renewal_update", p_id=r["id"], p_patch={"next_check": utc_iso(datetime.now(timezone.utc))})
+                         for r in store("renewal_list", p_owner=owner_id(s.username)) if r.get("last_error") == BLOCKED])
     return {"email": account.get("email") or "", "zone": account.get("zone") or None,
             "trialEnd": (start + timedelta(days=TRIAL_DAYS)).isoformat() if start else None,
             # Not started yet: the free month the offer screen promises (it starts when the offer is chosen).
@@ -4093,6 +4138,8 @@ def get_account(pbb_session: str = Cookie(None)):
             # 'unpaid' (still not paid after the grace week) or 'trialOver' (no subscription).
             "blocked": {"grace": "grace", "unpaid": "unpaid", "trial_over": "trialOver"}.get(state),
             "graceEnd": grace_end.isoformat() if grace_end else None,
+            # Blocked after a subscription that stopped (cancelled), not after the free month: said as such.
+            "subscriptionEnded": state == "trial_over" and bool(account.get("stripe_subscription")),
             # A renewal is activated only with a subscription, chosen even during the free month.
             "subscribed": state in ("ok", "grace"),
             "suvPlates": list(account.get("suv_plates") or [])}
@@ -4115,8 +4162,12 @@ def stripe(method, path, **data):
     key = os.environ.get("STRIPE_SECRET_KEY")
     if not key:
         raise HTTPException(503, "Le paiement en ligne arrive très bientôt. Profitez de votre mois offert !")
-    r = requests.request(method, "https://api.stripe.com/v1/" + path, auth=(key, ""), data=data or None,
-                         timeout=15)
+    try:
+        r = requests.request(method, "https://api.stripe.com/v1/" + path, auth=(key, ""), data=data or None,
+                             timeout=15)
+    except requests.RequestException as e:  # slow or unreachable: the same clear message, never a crash
+        log.warning("stripe %s %s unreachable: %s", method, path.split("/")[0], type(e).__name__)
+        raise HTTPException(502, "Le paiement est momentanément indisponible. Réessayez dans un instant.")
     if not r.ok:
         log.warning("stripe %s %s: %s %s", method, path.split("/")[0], r.status_code, r.text[:200])
         raise HTTPException(502, "Le paiement est momentanément indisponible. Réessayez dans un instant.")
@@ -4143,6 +4194,11 @@ DUNNING_DAYS = (0, 3, 6, 7)  # days after the refused charge an e-mail goes out;
 BLOCKED = ("Compte bloqué : l'abonnement PayByBot n'est pas réglé. Le ticket en cours reste valable, le suivant "
            "ne sera pas payé.")
 UNLOCK_TTL = 30 * 86400  # how long the "Débloquer mon compte" link of an e-mail works
+
+
+def card_refused_before(error):
+    """The last try failed on the payment itself (not a billing block, nor a login to renew)."""
+    return bool(error) and error not in (BLOCKED, RELOGIN)
 
 
 def admin_owners():
@@ -4179,6 +4235,8 @@ def billing_status(account, owner=None):
             end = since + timedelta(days=GRACE_DAYS) if since else None
             return ("grace" if end and end > datetime.now(timezone.utc) else "unpaid"), end
         live = False
+    elif sub_id:  # no Stripe key (configuration): a stored subscription is trusted, a customer is never blocked
+        return "ok", None
     # Paid on Stripe Checkout but the return to PayByBot never happened (tab closed): found and recorded, during
     # the free month too, so the offer is never asked (and paid) twice. Looked up only after a Checkout was opened.
     if owner and not live and account.get("checkout_at") and os.environ.get("STRIPE_SECRET_KEY") \
@@ -4266,8 +4324,10 @@ def notify_blocked(details, state):
     if not to:
         return
     car = "%s, zone %s" % (plate_text(details.get("plate")), details.get("location"))
+    ended = bool(account_by_owner(details["owner"]).get("stripe_subscription"))  # a subscription that stopped
     first = ("Le dernier paiement de votre abonnement PayByBot n'a pas abouti : votre compte est bloqué."
              if state == "unpaid" else
+             "Votre abonnement PayByBot est terminé : votre renouvellement automatique est en pause." if ended else
              "Votre mois offert est terminé : votre renouvellement automatique est en pause.")
     send_email(to, "Compte PayByBot bloqué · paiement requis" if state == "unpaid" else
                "Votre renouvellement PayByBot est en pause",
@@ -4425,6 +4485,13 @@ def run_trial_reminders(now=None):
     return count
 
 
+def add_month(when):
+    """The same day next month (the last day of it when shorter): Stripe's limit for a billing anchor."""
+    import calendar
+    year, month = (when.year + 1, 1) if when.month == 12 else (when.year, when.month + 1)
+    return when.replace(year=year, month=month, day=min(when.day, calendar.monthrange(year, month)[1]))
+
+
 def checkout_url(owner, account, plan, success_url):
     """A Stripe Checkout page for the plan; while the free month runs, the first charge waits for its end."""
     base = APP_URL.rstrip("/")
@@ -4458,8 +4525,13 @@ def checkout_url(owner, account, plan, success_url):
     if trial_end > datetime.now(timezone.utc) + timedelta(hours=1):
         # The free month is already running: no Stripe "trial" (its page would offer to start one); the first
         # charge is simply set on the day the free month ends, nothing being due before.
-        data["subscription_data[billing_cycle_anchor]"] = int(trial_end.timestamp())
-        data["subscription_data[proration_behavior]"] = "none"
+        now = datetime.now(timezone.utc)
+        month_later = add_month(now)
+        if trial_end <= month_later:
+            data["subscription_data[billing_cycle_anchor]"] = int(trial_end.timestamp())
+            data["subscription_data[proration_behavior]"] = "none"
+        else:  # February: Stripe refuses an anchor beyond one calendar month, the end of the free month waits instead
+            data["subscription_data[trial_end]"] = int(trial_end.timestamp())
         months = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre",
                   "novembre", "décembre"]
         day = trial_end.astimezone(PARIS)
@@ -4471,9 +4543,12 @@ def checkout_url(owner, account, plan, success_url):
 def unlock_url(owner, account, plan="monthly", portal=True):
     """Where to pay to unblock: the open invoice when Stripe failed to charge, else a new subscription. The Stripe
     portal (card, cancellation) only for a signed-in person, not for whoever holds the e-mail's link."""
+    home = APP_URL.rstrip("/") + "/"
     sub_id = account.get("stripe_subscription")
     if sub_id:
         sub = stripe("GET", "subscriptions/" + sub_id)
+        if sub.get("status") in PAID_STATUSES:  # paid already (an old e-mail's link): never a second subscription
+            return home
         if sub.get("status") in UNPAID_STATUSES:
             invoice = stripe("GET", "invoices/" + sub["latest_invoice"]) if sub.get("latest_invoice") else {}
             if invoice.get("status") == "open" and invoice.get("hosted_invoice_url"):
@@ -4482,6 +4557,14 @@ def unlock_url(owner, account, plan="monthly", portal=True):
                 return APP_URL.rstrip("/") + "/#/connexion"
             return stripe("POST", "billing_portal/sessions", customer=account["stripe_customer"],
                           return_url=APP_URL.rstrip("/") + "/", configuration=portal_configuration())["url"]
+    # Paid on Stripe but not recorded (the return page never loaded): found, never asked twice.
+    if os.environ.get("STRIPE_SECRET_KEY") and recover_subscription(account, owner):
+        return home
+    # Remembered, so a payment whose return page never loads is still found (see billing_status).
+    try:
+        save_account_by_owner(owner, {"checkout_at": int(time.time())})
+    except Exception as e:  # never in the way of paying
+        log.warning("checkout not remembered: %s", type(e).__name__)
     return checkout_url(owner, account, plan,
                         APP_URL.rstrip("/") + "/api/billing/unlocked?session_id={CHECKOUT_SESSION_ID}")
 
@@ -5449,7 +5532,7 @@ def validate_payment(body: ValidateBody):
             raise HTTPException(409, BUSY)
         refresh = decrypt_credential(store("renewal_get_credential", p_owner=owner))
         bot = bot_from_refresh(refresh, owner)
-        session = UserSession.for_bot(bot)
+        session = UserSession.for_bot(bot, owner=owner)
         now = datetime.now(timezone.utc)
         if bank_validated(row, running_for(session, row["plate"])):
             process_renewal(raw, refresh_token=bot.refresh_token or refresh)  # records it as paid and tells the client

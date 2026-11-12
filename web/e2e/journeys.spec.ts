@@ -852,3 +852,21 @@ test('retour de paiement, mois offert épuisé : l’assistant s’ouvre sur le 
   await expect(wizard.getByText(/Étape 1 sur/)).toBeVisible()
   await expect(wizard.getByRole('button', { name: /LM-789-NP/ })).toHaveAttribute('aria-pressed', 'true')
 })
+
+test('échec d’un paiement de PayByBot : la raison sous le véhicule, « Réessayer », et l’interrupteur éteint', async ({ page }) => {
+  await demo(page)
+  await page.getByRole('button', { name: 'Automatiser' }).first().click()
+  await page.getByRole('dialog').getByRole('button', { name: /^Activer le renouvellement/ }).click()
+  await expect(page.getByRole('switch', { name: /Renouvellement/ }).first()).toBeChecked({ timeout: 15_000 })
+  await page.route('**/api/overview', async (route) => {
+    const answer = await route.fetch()
+    const json = await answer.json()
+    if (!json.autopilots) return route.fulfill({ response: answer, json })
+    json.autopilots = json.autopilots.map((ap: Record<string, unknown>) => ({ ...ap, lastError: 'Paiement refusé par la banque.' }))
+    await route.fulfill({ json })
+  })
+  await page.reload()
+  await expect(page.getByText('Paiement refusé par la banque.').first()).toBeVisible()
+  await expect(page.getByRole('button', { name: /Réessayer/ }).first()).toBeVisible()
+  await expect(page.getByRole('switch', { name: /Renouvellement/ }).first()).not.toBeChecked()
+})

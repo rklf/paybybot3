@@ -86,6 +86,8 @@ export type Account = {
    *  paid after the grace week) or 'trialOver' (no subscription). */
   blocked?: 'grace' | 'unpaid' | 'trialOver' | null
   graceEnd?: string | null
+  /** Blocked after a subscription that stopped (cancelled), not after the free month. */
+  subscriptionEnded?: boolean
   /** A subscription is running: needed to activate a renewal, even during the free month. */
   subscribed?: boolean
   /** Plates the user ticked as SUV (PayByPhone does not say): the SUV price applies. */
@@ -141,6 +143,9 @@ export class ApiError extends Error {
   }
 }
 
+/** Signed in (the last /api/me answered a user): a 401 then means the session expired. */
+let signedIn = false
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
@@ -153,6 +158,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(0, "L'application PayByBot ne répond plus. Est-elle toujours lancée ?")
   }
   if (!res.ok) {
+    // Signed in, then the session expired (PayByBot's or PayByPhone's): straight to the sign-in page, with a word,
+    // never a dialog that keeps failing. Not for the calls that ask whether one is signed in, or sign in.
+    if (res.status === 401 && signedIn && !/^\/api\/(me|login|signup|admin|config)/.test(path)) {
+      signedIn = false
+      try {
+        sessionStorage.setItem('pbb-expired', '1')
+      } catch {
+        // no storage: the sign-in page shows without the word
+      }
+      const same = window.location.pathname === '/'
+      window.location.assign('/#/connexion')
+      if (same) window.location.reload() // only the hash changed: load the page again, signed out
+    }
     const body = await res.json().catch(() => ({}))
     const detail = body.detail
     if (detail && typeof detail === 'object' && typeof detail.message === 'string') throw new ApiError(res.status, detail.message, detail)
@@ -185,7 +203,7 @@ export const api = {
   /** The tickets PayByBot took (running and past), newest first. */
   history: () => request<Session[]>('/api/history'),
   requestAccess: (email: string, turnstile = '') => post<{ ok: boolean }>('/api/access', { email, turnstile }),
-  me: () => request<Me>('/api/me'),
+  me: () => request<Me>('/api/me').then((m) => ((signedIn = !!m?.username), m), (e) => ((signedIn = false), Promise.reject(e))),
   login: (
     username: string,
     password: string,

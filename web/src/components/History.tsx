@@ -26,9 +26,12 @@ export function HistoryButton({ disabled = false }: { disabled?: boolean }) {
 
 function HistoryDialog({ onClose }: { onClose: () => void }) {
   const [rows, setRows] = useState<Session[] | null>(null)
+  const [failed, setFailed] = useState(false) // no answer: said with « Réessayer », never « Aucun ticket »
+  const [tries, setTries] = useState(0)
   useEffect(() => {
-    api.history().then(setRows, () => setRows([]))
-  }, [])
+    setFailed(false)
+    api.history().then(setRows, () => setFailed(true))
+  }, [tries])
   const now = Date.now()
   const total = (rows ?? []).reduce((sum, r) => sum + (r.cost?.amount ?? 0), 0)
   return (
@@ -40,7 +43,14 @@ function HistoryDialog({ onClose }: { onClose: () => void }) {
             Les tickets pris par PayByBot sur votre compte <PayByPhone />.
           </DialogDescription>
 
-          {rows === null ? (
+          {failed && rows === null ? (
+            <p className="mt-6 rounded-xl bg-ink/[0.04] px-4 py-5 text-center text-ink/60">
+              L’historique n’a pas pu être chargé.{' '}
+              <button onClick={() => setTries((n) => n + 1)} className={ui.link}>
+                Réessayer
+              </button>
+            </p>
+          ) : rows === null ? (
             <div className="mt-6 space-y-3">
               {[0, 1, 2].map((i) => (
                 <LineBone key={i} className="h-14 w-full rounded-xl" />

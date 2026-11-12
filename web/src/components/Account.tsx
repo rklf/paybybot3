@@ -60,10 +60,13 @@ function AccountDialog({
   // Only the « riverain » vehicles, each with the arrondissement PayByPhone gives it the resident rate in (never
   // typed); undefined: looking.
   const [vehicles, setVehicles] = useState<PricedVehicle[] | undefined>(undefined)
+  const [pricingFailed, setPricingFailed] = useState(false)
+  const [accountTry, setAccountTry] = useState(0)
   useEffect(() => {
     api.pricing().then(
       (p) => setVehicles(p.vehicles ?? []),
-      () => setVehicles([]),
+      // No answer: the plates PayByPhone gave, without a resident claim either way (never « aucun véhicule »).
+      () => (setPricingFailed(true), setVehicles(data.vehicles.map((v) => ({ plate: v.plate, zone: null }) as PricedVehicle))),
     )
   }, [])
 
@@ -91,7 +94,7 @@ function AccountDialog({
         setAccount(null)
       },
     )
-  }, [])
+  }, [accountTry])
 
   if (plans) return <PlansDialog onClose={onClose} />
   if (deleting) return <DeleteConfirm data={data} onCancel={() => setDeleting(false)} onDeleted={onDeleted} />
@@ -129,7 +132,7 @@ function AccountDialog({
                       <li key={v.plate} className={rowClass}>
                         <Plate plate={v.plate} size="sm" />
                         <span className={cn('text-right', v.zone ? 'text-ink' : 'text-ink/60')}>
-                          {zone ? `Résident · ${zone}` : v.zone ? <ZonePlate zone={v.zone} /> : 'Non résident'}
+                          {zone ? `Résident · ${zone}` : v.zone ? <ZonePlate zone={v.zone} /> : pricingFailed ? '' : 'Non résident'}
                         </span>
                       </li>
                     )
@@ -177,6 +180,15 @@ function AccountDialog({
                   <Row icon={Receipt} label="Abonnement">
                     <button onClick={() => setPlans(true)} className={ui.link}>
                       Activer mon compte
+                    </button>
+                  </Row>
+                )}
+                {/* Not read (no answer): said, with « Réessayer », instead of rows that silently go missing. */}
+                {!demo && account === null && (
+                  <Row icon={Receipt} label="Abonnement">
+                    <span className="text-ink/60">Informations indisponibles · </span>
+                    <button onClick={() => (setAccount(undefined), setEmail(undefined), setAccountTry((n) => n + 1))} className={ui.link}>
+                      Réessayer
                     </button>
                   </Row>
                 )}
