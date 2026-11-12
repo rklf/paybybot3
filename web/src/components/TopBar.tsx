@@ -23,7 +23,7 @@ export function TopBar({ center, children, className }: { center?: ReactNode; ch
   )
 }
 
-const navLink = 'hidden px-2 text-[0.95rem] font-medium text-ink/70 transition hover:text-ink sm:inline'
+const navLink = 'hidden px-2 text-[0.95rem] font-medium text-ink/60 transition hover:text-ink sm:inline'
 
 const PAGES = [
   ['#/tarifs', 'Tarifs'],

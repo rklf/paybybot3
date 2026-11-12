@@ -82,7 +82,7 @@ export function PricingPage({ hosted, signedIn = false }: { hosted: boolean; sig
         <h1 className={cn(ui.title, 'rise text-center')}>
           Tarifs
         </h1>
-        <p className="mx-auto mt-4 max-w-[32rem] text-center text-[1.05rem] text-ink/60 sm:text-lg">
+        <p className="mx-auto mt-4 max-w-[32rem] text-center text-[1.05rem] text-ink/60">
           Un prix unique pour tous vos véhicules, quel que soit le ticket.
         </p>
         <div className="mt-8 lg:mt-10">
@@ -170,8 +170,8 @@ export function FreeMonthCard({ trialEnd }: { trialEnd: string | null }) {
   if (!(left > 0 && left <= 7)) return null
   return (
     <div className="rise mb-6 rounded-2xl border border-ink/10 bg-white p-5">
-      <p className="font-heading text-xl font-semibold tracking-tight text-ink">{left > 1 ? `Plus que ${left} jours offerts` : 'Dernier jour offert'}</p>
-      <p className="mt-2 leading-relaxed text-ink/60">Ensuite, votre renouvellement continue pour 9,50 € par mois, tous vos véhicules, sans engagement.</p>
+      <p className="text-[1.05rem] font-medium text-ink">{left > 1 ? `Plus que ${left} jours offerts` : 'Dernier jour offert'}</p>
+      <p className="mt-2 text-[0.95rem] leading-relaxed text-ink/60">Ensuite, votre renouvellement continue pour 9,50 € par mois, tous vos véhicules, sans engagement.</p>
       <button onClick={() => setOpen(true)} className={cn(ui.primary, 'mt-4')}>
         Continuer pour 9,50 €/mois
       </button>
@@ -202,10 +202,10 @@ export function ReactivateCard({ kind, ticketEnd }: { kind: 'trialOver' | 'unpai
   }
   return (
     <div role="dialog" aria-labelledby="reactivate-title" className="rise fixed inset-x-4 top-1/2 z-30 mx-auto max-w-lg -translate-y-1/2 rounded-2xl bg-white p-8 shadow sm:p-12-[0_30px_60px_-20px_rgb(11_16_36/0.4)] ring-1 ring-ink/10">
-      <p id="reactivate-title" className="font-heading text-[1.75rem] leading-tight font-semibold tracking-tight text-ink">
+      <p id="reactivate-title" className={ui.dialogTitle}>
         {trial ? 'Activez votre abonnement' : 'Réactivez votre compte'}
       </p>
-      <p className="mt-4 text-lg leading-relaxed text-ink/60">
+      <p className="mt-4 text-[1.05rem] leading-relaxed text-ink/60">
         {trial
           ? 'Votre mois offert est terminé : le renouvellement automatique est en pause.'
           : 'Le paiement de votre abonnement n’a pas été régularisé : le renouvellement automatique est en pause.'}
@@ -302,11 +302,11 @@ export function PlansDialog({
               {/* The one offer: monthly, the same price for every vehicle of the account. */}
               <div className="mt-5 flex w-full items-center gap-4 rounded-2xl border border-eu bg-eu/[0.04] px-4 py-3 ring-1 ring-eu">
                 <span className="flex-1">
-                  <span className="block font-semibold text-ink">Mensuel</span>
+                  <span className="block text-[1.05rem] font-medium text-ink">Mensuel</span>
                   <span className="block text-sm text-ink/60">Tous vos véhicules, sans engagement</span>
                 </span>
                 <span className="text-right">
-                  <span className="font-heading text-xl font-semibold text-ink">{euros(MONTHLY)}</span>{' '}
+                  <span className="font-heading text-2xl font-semibold text-ink">{euros(MONTHLY)}</span>{' '}
                   <span className="text-sm text-ink/60">/ mois</span>
                 </span>
               </div>

@@ -114,7 +114,7 @@ export function HowItWorks({ page = false, cta }: { page?: boolean; /** Under th
                     <strong className={cn('block font-heading text-xl font-semibold tracking-[-0.02em] transition-colors lg:text-2xl', on ? 'text-ink' : 'text-ink/45')}>
                       {i + 1}. {withPayByPhone(title)}
                     </strong>
-                    <span className={cn('mt-1.5 block text-[1.05rem] leading-relaxed transition-colors lg:text-lg', on ? 'text-ink/60' : 'text-ink/45')}>
+                    <span className={cn('mt-1.5 block text-[1.05rem] leading-relaxed transition-colors', on ? 'text-ink/60' : 'text-ink/45')}>
                       {withPayByPhone(text)}
                     </span>
                   </span>
@@ -487,7 +487,7 @@ export function Landing({ hosted, heroOnly = false, lean = false }: { hosted: bo
           <h2 className={cn(ui.title, 'text-center')}>
             Tarifs
           </h2>
-          <p className="mx-auto mt-4 max-w-[32rem] text-center text-[1.05rem] text-ink/60 sm:text-lg">
+          <p className="mx-auto mt-4 max-w-[32rem] text-center text-[1.05rem] text-ink/60">
             Un prix unique pour tous vos véhicules, quel que soit le ticket.
           </p>
           <div className="mt-12">
@@ -610,7 +610,7 @@ function Rows({ items, className }: { items: Question[]; className?: string }) {
     <Accordion className={cn('border-t border-ink/12', className)}>
       {items.map(([q, a]) => (
         <AccordionItem key={q} value={q} className="border-b border-ink/12 not-last:border-b">
-          <AccordionTrigger className="group/q items-center gap-6 rounded-none py-6 text-[1.05rem] font-normal text-ink/60 transition-colors hover:text-ink hover:no-underline focus-visible:ring-0 aria-expanded:font-semibold aria-expanded:text-ink sm:text-[1.15rem] **:data-[slot=accordion-trigger-icon]:hidden">
+          <AccordionTrigger className="group/q items-center gap-6 rounded-none py-6 text-[1.05rem] font-normal text-ink/60 transition-colors hover:text-ink hover:no-underline focus-visible:ring-0 aria-expanded:font-semibold aria-expanded:text-ink **:data-[slot=accordion-trigger-icon]:hidden">
             <span>{withBrands(q)}</span>
             <Plus
               aria-hidden

@@ -41,7 +41,7 @@ export function Loading({
         {!stuck && <span className="loading-bar" aria-hidden />}
         {stuck ? (
           <>
-            <p className="text-lg text-ink/70">{error || 'Le chargement prend plus de temps que prévu.'}</p>
+            <p className="text-[1.05rem] text-ink/60">{error || 'Le chargement prend plus de temps que prévu.'}</p>
             <button
               onClick={() => {
                 setSlow(false)
@@ -58,7 +58,7 @@ export function Loading({
             )}
           </>
         ) : (
-          label && <p className="max-w-64 text-lg text-ink/70">{label}</p>
+          label && <p className="max-w-64 text-[1.05rem] text-ink/60">{label}</p>
         )}
       </div>
     </div>

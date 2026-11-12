@@ -66,7 +66,7 @@ export function SubscriptionDialog({ onClose }: { onClose: () => void }) {
           <div className="px-6 pb-6">
             <div className="mt-4 rounded-2xl border border-ink/10 p-5">
               <p className="text-sm text-ink/60">{sub.plan === 'yearly' ? 'Annuel' : 'Mensuel'}</p>
-              <p className="mt-1 font-heading text-[2rem] leading-none font-semibold tracking-tight text-ink">
+              <p className="mt-1 font-heading text-2xl leading-none font-semibold tracking-tight text-ink">
                 {euros(sub.amount)} <span className="text-[0.95rem] font-normal text-ink/60">{sub.plan === 'yearly' ? '/ an' : '/ mois'}</span>
               </p>
               <p className={cn('mt-3 text-sm', sub.cancelAtPeriodEnd ? 'font-medium text-destructive' : 'text-ink/60')}>

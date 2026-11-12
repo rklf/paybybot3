@@ -474,7 +474,7 @@ export function LoginView({
 
       <HostedFooter className="px-6 pb-8" hosted={hosted} linksOnly={signup} />
       </div>
-      <RemotePanel className="hidden lg:block" sticky caption={<p className="oi-title mt-8 text-[#151311]">Votre stationnement résident se renouvelle tout seul.</p>} />
+      <RemotePanel className="hidden lg:block" sticky caption={<p className="oi-title mt-8 text-ink">Votre stationnement résident se renouvelle tout seul.</p>} />
       </div>
     </div>
   )

@@ -43,7 +43,7 @@ export function AboutPage({ hosted, signedIn = false }: { hosted: boolean; signe
           , une société basée à Paris.
         </p>
 
-        <h2 className="mt-12 font-heading text-[1.2rem] leading-snug font-semibold tracking-[-0.01em]">Les fondateurs</h2>
+        <h2 className="mt-12 text-[1.05rem] text-ink/60">Les fondateurs</h2>
         <ul className="mt-5 grid grid-cols-2 gap-4">
           {FOUNDERS.map((f) => (
             <li key={f.name} className="flex flex-col items-center rounded-2xl border border-ink/10 px-4 py-6 text-center">
@@ -55,7 +55,7 @@ export function AboutPage({ hosted, signedIn = false }: { hosted: boolean; signe
                 </span>
               )}
               {/* The name alone is centred under the photo, the LinkedIn mark hangs just after it (in the line on a phone). */}
-              <span className="relative mt-4 font-medium text-ink">
+              <span className="relative mt-4 text-[1.05rem] font-medium text-ink">
                 {f.name}
                 <a
                   href={f.linkedin}

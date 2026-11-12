@@ -110,7 +110,7 @@ export function CheckoutDone({ vehicle, onClose }: { vehicle?: DoneVehicle | nul
           >
             Votre stationnement est désormais automatisé
           </h1>
-          <p className="mt-3 animate-[rise_.6s_ease-out_2.5s_both] leading-relaxed text-ink/60 motion-reduce:animate-none">
+          <p className="mt-3 animate-[rise_.6s_ease-out_2.5s_both] text-[1.05rem] leading-relaxed text-ink/60 motion-reduce:animate-none">
             Rien n’est prélevé avant la fin de votre mois offert.
           </p>
           <div className="mt-8 flex animate-[rise_.6s_ease-out_2.7s_both] justify-center motion-reduce:animate-none">

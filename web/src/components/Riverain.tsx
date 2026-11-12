@@ -1145,7 +1145,7 @@ export function RiverainDialog({
                         {zones[plate] && <ZoneTag zone={zones[plate]} />}
                       </span>
                       {cents != null && !f?.error && (
-                        <span className="mt-4 block font-heading text-[1.3rem] leading-none text-ink tabular-nums">
+                        <span className="mt-4 block font-heading text-2xl leading-none text-ink tabular-nums">
                           {(cents / 100).toFixed(2).replace('.', ',')} € <span className="text-[0.95rem] text-ink/60">par semaine</span>
                         </span>
                       )}

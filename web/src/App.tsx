@@ -344,9 +344,9 @@ export default function App() {
   // Development only: « Mon abonnement » with a made-up subscription (#/apercu-abonnement).
   if (import.meta.env.DEV && window.location.hash === '#/apercu-abonnement') {
     const fake = {
-      plan: 'monthly', amount: 990, status: 'active', nextBilling: '2026-11-22T12:00:00Z', cancelAtPeriodEnd: false,
+      plan: 'monthly', amount: 950, status: 'active', nextBilling: '2026-11-22T12:00:00Z', cancelAtPeriodEnd: false,
       card: { brand: 'mastercard', last4: '4242', expMonth: 7, expYear: 2031 },
-      invoices: [{ date: '2026-10-22T12:00:00Z', amount: 990, status: 'paid', url: null }],
+      invoices: [{ date: '2026-10-22T12:00:00Z', amount: 950, status: 'paid', url: null }],
     }
     const real = window.fetch
     window.fetch = (input, init) =>

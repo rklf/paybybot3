@@ -92,7 +92,7 @@ function AccessForm({ invalid = false }: { invalid?: boolean }) {
         </>
       ) : (
         <>
-          <p className="mt-8 text-[1.15rem] leading-relaxed text-ink/70">
+          <p className="mt-8 text-[1.05rem] leading-relaxed text-ink/60">
             {invalid && <span className="mb-1 block text-destructive">Ce lien n’est pas valable.</span>}
             Votre ticket résident <PayByPhone /> est renouvelé tout seul, chaque semaine. Zéro oubli, zéro amende.
           </p>
