@@ -448,11 +448,12 @@ export async function activateWeekly(cars: { plate: string; zone: string; type?:
   const failed: string[] = []
   let done = 0
   for (const car of cars) {
+    let p: Parking | undefined
     try {
       const rate = car.rate ?? residentRateFor(await api.rates(car.zone, car.plate), car.type ?? undefined)
       if (!rate) throw new Error('Pas de tarif résident pour ce véhicule dans cette zone.')
       if (!rate.acceptedTimeUnits.includes('Days')) throw new Error('Le tarif résident de cette zone ne se paie pas à la journée.')
-      const p: Parking = { location: car.zone, rate: rate.ratePolicyId, duration: WEEK_DAYS, unit: 'Days', plate: car.plate, paymentAccountId: payment }
+      p = { location: car.zone, rate: rate.ratePolicyId, duration: WEEK_DAYS, unit: 'Days', plate: car.plate, paymentAccountId: payment }
       await api.quote({ ...p, renewal: true })
       const { activation } = await api.addAutopilot({ ...p, label: WEEKLY_LABEL })
       saveLast(p)
@@ -460,11 +461,13 @@ export async function activateWeekly(cars: { plate: string; zone: string; type?:
       else toast.success('Renouvellement hebdomadaire activé.')
       done += 1
     } catch (e) {
-      if (e instanceof ApiError && e.status === 402 && /offre|abonn/i.test(e.message)) return { done, failed, paywall: true }
+      // No free month left: the subscription first; this renewal is kept and activated on the way back from Stripe.
+      if (e instanceof ApiError && e.status === 402 && /offre|abonn/i.test(e.message))
+        return { done, failed, paywall: true, pending: p ? [{ ...p, label: WEEKLY_LABEL }] : [] }
       failed.push(cars.length > 1 ? `${car.plate} : ${(e as Error).message}` : (e as Error).message)
     }
   }
-  return { done, failed, paywall: false }
+  return { done, failed, paywall: false, pending: [] as PendingRenewal[] }
 }
 
 function residentRateFor(rates: Rate[], vehicleType?: string) {

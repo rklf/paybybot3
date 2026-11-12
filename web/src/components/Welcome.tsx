@@ -7,7 +7,8 @@ import { cn } from '@/lib/utils'
 import { ui } from '@/lib/styles'
 import { LineBone, PlateBone } from '@/components/Skeletons'
 import { SmoothHeight } from '@/components/ui/smooth-height'
-import { activateWeekly, when, ZoneTag } from '@/components/Riverain'
+import { activateWeekly, clearPending, savePending, when, type PendingRenewal } from '@/components/Riverain'
+import { PlansDialog } from '@/components/Pricing'
 
 /** +33612345678 -> +33 6 12 34 56 78 (other formats are shown as they are). */
 function phoneText(username: string) {
@@ -89,12 +90,24 @@ export function Welcome({
 
   // The e-mail PayByBot writes to (as in « Mon compte »); undefined: looking, '' : none.
   const [email, setEmail] = useState<string | undefined>(undefined)
+  // Where the free month stands (one per person, kept when an account is deleted and made again): never started,
+  // running, used up (the subscription first), or a subscription already. undefined: looking.
+  const [trial, setTrial] = useState<'new' | 'running' | 'over' | 'paid' | undefined>(undefined)
   useEffect(() => {
     api.account().then(
-      (a) => setEmail(a.email ?? ''),
-      () => setEmail(''),
+      (a) => {
+        setEmail(a.email ?? '')
+        setTrial(a.plan ? 'paid' : a.blocked === 'trialOver' ? 'over' : !a.trialEnd ? 'new'
+          : new Date(a.trialEnd).getTime() > Date.now() ? 'running' : 'over')
+      },
+      () => {
+        setEmail('')
+        setTrial('new')
+      },
     )
   }, [])
+  // The free month used up: the offer opens, the renewal chosen here is activated on the way back from Stripe.
+  const [plans, setPlans] = useState<PendingRenewal[] | null>(null)
   const n = vehicles?.length ?? 0
   const zones = [...new Set((vehicles ?? []).flatMap((v) => (v.zone ? [v.zone] : [])))]
 
@@ -119,12 +132,13 @@ export function Welcome({
   const [activationError, setActivationError] = useState<string | null>(null)
   async function go() {
     if (!choice) return onContinue()
+    if (!resident && trial === 'over') return setPlans([]) // no free month left: the subscription first
     if (!resident) return onContinue(choice.plate) // the ticket wizard, on this car
     setActivating(true)
     setActivationError(null)
-    const { done, failed, paywall } = await activateWeekly([resident], valid[0].id)
+    const { done, failed, paywall, pending } = await activateWeekly([resident], valid[0].id)
     setActivating(false)
-    if (paywall) return onContinue() // the free month is over: the dashboard says how to go on
+    if (paywall) return setPlans(pending) // no free month left: the subscription first
     if (done) return (onActivated ?? onContinue)()
     setActivationError(failed.join('\n'))
   }
@@ -257,9 +271,8 @@ export function Welcome({
                         </span>
                       )}
                       <Plate plate={v.plate} size="sm" />
-                      {/* On the right, one above the other: resident or not, then its ticket now (from PayByPhone). */}
+                      {/* On the right: its ticket now (from PayByPhone). */}
                       <span className="ml-auto flex flex-col items-end gap-1 text-right">
-                        {v.zone ? <ZoneTag zone={v.zone} /> : <span className="text-sm text-ink/60">Non résident</span>}
                         <span className="text-sm text-ink/60">
                           {(() => {
                             const end = ticketEnd(v.plate)
@@ -275,10 +288,17 @@ export function Welcome({
           )}
           <button
             onClick={go}
-            disabled={activating || !vehicles?.length || !valid.length}
+            disabled={activating || !trial || !vehicles?.length || !valid.length}
             className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-eu text-lg font-bold text-white transition hover:bg-[#173f86] disabled:opacity-60"
           >
-            {activating ? <Loader2 className="size-5 animate-spin" /> : <>Commencer mon essai gratuit <ArrowRight className="size-5" /></>}
+            {activating || !trial ? (
+              <Loader2 className="size-5 animate-spin" />
+            ) : (
+              <>
+                {{ new: 'Commencer mon essai gratuit', running: 'Continuer mon essai gratuit', over: 'Activer mon compte', paid: 'Continuer' }[trial]}
+                <ArrowRight className="size-5" />
+              </>
+            )}
           </button>
           <p className="mt-4 flex flex-wrap justify-center gap-x-5 gap-y-2 text-sm text-ink/60">
             <button onClick={refresh} disabled={refreshing} className={cn('inline-flex items-center gap-1.5', ui.link)}>
@@ -295,6 +315,15 @@ export function Welcome({
 
       {/* The same animated scene as the sign-in page and the offer screen. */}
       <RemotePanel className="hidden min-h-dvh lg:block" />
+      {plans && (
+        <PlansDialog
+          onPay={() => savePending(plans)}
+          onClose={() => {
+            clearPending()
+            setPlans(null)
+          }}
+        />
+      )}
     </div>
   )
 }

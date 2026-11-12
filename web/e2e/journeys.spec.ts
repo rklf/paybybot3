@@ -820,3 +820,24 @@ test('bienvenue, aucun véhicule résident : « C’est bien moi, continuer » m
   await page.getByRole('button', { name: /^Commencer mon essai gratuit/ }).click()
   await expect(page.getByRole('dialog').getByText(/Étape 1 sur/)).toBeVisible()
 })
+
+test('bienvenue après un compte supprimé, mois offert en cours : « Continuer mon essai gratuit »', async ({ page }) => {
+  await page.route('**/api/account', (route) =>
+    route.fulfill({ json: { email: 'a@b.fr', zone: null, trialEnd: new Date(Date.now() + 20 * 86_400_000).toISOString() } }),
+  )
+  await demo(page)
+  await page.goto(LINK + '#/bienvenue')
+  await expect(page.getByRole('button', { name: /^Continuer mon essai gratuit/ })).toBeVisible()
+  await expect(page.getByText(/^(Non )?[Rr]ésident$/)).toHaveCount(0) // no resident / non-resident tag here
+})
+
+test('bienvenue après un compte supprimé, mois offert épuisé : l’abonnement d’abord', async ({ page }) => {
+  await page.route('**/api/account', (route) =>
+    route.fulfill({ json: { email: 'a@b.fr', zone: null, trialEnd: new Date(Date.now() - 86_400_000).toISOString(), blocked: 'trialOver' } }),
+  )
+  await demo(page)
+  await page.goto(LINK + '#/bienvenue')
+  await page.getByRole('radio', { name: /LM-?789/ }).click()
+  await page.getByRole('button', { name: /^Activer mon compte/ }).click()
+  await expect(page.getByText('Votre abonnement')).toBeVisible()
+})
