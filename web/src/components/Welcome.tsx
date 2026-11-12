@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import { ui } from '@/lib/styles'
 import { LineBone, PlateBone } from '@/components/Skeletons'
 import { SmoothHeight } from '@/components/ui/smooth-height'
-import { activateWeekly, clearPending, savePending, when, type PendingRenewal } from '@/components/Riverain'
+import { activateWeekly, clearPending, savePending, savePlateAfterPay, when, type PendingRenewal } from '@/components/Riverain'
 import { PlansDialog } from '@/components/Pricing'
 
 /** +33612345678 -> +33 6 12 34 56 78 (other formats are shown as they are). */
@@ -108,6 +108,7 @@ export function Welcome({
   }, [])
   // The free month used up: the offer opens, the renewal chosen here is activated on the way back from Stripe.
   const [plans, setPlans] = useState<PendingRenewal[] | null>(null)
+  const [afterPay, setAfterPay] = useState<string | null>(null)
   const n = vehicles?.length ?? 0
   const zones = [...new Set((vehicles ?? []).flatMap((v) => (v.zone ? [v.zone] : [])))]
 
@@ -132,7 +133,11 @@ export function Welcome({
   const [activationError, setActivationError] = useState<string | null>(null)
   async function go() {
     if (!choice) return onContinue()
-    if (!resident && trial === 'over') return setPlans([]) // no free month left: the subscription first
+    if (!resident && trial === 'over') {
+      // No free month left: the subscription first, then the ticket wizard on this car (back from Stripe).
+      setAfterPay(choice.plate)
+      return setPlans([])
+    }
     if (!resident) return onContinue(choice.plate) // the ticket wizard, on this car
     setActivating(true)
     setActivationError(null)
@@ -317,10 +322,15 @@ export function Welcome({
       <RemotePanel className="hidden min-h-dvh lg:block" />
       {plans && (
         <PlansDialog
-          onPay={() => savePending(plans)}
+          onPay={() => {
+            savePending(plans)
+            savePlateAfterPay(afterPay)
+          }}
           onClose={() => {
             clearPending()
+            savePlateAfterPay(null)
             setPlans(null)
+            setAfterPay(null)
           }}
         />
       )}

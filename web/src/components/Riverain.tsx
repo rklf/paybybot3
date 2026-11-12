@@ -45,6 +45,28 @@ export function savePending(items: PendingRenewal[]) {
   }
 }
 
+const AFTER_PAY_KEY = 'pbb-after-pay-plate'
+
+/** A non-resident car chosen before the subscription: its ticket wizard opens on the way back from Stripe. */
+export function savePlateAfterPay(plate: string | null) {
+  try {
+    if (plate) localStorage.setItem(AFTER_PAY_KEY, JSON.stringify({ at: Date.now(), plate }))
+    else localStorage.removeItem(AFTER_PAY_KEY)
+  } catch {
+    // no storage: the car is simply chosen again with « Automatiser »
+  }
+}
+
+export function takePlateAfterPay(): string | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(AFTER_PAY_KEY) || 'null')
+    localStorage.removeItem(AFTER_PAY_KEY)
+    return saved && Date.now() - saved.at < 3_600_000 && typeof saved.plate === 'string' ? saved.plate : null
+  } catch {
+    return null
+  }
+}
+
 export function clearPending() {
   try {
     localStorage.removeItem(PENDING_KEY)

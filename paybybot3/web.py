@@ -3030,6 +3030,11 @@ def verify_signup(body: CodeCheck, response: Response, pbb_pending: str = Cookie
     save_account(session, {"email": pending["email"], "origin": signup_origin(pending.get("src")),
                            **({"trial_start": earlier.isoformat(), "trial_kept": True} if earlier else {}),
                            **({"zone": pending["zone"], "zone_found": True} if pending.get("zone") else {})})
+    if HOSTED and not session.demo and os.environ.get("STRIPE_SECRET_KEY"):
+        try:  # back before the paid period of a deleted account ends: its subscription goes on, nothing paid twice
+            resume_after_signup(owner_id(session.username), load_account(session))
+        except Exception as e:
+            log.warning("subscription not looked up at sign-up: %s", type(e).__name__)
     session.remember = True  # a new user stays signed in (30 days), there is no box to tick at sign-up
     session.issued_at = int(time.time())
     if HOSTED:
@@ -4207,6 +4212,35 @@ def recover_subscription(account, owner):
     return sub.get("status") in PAID_STATUSES
 
 
+def end_subscription_with_account(sub_id):
+    """The account is deleted: nothing more is charged. A paid subscription runs to the end of what is paid (marked,
+    so a sign-up before then resumes it); an unpaid one stops at once. Returns the paid period's end (epoch) or None."""
+    sub = stripe("GET", "subscriptions/" + sub_id)
+    if sub.get("status") in PAID_STATUSES:
+        stripe("POST", "subscriptions/" + sub_id, cancel_at_period_end="true", **{"metadata[account_deleted]": "1"})
+        items = (sub.get("items") or {}).get("data") or [{}]
+        return sub.get("current_period_end") or items[0].get("current_period_end")
+    stripe("DELETE", "subscriptions/" + sub_id)
+    return None
+
+
+def resume_after_signup(owner, account):
+    """Signing up again before the paid period of a deleted account ends: its subscription is found (by owner) and
+    kept going, so the offer is never asked, nor paid, twice. One the user cancelled himself is only recorded."""
+    try:
+        found = stripe("GET", "subscriptions/search?query=" + requests.utils.quote(
+            "metadata['owner']:'%s'" % owner)).get("data") or []
+        for sub in found:
+            if sub.get("status") in PAID_STATUSES and sub.get("cancel_at_period_end") \
+                    and (sub.get("metadata") or {}).get("account_deleted") == "1":
+                stripe("POST", "subscriptions/" + sub["id"], cancel_at_period_end="false",
+                       **{"metadata[account_deleted]": ""})
+                log.info("subscription of a deleted account resumed at sign-up")
+    except HTTPException:
+        return False
+    return recover_subscription(account, owner)
+
+
 def billing_state(account, owner=None):
     return billing_status(account, owner)[0]
 
@@ -5217,6 +5251,7 @@ def delete_my_data(response: Response, pbb_session: str = Cookie(None)):
                           if with_details(r).get("email")), None)
     except Exception as e:
         log.warning("account e-mail unreadable before deletion: %s", e)
+    paid_until = None
     if HOSTED and not s.demo:
         try:  # a free month already started outlives the account (fingerprints only): no second one at a new sign-up
             account = load_account(s) or {}
@@ -5225,9 +5260,9 @@ def delete_my_data(response: Response, pbb_session: str = Cookie(None)):
             log.warning("free month not recorded before deletion: %s", e)
         sub_id = (load_account(s) or {}).get("stripe_subscription")
         if sub_id and os.environ.get("STRIPE_SECRET_KEY"):
-            try:  # nothing more is charged once the account is gone
-                stripe("DELETE", "subscriptions/" + sub_id)
-                log.info("subscription cancelled with the account")
+            try:  # nothing more is charged once the account is gone; what is paid stays paid
+                paid_until = end_subscription_with_account(sub_id)
+                log.info("subscription ended with the account")
             except HTTPException as e:
                 log.warning("subscription not cancelled with the account: %s", e.detail)
         guarded(lambda: store("renewal_delete_owner", p_owner=owner_id(s.username)))
@@ -5240,6 +5275,9 @@ def delete_my_data(response: Response, pbb_session: str = Cookie(None)):
                     "n'offrir le mois gratuit qu'une fois.",
                     "Les tickets déjà en cours restent valables jusqu'à leur fin. Votre compte PayByPhone n'est pas "
                     "modifié.",
+                    *(["Votre abonnement n'est plus prélevé. Ce qui est payé reste acquis : si vous revenez d'ici le %s, "
+                       "il reprend sans nouveau paiement." % datetime.fromtimestamp(paid_until, PARIS).strftime("%d/%m/%Y")]
+                      if paid_until else []),
                     "Vous n'avez rien demandé ? Écrivez-nous à %s ou répondez simplement à cet e-mail." % MAIL_REPLY_TO],
                    footer="Vous recevez cet e-mail parce que votre compte PayByBot vient d'être supprimé.")
     record_activity("Compte supprimé", lines=["Client : %s." % (email or s.username[:4] + "***")])

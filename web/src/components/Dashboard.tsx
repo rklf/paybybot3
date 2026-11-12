@@ -14,7 +14,7 @@ import { ui } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 import { HostedFooter } from '@/components/Footer'
 import { CheckoutDone } from '@/components/CheckoutDone'
-import { ActivateRenewal, CardGate, CoveredLine, RenewalActions, RenewalNote, RenewalSwitch, RiverainDialog, pauseState, nextRenewal, when, ZoneTag, RiverainCard, WEEKLY_LABEL, renewalOf, runPendingRenewals } from '@/components/Riverain'
+import { ActivateRenewal, CardGate, CoveredLine, RenewalActions, RenewalNote, RenewalSwitch, RiverainDialog, pauseState, nextRenewal, when, ZoneTag, RiverainCard, WEEKLY_LABEL, renewalOf, runPendingRenewals, takePlateAfterPay } from '@/components/Riverain'
 import { ToggleSwitch } from '@/components/ui/toggle-switch'
 import { api, type Account, type Me, type Overview, type Session } from '@/lib/api'
 
@@ -371,6 +371,9 @@ export function Dashboard({
                 toast.success(renewed > 1 ? `Renouvellement activé pour ${renewed} véhicules.` : 'Renouvellement activé.')
               onRefresh()
             } else if (!failed.length) {
+              const plate = takePlateAfterPay()
+              // A car chosen before paying (welcome page, free month used up): its ticket wizard, at once.
+              if (plate) return (setBackPlate(plate), setProgramAsked((n) => n + 1), toast.success('Votre compte est activé.'))
               toast.success('Votre compte est activé.', {
                 description: 'Activez maintenant le renouvellement de votre véhicule ou programmez un ticket.',
               })

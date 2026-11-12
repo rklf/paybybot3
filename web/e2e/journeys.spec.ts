@@ -841,3 +841,14 @@ test('bienvenue après un compte supprimé, mois offert épuisé : l’abonnemen
   await page.getByRole('button', { name: /^Activer mon compte/ }).click()
   await expect(page.getByText('Votre abonnement')).toBeVisible()
 })
+
+test('retour de paiement, mois offert épuisé : l’assistant s’ouvre sur le véhicule choisi à la bienvenue', async ({ page }) => {
+  await demo(page)
+  await page.route('**/api/billing/confirm', (r) => r.fulfill({ json: { plan: 'monthly' } }))
+  await page.evaluate(() => localStorage.setItem('pbb-after-pay-plate', JSON.stringify({ at: Date.now(), plate: 'LM-789-NP' })))
+  await page.evaluate(() => { window.location.hash = '#session_id=cs_test' })
+  await page.reload()
+  const wizard = page.getByRole('dialog')
+  await expect(wizard.getByText(/Étape 1 sur/)).toBeVisible()
+  await expect(wizard.getByRole('button', { name: /LM-789-NP/ })).toHaveAttribute('aria-pressed', 'true')
+})
