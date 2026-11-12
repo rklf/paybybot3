@@ -355,12 +355,14 @@ test('bienvenue sans carte bancaire valide : croix rouge, on ne passe pas', asyn
   await demo(page)
   await page.goto('/#/bienvenue')
   const next = page.getByRole('button', { name: /^Commencer mon essai gratuit/ }) // a resident car: activated from here
-  await expect(page.getByText(/Carte expirée/)).toBeVisible()
-  await expect(page.getByText(/ni Apple Pay ni Google Pay/)).toBeVisible() // how to add one, with its screens
+  // Only the card step: how to add one, with its screens; no vehicle to choose yet.
+  await expect(page.getByText(/Votre carte a expiré/)).toBeVisible()
+  await expect(page.getByText(/ni Apple Pay ni Google Pay/)).toBeVisible()
   await expect(page.getByRole('img', { name: /Ajouter une carte/ })).toBeVisible()
-  await expect(next).toBeDisabled()
+  await expect(next).toHaveCount(0)
+  await expect(page.getByRole('radio')).toHaveCount(0)
   payments = [{ id: 'c2', label: 'Visa •••• 1111 — exp. 04/29', kind: 'card' }]
-  await page.getByRole('button', { name: 'Rafraîchir' }).click()
+  await page.getByRole('button', { name: 'J’ai ajouté ma carte' }).click()
   await expect(next).toBeEnabled()
   // The card just added is shown.
   await expect(page.getByText('Visa •••• 1111')).toBeVisible()

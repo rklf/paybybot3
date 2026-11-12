@@ -116,6 +116,8 @@ export function Welcome({
   // the next step waits, and « Rafraîchir » looks again once it is added.
   const cards = data.payments.filter((p) => p.kind === 'card')
   const valid = cards.filter((p) => !p.expired)
+  // Vehicles but no valid card: the page is only about adding one (one thing at a time).
+  const noCard = vehicles !== undefined && vehicles.length > 0 && !valid.length
   // The resident cars not renewed yet: « Activer le renouvellement » here, the welcome and the activation in one screen.
   // One vehicle to automate, chosen here: a resident one gets its weekly renewal at once; another goes on to the
   // usual ticket wizard, on that car. A resident car renewed already is shown, not offered.
@@ -227,19 +229,20 @@ export function Welcome({
             </dl>
 
             {/* Only when something blocks: what to do, in one place. */}
-            {vehicles !== undefined && (!vehicles.length || !valid.length) && (
+            {vehicles !== undefined && !vehicles.length && (
               <p role="alert" className="mt-4 text-sm leading-relaxed text-destructive">
-                {withPayByPhone(
-                  !vehicles.length
-                    ? 'Aucun véhicule : ajoutez-le dans l’application PayByPhone, puis touchez « Rafraîchir ».'
-                    : cards.length
-                      ? 'Carte expirée dans PayByPhone : ajoutez-en une valide.'
-                      : 'Aucune carte bancaire dans PayByPhone.',
-                )}
+                {withPayByPhone('Aucun véhicule : ajoutez-le dans l’application PayByPhone, puis touchez « Rafraîchir ».')}
               </p>
             )}
-            {/* No valid card: how to add one in the PayByPhone app, with its screens. */}
-            {vehicles !== undefined && vehicles.length > 0 && !valid.length && <AddCardGuide />}
+            {/* No valid card: this one step only (the vehicle comes once a card is there), with its screens. */}
+            {noCard && (
+              <div className="mt-6">
+                <h2 className="text-[1.05rem] font-medium text-ink">
+                  {withPayByPhone(cards.length ? 'Votre carte a expiré : ajoutez-en une dans PayByPhone' : 'Ajoutez une carte bancaire dans PayByPhone')}
+                </h2>
+                <AddCardGuide />
+              </div>
+            )}
           </SmoothHeight>
 
           {activationError && (
@@ -248,7 +251,7 @@ export function Welcome({
             </p>
           )}
           {/* The vehicle to automate: one, chosen with a tap (the resident one first). */}
-          {offered.length > 0 && (
+          {offered.length > 0 && !noCard && (
             <div className="mt-6" role="radiogroup" aria-label="Stationnement à automatiser">
               <p className="mb-2 text-sm text-ink/60">{offered.length > 1 ? 'Quel stationnement automatiser ?' : 'Stationnement à automatiser :'}</p>
               <div className="space-y-1.5">
@@ -288,6 +291,11 @@ export function Welcome({
               </div>
             </div>
           )}
+          {noCard ? (
+            <button onClick={refresh} disabled={refreshing} className={cn('mt-6', ui.primary)}>
+              {refreshing ? <Loader2 className="size-5 animate-spin" /> : 'J’ai ajouté ma carte'}
+            </button>
+          ) : (
           <button
             onClick={go}
             disabled={activating || !trial || !vehicles?.length || !valid.length}
@@ -302,10 +310,13 @@ export function Welcome({
               </>
             )}
           </button>
+          )}
           <p className="mt-4 flex flex-wrap justify-center gap-x-5 gap-y-2 text-sm text-ink/60">
-            <button onClick={refresh} disabled={refreshing} className={cn('inline-flex items-center gap-1.5', ui.link)}>
-              {refreshing && <Loader2 className="size-3.5 animate-spin" />} Rafraîchir
-            </button>
+            {!noCard && (
+              <button onClick={refresh} disabled={refreshing} className={cn('inline-flex items-center gap-1.5', ui.link)}>
+                {refreshing && <Loader2 className="size-3.5 animate-spin" />} Rafraîchir
+              </button>
+            )}
             {onLogout && (
               <button onClick={onLogout} className={ui.link}>
                 Se déconnecter
