@@ -272,7 +272,7 @@ export function Welcome({
                           {on && <span className="size-2.5 rounded-full bg-eu" />}
                         </span>
                       )}
-                      <Plate plate={v.plate} size="sm" />
+                      <Plate plate={v.plate} size="sm" className="shrink-0 whitespace-nowrap" />
                       {/* On the right: its ticket now (from PayByPhone). */}
                       <span className="ml-auto flex flex-col items-end gap-1 text-right">
                         <span className="text-sm text-ink/60">
