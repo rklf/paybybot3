@@ -1,13 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { ArrowRight, Loader2, Mail, Phone, type LucideIcon } from 'lucide-react'
 import { RemotePanel } from '@/components/RemoteScene'
-import { PayByBot, PayByPhone, Plate, withPayByPhone, Wordmark } from '@/components/signs'
+import { PayByPhone, Plate, withPayByPhone, Wordmark } from '@/components/signs'
 import { api, type Me, type Overview, type PricedVehicle } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { ui } from '@/lib/styles'
 import { LineBone, PlateBone } from '@/components/Skeletons'
 import { SmoothHeight } from '@/components/ui/smooth-height'
-import { activateWeekly, clearPending, savePending, savePlateAfterPay, when, type PendingRenewal } from '@/components/Riverain'
+import { activateWeekly, AddCardGuide, clearPending, savePending, savePlateAfterPay, when, type PendingRenewal } from '@/components/Riverain'
 import { PlansDialog } from '@/components/Pricing'
 
 /** +33612345678 -> +33 6 12 34 56 78 (other formats are shown as they are). */
@@ -233,16 +233,13 @@ export function Welcome({
                   !vehicles.length
                     ? 'Aucun véhicule : ajoutez-le dans l’application PayByPhone, puis touchez « Rafraîchir ».'
                     : cards.length
-                      ? 'Carte expirée : ajoutez une carte bancaire valide dans l’application PayByPhone, puis touchez « Rafraîchir ».'
-                      : 'Aucune carte bancaire : ajoutez-en une dans l’application PayByPhone, puis touchez « Rafraîchir ».',
-                )}
-                {vehicles.length > 0 && (
-                  <span className="mt-1 block text-ink/60">
-                    Apple Pay, Google Pay et PayPal ne fonctionnent pas avec <PayByBot /> : seule une carte bancaire convient.
-                  </span>
+                      ? 'Carte expirée dans PayByPhone : ajoutez-en une valide.'
+                      : 'Aucune carte bancaire dans PayByPhone.',
                 )}
               </p>
             )}
+            {/* No valid card: how to add one in the PayByPhone app, with its screens. */}
+            {vehicles !== undefined && vehicles.length > 0 && !valid.length && <AddCardGuide />}
           </SmoothHeight>
 
           {activationError && (

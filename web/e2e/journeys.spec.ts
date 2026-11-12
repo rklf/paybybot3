@@ -356,7 +356,8 @@ test('bienvenue sans carte bancaire valide : croix rouge, on ne passe pas', asyn
   await page.goto('/#/bienvenue')
   const next = page.getByRole('button', { name: /^Commencer mon essai gratuit/ }) // a resident car: activated from here
   await expect(page.getByText(/Carte expirée/)).toBeVisible()
-  await expect(page.getByText(/Apple Pay, Google Pay et PayPal/)).toBeVisible()
+  await expect(page.getByText(/ni Apple Pay ni Google Pay/)).toBeVisible() // how to add one, with its screens
+  await expect(page.getByRole('img', { name: /Ajouter une carte/ })).toBeVisible()
   await expect(next).toBeDisabled()
   payments = [{ id: 'c2', label: 'Visa •••• 1111 — exp. 04/29', kind: 'card' }]
   await page.getByRole('button', { name: 'Rafraîchir' }).click()

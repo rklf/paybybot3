@@ -3,7 +3,7 @@ import { Check, Loader2, Mail, Pause, Play, Repeat, RotateCw } from 'lucide-reac
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { NoPayment } from '@/components/NoPayment'
-import { arrondissement, PayByBot, Plate, withPayByPhone, ZonePlate } from '@/components/signs'
+import { arrondissement, LogoMark, PayByBot, Plate, withPayByPhone, ZonePlate } from '@/components/signs'
 import { loadLast, saveLast } from '@/components/PayWizard'
 import { PlansDialog } from '@/components/Pricing'
 import { ShinyButton } from '@/components/ui/shiny-button'
@@ -1490,7 +1490,7 @@ export type ResidentStatus = { zone: string | null; resident: boolean | null }
 
 /** Full screen over the blurred page: PayByBot needs a vehicle with the resident rate; what to do, then the actions. */
 /** Full screen over the blurred page: what PayByBot needs and what to do, then the actions (children). */
-function FullScreenNotice({ title, intro, steps, children }: { title: string; intro: ReactNode; steps: string[]; children: ReactNode }) {
+function FullScreenNotice({ title, intro, steps, figures = [], children }: { title: string; intro: ReactNode; steps: string[]; figures?: ReactNode[]; children: ReactNode }) {
   return (
     <div
       role="dialog"
@@ -1499,7 +1499,7 @@ function FullScreenNotice({ title, intro, steps, children }: { title: string; in
       className="fixed inset-0 z-50 grid center-safe overflow-y-auto bg-white/60 p-4 backdrop-blur-md sm:p-6"
     >
       <div className="rise w-full max-w-lg rounded-2xl border border-ink/10 bg-white p-7 shadow-[0_40px_80px_-30px_rgb(11_16_36/0.35)] sm:p-9">
-        <PayByPhoneMark className="size-9" />
+        <LogoMark className="h-9 w-auto" />
         <h2 id="full-screen-notice-title" className={cn('mt-5', ui.dialogTitle)}>
           {title}
         </h2>
@@ -1510,7 +1510,11 @@ function FullScreenNotice({ title, intro, steps, children }: { title: string; in
               <span className="grid size-6 shrink-0 place-items-center rounded-full bg-eu/[0.08] text-sm font-bold text-eu">
                 {i + 1}
               </span>
-              <span>{withPayByPhone(step)}</span>
+              <span className="min-w-0">
+                {withPayByPhone(step)}
+                {/* Under a step: what it looks like there. */}
+                {figures[i]}
+              </span>
             </li>
           ))}
         </ol>
@@ -1554,6 +1558,39 @@ export function ResidentRequired({
   )
 }
 
+/** How to add a card in the PayByPhone app, with its screens (the place to touch framed in blue). */
+export const ADD_CARD_STEPS = [
+  'Dans PayByPhone, touchez Compte puis Modes de paiement.',
+  'Touchez « Ajouter une carte » : une carte bancaire, ni Apple Pay ni Google Pay.',
+  'Revenez ici.',
+]
+const shot = (src: string, alt: string, height: number) => (
+  <img src={src} alt={alt} width={600} height={height} loading="lazy" className="mt-3 w-full max-w-72 rounded-xl" />
+)
+export const ADD_CARD_FIGURES = [
+  shot('/how/paybyphone-modes-de-paiement.webp', 'PayByPhone, onglet Compte : Modes de paiement', 452),
+  shot('/how/paybyphone-ajouter-carte.webp', 'PayByPhone, Modes de paiement : le bouton Ajouter une carte', 394),
+]
+
+/** The same steps, inline (the welcome page when the account has no card yet). */
+export function AddCardGuide() {
+  // Here the page's own « Rafraîchir » checks again: the last step says so.
+  const steps = [...ADD_CARD_STEPS.slice(0, -1), 'Revenez ici et touchez « Rafraîchir ».']
+  return (
+    <ol className="mt-4 space-y-2.5 text-[0.95rem] leading-relaxed text-ink/60">
+      {steps.map((step, i) => (
+        <li key={step} className="flex gap-3">
+          <span className="grid size-6 shrink-0 place-items-center rounded-full bg-eu/[0.08] text-sm font-bold text-eu">{i + 1}</span>
+          <span className="min-w-0">
+            {withPayByPhone(step)}
+            {ADD_CARD_FIGURES[i]}
+          </span>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
 /** Sign-up: PayByBot pays with a card saved on PayByPhone. */
 export const CARD_NOTE = 'Une carte bancaire enregistrée dans PayByPhone est nécessaire.'
 
@@ -1563,10 +1600,8 @@ export function CardRequired({ children }: { children: ReactNode }) {
     <FullScreenNotice
       title="Carte bancaire requise"
       intro={<><PayByBot /> paie avec la carte bancaire de votre compte {withPayByPhone('PayByPhone')}.</>}
-      steps={[
-        'Dans PayByPhone, ajoutez une carte bancaire (ni Apple Pay, ni Google Pay).',
-        'Revenez ici.',
-      ]}
+      steps={ADD_CARD_STEPS}
+      figures={ADD_CARD_FIGURES}
     >
       {children}
     </FullScreenNotice>
@@ -1585,7 +1620,7 @@ export function CardGate({ account }: { account?: ReactNode }) {
       <button onClick={() => window.location.reload()} className={cn('mt-7', ui.primary)}>
         J’ai ajouté ma carte
       </button>
-      <p className="mt-5 flex items-center justify-center gap-5 text-sm">
+      <p className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm [&>*]:whitespace-nowrap">
         <a href={PAYBYPHONE_APP} target="_blank" rel="noreferrer" className={ui.link}>
           Ouvrir PayByPhone
         </a>
