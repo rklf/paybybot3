@@ -1,0 +1,1630 @@
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Check, Loader2, Mail, Pause, Play, Repeat, RotateCw } from 'lucide-react'
+import { toast } from 'sonner'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import { NoPayment } from '@/components/NoPayment'
+import { arrondissement, LogoMark, PayByBot, PayByPhoneMark, Plate, withPayByPhone, ZonePlate } from '@/components/signs'
+import { loadLast, saveLast } from '@/components/PayWizard'
+import { PlansDialog } from '@/components/Pricing'
+import { ShinyButton } from '@/components/ui/shiny-button'
+import { cn } from '@/lib/utils'
+import { hourText, paris, parisMs, TZ } from '@/lib/paris'
+import { PlateBone } from '@/components/Skeletons'
+import { Notice } from '@/components/ui/notice'
+import { DateInput } from '@/components/ui/date-time-fields'
+import { ToggleSwitch } from '@/components/ui/toggle-switch'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { choice, ui } from '@/lib/styles'
+import { emailProblem } from '@/lib/validate'
+import { api, ApiError, type Account, type Activation, type Autopilot, type Money, type Overview, type Parking, type Rate } from '@/lib/api'
+
+export const WEEKLY_LABEL = 'Riverain hebdo'
+
+/** The renewals chosen just before leaving for Stripe, activated on the way back (kept one hour). */
+const PENDING_KEY = 'pbb-pending-renewals'
+
+/** A renewal kept for the way back from Stripe: weekly (no label) or a non-resident ticket on precise days. */
+export type PendingRenewal = Parking & {
+  label?: string
+  days?: number[]
+  start?: string
+  cmis?: boolean
+  locations?: string[]
+  now?: boolean
+  tz?: string
+  /** Chosen on the calendar: the first and last day (ISO), equal for a single day. */
+  dateFrom?: string
+  dateTo?: string
+}
+
+export function savePending(items: PendingRenewal[]) {
+  try {
+    localStorage.setItem(PENDING_KEY, JSON.stringify({ at: Date.now(), items }))
+  } catch {
+    // no storage: the renewal is simply activated again by hand after the payment page
+  }
+}
+
+const AFTER_PAY_KEY = 'pbb-after-pay-plate'
+
+/** A non-resident car chosen before the subscription: its ticket wizard opens on the way back from Stripe. */
+export function savePlateAfterPay(plate: string | null) {
+  try {
+    if (plate) localStorage.setItem(AFTER_PAY_KEY, JSON.stringify({ at: Date.now(), plate }))
+    else localStorage.removeItem(AFTER_PAY_KEY)
+  } catch {
+    // no storage: the car is simply chosen again with « Automatiser »
+  }
+}
+
+export function takePlateAfterPay(): string | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(AFTER_PAY_KEY) || 'null')
+    localStorage.removeItem(AFTER_PAY_KEY)
+    return saved && Date.now() - saved.at < 3_600_000 && typeof saved.plate === 'string' ? saved.plate : null
+  } catch {
+    return null
+  }
+}
+
+export function clearPending() {
+  try {
+    localStorage.removeItem(PENDING_KEY)
+  } catch {
+    // nothing to clear
+  }
+}
+
+
+/** What the activation did for a car, as the e-mail says it, with who pays when a payment fails. */
+export function activationToast(activation: Activation, plate?: string) {
+  if (activation.failed) {
+    // The reason is long: it stays under the vehicle, with « Réessayer ».
+    toast.error(plate ? `${plate} : ${activation.title}` : activation.title, {
+      description: 'La raison est affichée sous votre véhicule.',
+    })
+    return
+  }
+  toast.success(plate ? `${plate} : ${activation.title}` : activation.title, {
+    // Short on screen: what happens if a payment fails is in the e-mail.
+    description: activation.text,
+  })
+}
+
+/** Back from Stripe with a subscription: activate the renewals chosen before leaving. */
+export async function runPendingRenewals(): Promise<{ done: number; weekly: number; failed: string[]; shown: number }> {
+  let items: PendingRenewal[] = []
+  try {
+    const saved = JSON.parse(localStorage.getItem(PENDING_KEY) || 'null')
+    if (saved && Date.now() - saved.at < 3_600_000 && Array.isArray(saved.items)) items = saved.items
+  } catch {
+    // unreadable: nothing pending
+  }
+  // Each one is struck off once tried (never before): a reload meanwhile goes on with the rest, none is lost.
+  const keepRest = (rest: PendingRenewal[]) => (rest.length ? savePending(rest) : clearPending())
+  const failed: string[] = []
+  let shown = 0
+  let weekly = 0
+  for (const [i, p] of items.entries()) {
+    keepRest(items.slice(i + 1))
+    try {
+      const { activation } = await api.addAutopilot({ label: WEEKLY_LABEL, ...p } as Parameters<typeof api.addAutopilot>[0])
+      if (p.days?.length) {
+        // A non-resident ticket on precise days: nothing paid now, the first ticket comes on its day.
+        toast.success(items.length > 1 ? `${p.plate} : ticket programmé.` : 'Ticket programmé.')
+        shown += 1
+        continue
+      }
+      weekly += 1
+      saveLast(p)
+      if (activation) {
+        activationToast(activation, items.length > 1 ? p.plate : undefined)
+        shown += 1
+      }
+    } catch (e) {
+      failed.push(`${p.plate} : ${(e as Error).message}`)
+    }
+  }
+  return { done: items.length - failed.length, weekly, failed, shown }
+}
+const WEEK_DAYS = 7
+
+export const isWeekly = (ap: Autopilot) => ap.label === WEEKLY_LABEL
+
+/** The weekly renewal of the car and zone of a ticket, if there is one. */
+export const renewalOf = (data: Overview, s: { plate: string; location: string }) =>
+  data.autopilots.find((ap) => isWeekly(ap) && ap.plate === s.plate && ap.location === s.location)
+
+export function pauseState(ap: Autopilot, now = Date.now()) {
+  const start = ap.pausedFrom ? new Date(ap.pausedFrom).getTime() : null
+  const end = ap.pausedUntil ? new Date(ap.pausedUntil).getTime() : null
+  return {
+    start,
+    end,
+    paused: start !== null && start <= now && (end === null || now < end),
+    later: start !== null && start > now,
+  }
+}
+
+/** One line on what the renewal of a running ticket will do. */
+/** Relaunch a suspended or failed renewal: the server tries the payment right away and answers with the outcome. */
+export async function relaunch(ap: Autopilot, onChanged: () => void) {
+  const waiting = toast.loading('Relance en cours…', { description: 'PayByBot vérifie votre compte PayByPhone et paie si besoin.' })
+  try {
+    const after = await api.resumeAutopilot(ap.id)
+    if (after.lastError) toast.error('Renouvellement non effectué', { id: waiting, description: 'La raison est affichée sous votre véhicule.' })
+    else if (after.lastPayment) toast.success('Forfait renouvelé.', { id: waiting })
+    else toast.success('Renouvellement relancé.', { id: waiting, description: 'Un ticket est déjà en cours : il prendra le relais à sa fin.' })
+  } catch (e) {
+    toast.error((e as Error).message, { id: waiting })
+  }
+  onChanged()
+}
+
+function RetryButton({ ap, onChanged }: { ap: Autopilot; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false)
+  return (
+    <button
+      onClick={async () => {
+        setBusy(true)
+        await relaunch(ap, onChanged)
+        setBusy(false)
+      }}
+      disabled={busy}
+      className="mt-2 inline-flex items-center gap-1.5 rounded-[10px] bg-ink/[0.06] px-3 py-1.5 text-sm font-semibold text-ink transition hover:bg-ink/[0.1] disabled:opacity-60"
+    >
+      {busy ? <Loader2 className="size-4 animate-spin" /> : <RotateCw className="size-4" />} Réessayer
+    </button>
+  )
+}
+
+/** A vacation pause set for later, in its own box under the ticket or the vehicle. */
+export function PlannedPause({ ap, className }: { ap: Autopilot; className?: string }) {
+  const { start, end, later } = pauseState(ap)
+  if (!later || !ap.enabled) return null
+  return (
+    <p className={cn('flex items-center gap-2.5 rounded-xl border border-eu/15 bg-eu/[0.04] px-4 py-3 text-sm text-ink/60', className)}>
+      <Pause className="size-4 shrink-0 text-eu" />
+      <span>
+        Pause prévue du {dayText(start!)} {end ? `au ${dayText(end - 1)}` : 'sans date de fin'}
+      </span>
+    </p>
+  )
+}
+
+export function RenewalNote({ ap, onChanged }: { ap: Autopilot; onChanged?: () => void; next?: string }) {
+  const { end, paused } = pauseState(ap)
+  if (ap.validate)
+    return (
+      <>
+        <span className="text-destructive">{ap.lastError}</span>
+        <a href={`#/valider?t=${ap.validate}`} className="mt-2 flex w-fit items-center rounded-[10px] border-[1.5px] border-eu px-3 py-1.5 text-sm font-semibold text-eu transition hover:bg-eu/[0.06]">
+          Valider mon paiement
+        </a>
+      </>
+    )
+  if (ap.lastError)
+    return (
+      <>
+        <span className="text-destructive">{ap.lastError}</span>
+        {onChanged && <span className="block"><RetryButton ap={ap} onChanged={onChanged} /></span>}
+      </>
+    )
+  if (!ap.enabled)
+    return (
+      <>
+        <span className="text-destructive">Renouvellement suspendu : vérifiez dans l'application PayByPhone, puis relancez-le.</span>
+        {onChanged && <span className="block"><RetryButton ap={ap} onChanged={onChanged} /></span>}
+      </>
+    )
+  if (paused) return <>Renouvellement en pause {end ? `jusqu'au ${dayText(end - 1)} inclus` : 'sans date de fin'}</>
+  return <>Renouvellement du ticket programmé</>
+}
+
+/** Turning a switch off: it slides to off first, then « Arrêter … ? » opens; « Annuler » puts it back on. It stays off
+ *  once stopped (until the next reading says so), and comes back on if stopping failed or when it is on again later. */
+function useSlideOff(setConfirming: (open: boolean) => void, on: boolean) {
+  const [leaving, setLeaving] = useState(false)
+  const timer = useRef<number | undefined>(undefined)
+  useEffect(() => () => clearTimeout(timer.current), [])
+  useEffect(() => {
+    if (!on) setLeaving(false)
+  }, [on])
+  const ask = () => {
+    setLeaving(true)
+    timer.current = window.setTimeout(() => setConfirming(true), 250) // the switch's own slide
+  }
+  // The window closed without stopping (Annuler, Échap, outside): back on.
+  const closed = (open: boolean) => {
+    setConfirming(open)
+    if (!open) setLeaving(false)
+  }
+  return { leaving, setLeaving, ask, closed }
+}
+
+/** Under a ticket: the vacation pause (planned, or a link to plan one), then the way to stop, in red. */
+const actionBtn = 'flex h-11 w-full items-center justify-center gap-2 rounded-xl border font-semibold transition active:scale-[0.99] sm:w-auto sm:px-5'
+
+export function RenewalActions({
+  ap,
+  onChanged,
+  className,
+  withStop = true,
+  withPause = true,
+  stopLabel = 'Arrêter le renouvellement',
+  stoppedText = 'Renouvellement arrêté.',
+  switchLabel,
+  aside,
+  detail,
+}: {
+  ap: Autopilot
+  onChanged: () => void
+  className?: string
+  /** Shown as an on/off switch with this label (programmed tickets) instead of the stop button; the pause a link. */
+  switchLabel?: string
+  withStop?: boolean
+  /** « Renouvellement » is the resident's word: programmed tickets say what stops instead. */
+  stopLabel?: string
+  /** A single programmed ticket: nothing to pause. */
+  withPause?: boolean
+  stoppedText?: string
+  /** On the switch's line, before it (a CMI-S ticket's « Modifier », its card having no details below). */
+  aside?: React.ReactNode
+  /** Under the switch's label (a CMI-S ticket's « Prochain : … », as on a resident card). */
+  detail?: React.ReactNode
+}) {
+  const [pausing, setPausing] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const { later, paused } = pauseState(ap)
+  const slide = useSlideOff(setConfirming, ap.enabled)
+
+  const [busy, setBusy] = useState(false)
+
+  async function resume() {
+    if (busy) return
+    setBusy(true)
+    // After a failed payment, resuming tries the payment again (up to a minute): shown as such.
+    if (ap.lastError) {
+      await relaunch(ap, onChanged)
+      return setBusy(false)
+    }
+    try {
+      await api.resumeAutopilot(ap.id)
+      toast.success(paused ? 'Renouvellement repris.' : 'Pause annulée.')
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+    setBusy(false)
+    onChanged()
+  }
+
+  async function stop() {
+    if (busy) return
+    setBusy(true)
+    try {
+      await api.deleteAutopilot(ap.id)
+      toast.success(stoppedText, { description: 'Le ticket en cours reste valable.' })
+    } catch (e) {
+      toast.error((e as Error).message)
+      slide.setLeaving(false)
+    }
+    setBusy(false)
+    setConfirming(false)
+    onChanged()
+  }
+
+  if (!ap.enabled) return null
+  if (switchLabel)
+    return (
+      // The card's own text size, like the resident card's « Renouvellement auto ».
+      <div className={cn('space-y-3', className)}>
+        <div className="flex items-center justify-between gap-4">
+            <span className="min-w-0">
+              <span className="block text-[1.05rem] font-medium text-ink">{switchLabel}</span>
+              {detail}
+            </span>
+            {/* The pause on the switch's line (one line less on the card). */}
+            <span className="ml-auto" />
+            {aside}
+            {withPause && !later && !paused && (
+              <button onClick={() => setPausing(true)} className="inline-flex shrink-0 items-center gap-1.5 text-sm whitespace-nowrap text-ink/60 transition hover:text-ink">
+                <Pause className="size-3.5" />
+                Pause
+              </button>
+            )}
+            <ToggleSwitch checked={!slide.leaving} label={switchLabel} disabled={busy} busy={busy} onPress={slide.ask} />
+          </div>
+        <ConfirmDialog
+          open={confirming}
+          onOpenChange={slide.closed}
+          title={`${stopLabel} ?`}
+          description="Le ticket en cours reste valable jusqu’à sa fin. Aucun nouveau ticket ne sera pris."
+          confirmLabel={stopLabel}
+          onConfirm={stop}
+          busy={busy}
+        />
+        {later ? (
+          <div className="flex items-center justify-between gap-3">
+            <PlannedPause ap={ap} className="flex-1" />
+            <button onClick={resume} disabled={busy} className={cn('shrink-0', ui.link)}>
+              Annuler
+            </button>
+          </div>
+        ) : paused ? (
+          <button onClick={resume} disabled={busy} className={cn('text-sm', ui.link)}>
+            Reprendre maintenant
+          </button>
+        ) : null}
+        {pausing && <PauseDialog ap={ap} onClose={() => setPausing(false)} onDone={onChanged} />}
+      </div>
+    )
+  return (
+    <div className={cn('space-y-3 text-[0.95rem]', className)}>
+      {later ? (
+        <div className="flex items-center justify-between gap-3">
+          <PlannedPause ap={ap} className="flex-1" />
+          <button onClick={resume} disabled={busy} className={cn('shrink-0', ui.link)}>
+            Annuler
+          </button>
+        </div>
+      ) : paused ? (
+        <button onClick={resume} disabled={busy} className={cn(actionBtn, 'border-ink/15 text-ink hover:border-ink/40')}>
+          {busy ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Reprendre maintenant
+        </button>
+      ) : null}
+      <div className="flex flex-col gap-2 sm:flex-row">
+        {withPause && !later && !paused && (
+          <button onClick={() => setPausing(true)} className={cn(actionBtn, 'border-ink/15 text-ink hover:border-ink/40')}>
+            <Pause className="size-4" /> Programmer une pause
+          </button>
+        )}
+        {withStop && (
+          <button onClick={() => setConfirming(true)} disabled={busy} className={cn(actionBtn, 'border-destructive/30 text-destructive hover:border-destructive')}>
+            {stopLabel}
+          </button>
+        )}
+      </div>
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={slide.closed}
+        title={`${stopLabel} ?`}
+        description="Le ticket en cours reste valable jusqu’à sa fin. Aucun nouveau ticket ne sera pris."
+        confirmLabel={stopLabel}
+        onConfirm={stop}
+        busy={busy}
+      />
+      {pausing && <PauseDialog ap={ap} onClose={() => setPausing(false)} onDone={onChanged} />}
+    </div>
+  )
+}
+
+/** The "Gérer" link of a renewal and everything behind it: vacation pause, e-mail, stop. */
+export function ManageRenewal({ ap, onChanged, demo = false }: { ap: Autopilot; onChanged: () => void; demo?: boolean }) {
+  const [managing, setManaging] = useState(false)
+  const [pausing, setPausing] = useState(false)
+  const [emailing, setEmailing] = useState(false)
+
+  async function resume() {
+    if (ap.enabled) {
+      try {
+        await api.resumeAutopilot(ap.id)
+        toast.success('Renouvellement repris.')
+      } catch (e) {
+        toast.error((e as Error).message)
+      }
+      return onChanged()
+    }
+    // Relaunch: the server tries the payment right away and answers with the outcome (up to about a minute).
+    await relaunch(ap, onChanged)
+  }
+
+  async function stop() {
+    try {
+      await api.deleteAutopilot(ap.id)
+      toast.success('Renouvellement hebdomadaire arrêté.', { description: 'Le ticket en cours reste valable.' })
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+    onChanged()
+  }
+
+  return (
+    <>
+      <button onClick={() => setManaging(true)} className={cn('shrink-0 text-sm', ui.link)}>
+        Gérer
+      </button>
+      {pausing && <PauseDialog ap={ap} onClose={() => setPausing(false)} onDone={onChanged} />}
+      {emailing && <EmailDialog ap={ap} demo={demo} onClose={() => setEmailing(false)} onDone={onChanged} />}
+      {managing && (
+        <ManageDialog
+          ap={ap}
+          onClose={() => setManaging(false)}
+          onPause={() => {
+            setManaging(false)
+            setPausing(true)
+          }}
+          onResume={() => {
+            setManaging(false)
+            resume()
+          }}
+          onEmail={() => {
+            setManaging(false)
+            setEmailing(true)
+          }}
+          onStop={() => {
+            setManaging(false)
+            stop()
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+const isResident = (r: Rate) => /r[ée]sid|riverain/i.test(`${r.name} ${r.type}`) && !r.parkingNotAllowedReason
+const isTwoWheels = (text: string) => /2\s*roues|deux[\s-]*roues|moto|scooter|two[\s-]*wheel/i.test(text)
+
+/** The resident rate for this vehicle: Paris has one for cars and one for motorbikes ("2 roues - Résident"). */
+/** The weekly renewal of these resident cars, activated at once (the welcome page's « Activer le renouvellement »):
+ *  for each, its resident rate, a quote (the card can pay), then the renewal, each answer told as on the dashboard.
+ *  « paywall »: the free month is over, the offer comes first. */
+export async function activateWeekly(cars: { plate: string; zone: string; type?: string | null; rate?: Rate | null }[], payment: string) {
+  const failed: string[] = []
+  let done = 0
+  for (const car of cars) {
+    let p: Parking | undefined
+    try {
+      const rate = car.rate ?? residentRateFor(await api.rates(car.zone, car.plate), car.type ?? undefined)
+      if (!rate) throw new Error('Pas de tarif résident pour ce véhicule dans cette zone.')
+      if (!rate.acceptedTimeUnits.includes('Days')) throw new Error('Le tarif résident de cette zone ne se paie pas à la journée.')
+      p = { location: car.zone, rate: rate.ratePolicyId, duration: WEEK_DAYS, unit: 'Days', plate: car.plate, paymentAccountId: payment }
+      await api.quote({ ...p, renewal: true })
+      const { activation } = await api.addAutopilot({ ...p, label: WEEKLY_LABEL })
+      saveLast(p)
+      if (activation) activationToast(activation, cars.length > 1 ? car.plate : undefined)
+      else toast.success('Renouvellement hebdomadaire activé.')
+      done += 1
+    } catch (e) {
+      // No free month left: the subscription first; this renewal is kept and activated on the way back from Stripe.
+      if (e instanceof ApiError && e.status === 402 && /offre|abonn/i.test(e.message))
+        return { done, failed, paywall: true, pending: p ? [{ ...p, label: WEEKLY_LABEL }] : [] }
+      failed.push(cars.length > 1 ? `${car.plate} : ${(e as Error).message}` : (e as Error).message)
+    }
+  }
+  return { done, failed, paywall: false, pending: [] as PendingRenewal[] }
+}
+
+function residentRateFor(rates: Rate[], vehicleType?: string) {
+  const residents = rates.filter(isResident)
+  const moto = isTwoWheels(vehicleType ?? '')
+  return residents.find((r) => isTwoWheels(`${r.name} ${r.type}`) === moto) ?? (moto ? residents[0] : undefined)
+}
+
+/** Prominent dashboard card: weekly resident renewal, set up in two clicks. */
+export function RiverainCard({
+  data,
+  onChanged,
+  hosted = false,
+  demo = false,
+}: {
+  data: Overview | null
+  onChanged: () => void
+  hosted?: boolean
+  demo?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+
+  const weekly = data?.autopilots.filter(isWeekly) ?? []
+
+
+  if (weekly.length && data) {
+    // Renewals of a running ticket are shown on the ticket itself; only the others are listed here.
+    const others = weekly.filter((ap) => !data.sessions.some((s) => s.plate === ap.plate && s.location === ap.location))
+    return (
+      <section className="rise">
+        {others.length > 0 && (
+          <ul className="mb-4 divide-y divide-border border-y border-border">
+            {others.map((ap) => {
+              const { paused } = pauseState(ap)
+              return (
+                <li key={ap.id} className="py-4">
+                  <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <span className="flex items-center gap-3">
+                      <Plate plate={ap.plate} size="sm" />
+                      <ZonePlate zone={ap.location} />
+                    </span>
+                    <p className="mt-2 text-sm text-ink/60">
+                      {ap.lastError || paused || !ap.enabled ? <RenewalNote ap={ap} onChanged={onChanged} /> : <>Paiement en cours…</>}
+                    </p>
+                  </div>
+                  <ManageRenewal ap={ap} onChanged={onChanged} demo={demo} />
+                  </div>
+                  <PlannedPause ap={ap} className="mt-3" />
+                </li>
+              )
+            })}
+          </ul>
+        )}
+        <RiverainDialog open={open} onOpenChange={setOpen} data={data} onDone={onChanged} hosted={hosted} demo={demo} />
+      </section>
+    )
+  }
+
+  return (
+    <section className="rise">
+      <ActivateRenewal data={data} onChanged={onChanged} hosted={hosted} demo={demo} />
+    </section>
+  )
+}
+
+/** The kind of ticket and the zone, as one quiet two-part tag: « Résident | 75001 ». */
+export function ZoneTag({ zone, resident = true, kind }: { zone: string; resident?: boolean; kind?: string | null }) {
+  // The ticket's kind in front of the zone: « Résident », or for another ticket its vehicle type (or CMI-S card).
+  const badge = resident ? 'Résident' : kind
+  // On a phone, the short word (« Léger », « Lourd », « CMI-S »): the plate and the zone must fit beside it.
+  const short = badge?.replace(/^Véhicule (\S)/, (_, c: string) => c.toUpperCase()).replace(/^Carte mobilité /, '')
+  // Plain text, no shape and no colour: « Résident – 75001 ».
+  return (
+    <span className="inline-flex shrink-0 items-center text-sm leading-none whitespace-nowrap text-ink/60">
+      {badge && (
+        <span>
+          <span className="sm:hidden">{short}</span>
+          <span className="hidden sm:inline">{badge}</span>
+          <span className="px-1.5">–</span>
+        </span>
+      )}
+      <span className="tabular-nums">{zone}</span>
+    </span>
+  )
+}
+
+/** PayByPhone's own app link (as in the e-mails): on an iPhone it opens the app when installed, else its store page.
+ *  PayByPhone offers no link to one vehicle or ticket: the app opens on its home screen. */
+export const PAYBYPHONE_APP = 'https://paybyphone.onelink.me/ZQkh/'
+
+/** A ticket card's status, said plainly: « Véhicule couvert » with a green tick, until when under it, and PayByPhone's
+ *  mark to check it there. In its last 15 minutes: in red, « Bientôt terminé ». */
+/** « 6 j 23 h » (minutes only under a day), « 2 h 05 min », « 12 min »: what is left of a ticket. */
+function timeLeft(ms: number) {
+  const min = Math.max(1, Math.floor(ms / 60_000))
+  const d = Math.floor(min / 1440)
+  const h = Math.floor((min % 1440) / 60)
+  const m = min % 60
+  if (d) return `${d} j ${h} h`
+  return h ? `${h} h ${String(m).padStart(2, '0')} min` : `${m} min`
+}
+
+export function CoveredLine({ end, soon = false }: { end: number; soon?: boolean }) {
+  // Counted down once a minute.
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(id)
+  }, [])
+  return (
+    <div className="flex items-center gap-3">
+      <span className="min-w-0 flex-1">
+        {/* The tick alone, before the words (no round behind it): light, still reassuring. */}
+        <span className={cn('flex items-center gap-1.5 text-[1.05rem] font-medium', soon ? 'text-destructive' : 'text-ink')}>
+          <Check className={cn('size-4 shrink-0', soon ? 'text-destructive' : 'text-[#1a9a4a]')} strokeWidth={3} />
+          {soon ? 'Bientôt terminé' : 'Véhicule couvert'}
+        </span>
+        {/* The time left, in days, hours and minutes (the exact end on hover). */}
+        <span className="block text-sm text-ink/60" title={`Jusqu’au ${when(end)}`}>
+          Temps restant : <span className="text-ink">{timeLeft(end - now)}</span>
+        </span>
+      </span>
+      {/* PayByPhone's mark alone (its green keypad): check the ticket in its app. */}
+      <a
+        href={PAYBYPHONE_APP}
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Voir dans l’application PayByPhone"
+        title="Voir dans PayByPhone"
+        className="-mr-1 shrink-0 p-1 transition hover:opacity-75"
+      >
+        <PayByPhoneMark className="size-5" />
+      </a>
+    </div>
+  )
+}
+
+/** « mardi 3 novembre, 23h54 » at Paris time (minutes only when not on the hour). */
+export function when(t: number) {
+  const day = new Date(t).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: TZ })
+  return `${day}, ${hourText(t)}`
+}
+
+/** When this week will be renewed: the rule the server follows (20h the day before the end, never more than 24
+ *  hours before it), or its next look when that comes later (a retry). An earlier look only checks the card. */
+export function nextRenewal(nextCheck: string | null | undefined, expire: string) {
+  const end = new Date(expire).getTime()
+  const before = paris(end - 86_400_000) // 20h in Paris the day before, as the server counts
+  const rule = Math.max(parisMs(before.y, before.mo, before.d, 20, 0), end - 86_400_000 + 60_000)
+  const planned = nextCheck ? new Date(nextCheck).getTime() : NaN
+  return planned > Date.now() && planned > rule && planned <= end + 60_000 ? planned : rule
+}
+
+/** The switch's name, with whether it is on: « Renouvellement résident automatique », « Activé » or « Désactivé ». */
+function SwitchLabel({ children, status }: { on: boolean; children?: ReactNode; status?: ReactNode }) {
+  return (
+    <span className="min-w-0">
+      <span className="block text-[1.05rem] font-medium text-ink">Renouvellement auto</span>
+      {/* The switch says on or off: only a line of its own (the next renewal) when the card gives one. */}
+      {(status || children) && (
+        <span className="flex items-center gap-3">
+          {status}
+          {children}
+        </span>
+      )}
+    </span>
+  )
+}
+
+/** « Renouvellement auto », off: a tap turns it green first (the switch answers at once), then opens its window;
+ *  it stays green while the window is open and goes back to off if the window is closed without activating. */
+export function OpeningSwitch({ open, isOpen, on = false }: { open: () => void; isOpen: boolean; on?: boolean }) {
+  const [pressed, setPressed] = useState(false)
+  useEffect(() => {
+    if (isOpen) setPressed(false) // the window took over: green as long as it is open
+  }, [isOpen])
+  const checked = on || pressed || isOpen
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <SwitchLabel on={checked} />
+      <ToggleSwitch
+        checked={checked}
+        label="Renouvellement résident automatique"
+        onPress={() => {
+          if (pressed || isOpen) return
+          setPressed(true)
+          setTimeout(open, 280) // the knob slides to green, then the window opens
+        }}
+      />
+    </div>
+  )
+}
+
+/** The « Activer le renouvellement résident » button and its dialog; with a plate, only that car is ticked. */
+/** The ticket card's « Renouvellement auto » switch, Qonto-like (muted teal). Off with no renewal: opens the
+ *  setup; on: turning it off asks to confirm, then stops; off after a failure: tries the payment again. */
+export function RenewalSwitch({
+  ap,
+  data,
+  plate,
+  onChanged,
+  hosted,
+  demo,
+  autoOpen,
+  locked,
+  onLogout,
+  details,
+  status,
+}: {
+  ap: Autopilot | null
+  data: Overview
+  plate: string
+  onChanged: () => void
+  hosted: boolean
+  demo: boolean
+  autoOpen?: boolean
+  locked?: boolean
+  onLogout?: () => void
+  /** Shown under the switch's line (a note when something needs saying). */
+  details?: ReactNode
+  /** Said under the switch's name instead of « Activé » (the next renewal). */
+  status?: ReactNode
+}) {
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [pausing, setPausing] = useState(false)
+  const on = !!ap && ap.enabled && !ap.lastError
+  const slide = useSlideOff(setConfirming, on)
+  // On and not paused (nor a pause planned): the pause offered on the switch's line, like programmed tickets.
+  const pausable = on && !!ap && !pauseState(ap).paused && !pauseState(ap).later
+
+  async function stop() {
+    if (!ap || busy) return
+    setBusy(true)
+    try {
+      await api.deleteAutopilot(ap.id)
+      toast.success('Renouvellement arrêté.', { description: 'Le ticket en cours reste valable.' })
+    } catch (e) {
+      toast.error((e as Error).message)
+      slide.setLeaving(false)
+    }
+    setBusy(false)
+    setConfirming(false)
+    onChanged()
+  }
+
+  const row = (onClick: () => void) => (
+    <div className="flex items-center justify-between gap-4">
+      {/* The title and its state on the left; « Pause » then the switch on the right. */}
+      <SwitchLabel on={on} status={on ? status : undefined} />
+      <span className="ml-auto" />
+      {pausable && (
+        <button onClick={() => setPausing(true)} className="inline-flex shrink-0 items-center gap-1.5 text-sm text-ink/60 transition hover:text-ink">
+          <Pause className="size-3.5" /> Pause
+        </button>
+      )}
+      <ToggleSwitch checked={on && !slide.leaving} label="Renouvellement résident automatique" disabled={busy} busy={busy} onPress={onClick} />
+    </div>
+  )
+
+  if (!ap)
+    return (
+      <ActivateRenewal
+        data={data}
+        onChanged={onChanged}
+        hosted={hosted}
+        demo={demo}
+        plate={plate}
+        autoOpen={autoOpen}
+        locked={autoOpen && locked}
+        onLogout={onLogout}
+        trigger={(open, isOpen) => <OpeningSwitch open={open} isOpen={isOpen} />}
+      />
+    )
+  return (
+    <>
+      {row(() =>
+        on
+          ? slide.ask()
+          : (async () => {
+              setBusy(true)
+              await relaunch(ap, onChanged)
+              setBusy(false)
+            })(),
+      )}
+      {details}
+      {/* In error, the switch only relaunches (pays again): stopping it is offered here. */}
+      {ap.enabled && ap.lastError && (
+        <button onClick={() => setConfirming(true)} disabled={busy} className={cn('mt-3 text-sm', ui.link)}>
+          Arrêter le renouvellement
+        </button>
+      )}
+      {pausing && <PauseDialog ap={ap} onClose={() => setPausing(false)} onDone={onChanged} />}
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={slide.closed}
+        title="Arrêter le renouvellement ?"
+        description="Le ticket en cours reste valable jusqu’à sa fin. Plus aucune semaine ne sera payée automatiquement."
+        confirmLabel="Arrêter le renouvellement"
+        onConfirm={stop}
+        busy={busy}
+      />
+    </>
+  )
+}
+
+export function ActivateRenewal({
+  data,
+  onChanged,
+  hosted = false,
+  demo = false,
+  plate,
+  label = 'Activer le renouvellement résident',
+  autoOpen = false,
+  locked = false,
+  onLogout,
+  trigger,
+}: {
+  data: Overview | null
+  onChanged: () => void
+  hosted?: boolean
+  demo?: boolean
+  plate?: string
+  /** Something else than the big button opens the dialog (the ticket card's switch); told whether it is open. */
+  trigger?: (open: () => void, isOpen: boolean) => ReactNode
+  /** A ticket is running: the renewal only takes over when it ends. */
+  label?: string
+  /** Just signed up: the dialog opens by itself, like Frequens (then the offer, then the renewal). */
+  autoOpen?: boolean
+  /** No offer chosen yet: the dialog cannot be closed (only left by signing out). */
+  locked?: boolean
+  onLogout?: () => void
+}) {
+  const [open, setOpen] = useState(!!autoOpen && !!data)
+  // The account (and so the lock) arrives after the first render.
+  useEffect(() => {
+    if ((autoOpen || locked) && data) setOpen(true)
+  }, [autoOpen, locked, !!data]) // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <>
+      {trigger ? (
+        trigger(() => data && setOpen(true), open)
+      ) : (
+        <ShinyButton onClick={() => setOpen(true)} disabled={!data} className="flex h-14 w-full items-center justify-center rounded-xl border border-eu/30 bg-eu/[0.07] px-6 text-lg font-bold text-eu hover:bg-eu/[0.1] disabled:opacity-50">
+          {label}
+        </ShinyButton>
+      )}
+      {data && <RiverainDialog open={open} onOpenChange={setOpen} data={data} onDone={onChanged} hosted={hosted} demo={demo} plate={plate} locked={locked} onLogout={onLogout} />}
+    </>
+  )
+}
+
+type Found = { rate: Rate | null; quote: Quote | null; error: string | null }
+type Quote = { cost: Money | null; afterCurrent?: boolean; currentExpire?: string | null; priceSource?: 'history' | 'paris' | null }
+
+/** Nothing ticked in the renewal window, and why: the car already renewed, PayByPhone not giving its resident rate
+ *  right now (« Réessayer »), or only « tick one » when there is a choice. */
+function EmptyReason({ plates, plate, covered, onRetry }: { plates: string[] | null; plate?: string; covered: Set<string>; onRetry: () => void }) {
+  const key = (p: string) => p.replace(/[^0-9a-z]/gi, '').toUpperCase()
+  const has = (set: Iterable<string>, p: string) => [...set].some((x) => key(x) === key(p))
+  const retry = (
+    <button onClick={onRetry} className="mt-2 inline-flex items-center gap-1.5 rounded-[10px] bg-ink/[0.06] px-3 py-1.5 text-sm font-semibold text-ink transition hover:bg-ink/[0.1]">
+      <RotateCw className="size-4" /> Réessayer
+    </button>
+  )
+  if (plates === null) return <p className="text-muted-foreground">Recherche de vos véhicules résidents…</p>
+  if (plate && has(covered, plate)) return <p className="text-muted-foreground">Ce véhicule a déjà son renouvellement hebdomadaire.</p>
+  if (plate && !has(plates, plate))
+    return (
+      <div className="text-muted-foreground">
+        <p>PayByPhone n’a pas confirmé le tarif résident de ce véhicule pour l’instant.</p>
+        {retry}
+      </div>
+    )
+  if (!plates.length)
+    return (
+      <div className="text-muted-foreground">
+        <p>Aucun véhicule au tarif résident trouvé sur votre compte PayByPhone.</p>
+        {retry}
+      </div>
+    )
+  if (plates.every((p) => has(covered, p))) return <p className="text-muted-foreground">Tous vos véhicules résidents ont déjà leur renouvellement.</p>
+  return <p className="text-muted-foreground">Cochez au moins un véhicule.</p>
+}
+
+export function RiverainDialog({
+  open,
+  onOpenChange,
+  data,
+  onDone,
+  hosted,
+  demo = false,
+  plate,
+  locked = false,
+  onLogout,
+  onBack,
+}: {
+  /** Opened from « Programmer un ticket » (a resident car chosen): « Précédent » leads back to it. */
+  onBack?: () => void
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  data: Overview
+  onDone: () => void
+  hosted: boolean
+  demo?: boolean
+  /** Opened from a car's card: only that car is ticked. */
+  plate?: string
+  locked?: boolean
+  onLogout?: () => void
+}) {
+  const [plates, setPlates] = useState<string[] | null>(null) // the « riverain » vehicles (null: looking)
+  const [selected, setSelected] = useState<string[]>([])
+  const [lookAgain, setLookAgain] = useState(0) // « Réessayer » when PayByPhone gave no resident rate to tick
+  const [quoteTry, setQuoteTry] = useState(0) // « Réessayer » under a vehicle whose price did not come
+  const [zones, setZones] = useState<Record<string, string>>({}) // each riverain vehicle's arrondissement, from PayByPhone
+  const [knownRates, setKnownRates] = useState<Record<string, Rate | null>>({}) // each one's resident rate, from the prices
+  const [weeks, setWeeks] = useState<Record<string, number | null>>({}) // the resident week's price, in cents
+  const [payment, setPayment] = useState('')
+  const [found, setFound] = useState<Record<string, Found>>({})
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  // The bank asks to confirm every payment: trying again would only send it another request.
+  const cardRefused = !!error && /3-D Secure|banque a refusé/.test(error)
+  // Online, a renewal needs a subscription, chosen on Stripe even during the free month (nothing charged before
+  // it ends): without one, « Activer » opens the offer choice first.
+  const [account, setAccount] = useState<Account | null>(null)
+  const [paywall, setPaywall] = useState(false)
+  useEffect(() => {
+    if (open && hosted && !demo) api.account().then(setAccount, () => {})
+  }, [open, hosted, demo])
+
+  const covered = new Set(data.autopilots.filter(isWeekly).map((a) => a.plate))
+  // Renewals pay with a saved card only (PayPal or the phone bill are not offered for them).
+  // Expired cards would be refused: never offered.
+  const allCards = data.payments.filter((p) => p.kind === 'card')
+  const cards = allCards.filter((p) => !p.expired)
+
+  // Each time the dialog opens: the riverain vehicles not renewed yet (all ticked), each with the arrondissement
+  // PayByPhone gives it the resident rate in (never typed), and the card.
+  useEffect(() => {
+    if (!open) return
+    const last = loadLast()
+    setError(null)
+    setFound({})
+    setPlates(null)
+    api.pricing(60_000).then(
+      (p) => {
+        const riverain = (p.vehicles ?? []).filter((v) => v.zone)
+        setZones(Object.fromEntries(riverain.map((v) => [v.plate, v.zone as string])))
+        setKnownRates(Object.fromEntries(riverain.map((v) => [v.plate, v.rate ?? null])))
+        setWeeks(Object.fromEntries(riverain.map((v) => [v.plate, v.weekly ?? null])))
+        setPlates(riverain.map((v) => v.plate))
+        const same = (x: string) => !plate || x.replace(/[^0-9a-z]/gi, '').toUpperCase() === plate.replace(/[^0-9a-z]/gi, '').toUpperCase()
+        setSelected(riverain.map((v) => v.plate).filter((x) => !covered.has(x) && same(x)))
+      },
+      (e) => {
+        setPlates([])
+        setError((e as Error).message)
+      },
+    )
+    setPayment(cards.find((p) => p.id === last.paymentAccountId)?.id ?? cards[0]?.id ?? '')
+    // Then the card PayByPhone was last paid with, when there is a choice.
+    if (cards.length > 1)
+      api.lastCard().then(
+        (r) => r.paymentAccountId && cards.some((p) => p.id === r.paymentAccountId) && setPayment(r.paymentAccountId),
+        () => {},
+      )
+    // Only when it opens: a refresh of the account behind it must not wipe the price or a message on screen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, lookAgain])
+
+  useEffect(() => {
+    if (open && !payment && cards[0]) setPayment(cards[0].id)
+  }, [open, cards, payment])
+
+  const ready = open && selected.length > 0 && payment
+
+  // For each ticked vehicle: its resident rate and the price of a week, in its own arrondissement.
+  useEffect(() => {
+    if (!ready) {
+      setFound({})
+      return
+    }
+    let cancelled = false
+    setLoading(true)
+    const timer = setTimeout(async () => {
+      const results = await Promise.all(
+        selected.map(async (plate): Promise<[string, Found]> => {
+          try {
+            // The rate the account's prices already found, else asked to PayByPhone.
+            const resident =
+              knownRates[plate] ?? residentRateFor(await api.rates(zones[plate], plate), data.vehicles.find((v) => v.plate === plate)?.type)
+            if (!resident) throw new Error('Pas de tarif résident pour ce véhicule dans cette zone.')
+            if (!resident.acceptedTimeUnits.includes('Days')) throw new Error('Le tarif résident de cette zone ne se paie pas à la journée.')
+            const quote = await api.quote({ ...parking(resident, plate), renewal: true })
+            return [plate, { rate: resident, quote, error: null }]
+          } catch (e) {
+            return [plate, { rate: null, quote: null, error: (e as Error).message }]
+          }
+        }),
+      )
+      if (!cancelled) {
+        setFound(Object.fromEntries(results))
+        setLoading(false)
+      }
+    }, Object.keys(found).length ? 350 : 0) // at once when the window opens, then after the ticks settle
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, selected.join(','), payment, quoteTry])
+
+  function parking(r: Rate, plate: string): Parking {
+    return { location: zones[plate], rate: r.ratePolicyId, duration: WEEK_DAYS, unit: 'Days', plate, paymentAccountId: payment }
+  }
+
+  const samePlate = (a: string, b: string) => a.replace(/[^0-9a-z]/gi, '').toUpperCase() === b.replace(/[^0-9a-z]/gi, '').toUpperCase()
+  const runningFor = (plate: string) =>
+    !!found[plate]?.quote?.afterCurrent || data.sessions.some((s) => samePlate(s.plate, plate) && new Date(s.expire).getTime() > Date.now())
+  const ok = selected.filter((plate) => found[plate]?.rate && found[plate]?.quote)
+
+  function toggle(plate: string) {
+    setSelected((list) => (list.includes(plate) ? list.filter((x) => x !== plate) : [...list, plate]))
+  }
+
+  async function activate() {
+    if (!ok.length) return
+    if (account?.blocked === 'trialOver') {
+      // The free month over without a subscription: the offer screen first. The renewal is activated on the way
+      // back from Stripe, and that is when the first payment (or the extension) happens.
+      setPaywall(true)
+      return
+    }
+    setSaving(true)
+    setError(null)
+    const failed: string[] = []
+    let shown = 0
+    for (const plate of ok) {
+      try {
+        const p = parking(found[plate].rate!, plate)
+        // Confirmations go to the account e-mail; online, the answer says what was paid and when the next is.
+        const { activation } = await api.addAutopilot({ ...p, label: WEEKLY_LABEL })
+        saveLast(p)
+        if (activation) {
+          activationToast(activation, ok.length > 1 ? plate : undefined)
+          shown += 1
+        }
+      } catch (e) {
+        // No subscription yet (the account had not loaded when « Activer » was clicked): the offer screen.
+        if (e instanceof ApiError && e.status === 402 && /offre|abonn/i.test(e.message)) {
+          setSaving(false)
+          setPaywall(true)
+          return
+        }
+        failed.push(`${plate} : ${(e as Error).message}`)
+      }
+    }
+    setSaving(false)
+    const done = ok.length - failed.length
+    if (done) {
+      if (!shown)
+        toast.success(done > 1 ? `Renouvellement activé pour ${done} véhicules.` : 'Renouvellement hebdomadaire activé.', {
+          description: ok.some(runningFor)
+            ? 'Chaque renouvellement prend le relais à la fin du ticket en cours.'
+            : 'La première semaine est en cours de paiement.',
+        })
+      setTimeout(onDone, 2500)
+      onDone()
+    }
+    if (failed.length) setError(failed.join('\n'))
+    else onOpenChange(false)
+  }
+
+  return (
+    // Always closable with the cross, even when it opened by itself (locked): the dashboard stays behind it.
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className={cn(ui.dialog, 'sm:max-w-lg')}>
+        <div className="px-6 pt-7">
+          <DialogTitle className={ui.dialogTitle}>Renouvellement hebdomadaire</DialogTitle>
+          {/* Opened from a car's card: the button says what to do, no sentence needed. */}
+          <DialogDescription className={plate ? 'sr-only' : 'mt-1 text-ink/60'}>
+            {plate ? 'Vérifiez, puis activez. On s’occupe du reste.' : "Choisissez les véhicules à renouveler, vérifiez, puis activez. On s'occupe du reste."}
+          </DialogDescription>
+        </div>
+
+        <div className="space-y-6 p-6">
+          {/* Opened from a car's card: that car only, nothing to choose. */}
+          {!plate && (
+          <div>
+            <p className={ui.label}>{plates && plates.length > 1 ? 'Véhicules résidents' : 'Véhicule résident'}</p>
+            {plates === null ? (
+              <div className="flex flex-wrap gap-2">
+                {[0, 1].map((i) => (
+                  <span key={i} className="rounded-xl border border-ink/10 p-2">
+                    <PlateBone />
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {plates.map((plate) =>
+                  covered.has(plate) ? (
+                    <span key={plate} className="inline-flex flex-col items-center gap-1 rounded-xl border border-ink/10 p-2 opacity-60">
+                      <Plate plate={plate} size="sm" />
+                      <span className="text-sm text-ink/60">Déjà renouvelé</span>
+                    </span>
+                  ) : (
+                    <button
+                      key={plate}
+                      onClick={() => toggle(plate)}
+                      aria-pressed={selected.includes(plate)}
+                      className={choice(selected.includes(plate), 'flex items-center gap-2 p-2')}
+                    >
+                      <span
+                        className={cn(
+                          'grid size-5 place-items-center rounded-[10px] border',
+                          selected.includes(plate) ? 'border-eu bg-eu text-white' : 'border-ink/25',
+                        )}
+                      >
+                        {selected.includes(plate) && <Check className="size-3.5" strokeWidth={3} />}
+                      </span>
+                      <Plate plate={plate} size="sm" />
+                    </button>
+                  ),
+                )}
+              </div>
+            )}
+          </div>
+          )}
+
+          {!allCards.length && <NoPayment compact onRefresh={async () => onDone()} />}
+          {allCards.length > 0 && !cards.length && (
+            <Notice>
+              {allCards.length > 1 ? "Les cartes" : "La carte"} de votre compte PayByPhone {allCards.length > 1 ? 'ont' : 'a'} expiré (
+              {allCards.map((p) => p.label.split('—').pop()!.trim()).join(', ')}). Ajoutez votre nouvelle carte dans l'application PayByPhone, puis rouvrez cette fenêtre.
+            </Notice>
+          )}
+
+          {cards.length > 1 && (
+            <div>
+              <p className={ui.label}>Payer avec</p>
+              <div className="flex flex-wrap gap-2">
+                {cards.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => setPayment(p.id)}
+                    className={choice(payment === p.id, 'px-3 py-2 text-sm font-bold')}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Summary: one line per ticked vehicle */}
+          <div className="rounded-xl border border-ink/10 p-4" aria-live="polite">
+            {!selected.length ? (
+              <EmptyReason plates={plates} plate={plate} covered={covered} onRetry={() => setLookAgain((n) => n + 1)} />
+            ) : loading ? (
+              <p className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" /> Recherche du tarif résident…
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {selected.map((plate) => {
+                  const f = found[plate]
+                  const cents = weeks[plate] ?? (f?.quote?.cost ? Math.round(f.quote.cost.amount * 100) : null)
+                  return (
+                    <li key={plate} className="min-w-0">
+                      {/* Like the ticket card: the plate left, « Résident | zone » right, then the price and when it is paid. */}
+                      <span className="flex items-center justify-between gap-3">
+                        <Plate plate={plate} size="sm" />
+                        {zones[plate] && <ZoneTag zone={zones[plate]} />}
+                      </span>
+                      {cents != null && !f?.error && (
+                        <span className="mt-4 block font-heading text-2xl leading-none text-ink tabular-nums">
+                          {(cents / 100).toFixed(2).replace('.', ',')} € <span className="text-[0.95rem] text-ink/60">par semaine</span>
+                        </span>
+                      )}
+                      {(() => {
+                        // The first payment: the day before the running ticket ends, else right away.
+                        const t = data.sessions.find((x) => samePlate(x.plate, plate) && new Date(x.expire).getTime() > Date.now())
+                        // Whether a ticket already runs for this car: the renewal follows it, never on top of it.
+                        return (
+                          <>
+                            <span className="mt-2 block text-sm text-ink/60">
+                              {t ? (
+                                <>
+                                  Ticket en cours : <span className="whitespace-nowrap text-ink">jusqu’au {when(new Date(t.expire).getTime())}</span>
+                                </>
+                              ) : (
+                                'Aucun ticket en cours'
+                              )}
+                            </span>
+                            <span className="mt-0.5 block text-sm text-ink/60">
+                              Premier paiement : <span className="whitespace-nowrap text-ink">{t ? when(nextRenewal(null, t.expire)) : 'maintenant'}</span>
+                            </span>
+                          </>
+                        )
+                      })()}
+                      {f?.error && (
+                        <span className="mt-1 block text-sm">
+                          <span className="text-destructive">{f.error}</span>{' '}
+                          <button type="button" onClick={(e) => (e.stopPropagation(), setQuoteTry((n) => n + 1))} className={ui.link}>
+                            Réessayer
+                          </button>
+                        </span>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+
+          {error && (
+            <Notice className="whitespace-pre-line">
+              {error}
+              {cardRefused && cards.length > 1 && (
+                <span className="mt-2 block font-semibold">Vous pouvez aussi choisir votre autre carte ci-dessus, puis réessayer.</span>
+              )}
+            </Notice>
+          )}
+
+          {/* After a refusal: retry on purpose (once the card is checked or changed in PayByPhone, or with the other
+              card chosen above), never by accident. */}
+          <div className="flex gap-3">
+          {onBack && (
+            <button onClick={onBack} disabled={saving} className={cn(ui.primaryGray, 'w-auto flex-1')}>
+              Précédent
+            </button>
+          )}
+          <button
+            onClick={() => {
+              setError(null)
+              activate()
+            }}
+            disabled={!ok.length || loading || saving}
+            className={cn(ui.primary, onBack && 'flex-[2]')}
+          >
+            {cardRefused ? (
+              <>
+                <RotateCw className="size-5" /> Réessayer
+              </>
+            ) : saving ? (
+              <Loader2 className="size-5 animate-spin" />
+            ) : ok.length > 1 ? (
+              `Activer le renouvellement pour ${ok.length} véhicules`
+            ) : (
+              'Activer le renouvellement'
+            )}
+          </button>
+          </div>
+          {locked && onLogout && (
+            <button onClick={onLogout} className={cn('mx-auto block text-sm', ui.link)}>
+              Se déconnecter
+            </button>
+          )}
+        </div>
+      </DialogContent>
+      {paywall && (
+        <PlansDialog
+          onPay={() => savePending(ok.map((plate) => parking(found[plate].rate!, plate)))}
+          onClose={() => {
+            clearPending()
+            setPaywall(false)
+          }}
+        />
+      )}
+    </Dialog>
+  )
+}
+
+function dayText(ms: number) {
+  return new Date(ms).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', timeZone: TZ })
+}
+
+/** The day in Paris, « 2026-11-14 ». */
+function isoDay(d: Date) {
+  return paris(d.getTime()).iso
+}
+
+/** Vacation pause: no payment between two days (Paris time), or from a day with no end yet. */
+/** Where the renewal's confirmations go: one address, or none. */
+function EmailDialog({ ap, demo, onClose, onDone }: { ap: Autopilot; demo: boolean; onClose: () => void; onDone: () => void }) {
+  const [email, setEmail] = useState(ap.email ?? '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const problem = email.trim() === '' ? null : emailProblem(email)
+
+  async function save(value: string) {
+    setSaving(true)
+    setError(null)
+    try {
+      await api.setAutopilotEmail(ap.id, value)
+      toast.success(value ? 'Les confirmations seront envoyées à cette adresse.' : 'Vous ne recevrez plus d’e-mails.')
+      onClose()
+      onDone()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className={ui.dialog}>
+        <div className="px-6 pt-7">
+          <DialogTitle className={ui.dialogTitle}>Confirmations par e-mail</DialogTitle>
+          <DialogDescription className="mt-1 text-ink/60">
+            Un e-mail à chaque paiement, et une alerte en cas de problème.
+            {demo && ' Mode démo : aucun e-mail n’est envoyé.'}
+          </DialogDescription>
+        </div>
+        <form
+          className="space-y-4 p-6"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (problem) setError(problem)
+            else save(email.trim())
+          }}
+        >
+          <input
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            autoFocus
+            placeholder="vous@exemple.fr"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            aria-label="Adresse e-mail"
+            className={ui.field}
+          />
+          {error && (
+            <Notice>
+              {error}
+            </Notice>
+          )}
+          <button type="submit" disabled={saving || email.trim() === (ap.email ?? '')} className={ui.primary}>
+            {saving ? <Loader2 className="size-5 animate-spin" /> : 'Enregistrer'}
+          </button>
+          {ap.email && (
+            <button type="button" onClick={() => save('')} disabled={saving} className={cn('mx-auto block text-sm', ui.link)}>
+              Ne plus recevoir d’e-mails
+            </button>
+          )}
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function PauseDialog({ ap, onClose, onDone }: { ap: Autopilot; onClose: () => void; onDone: () => void }) {
+  const today = isoDay(new Date())
+  const [start, setStart] = useState(today)
+  const [end, setEnd] = useState('')
+  const [noEnd, setNoEnd] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const valid = start >= today && (noEnd || (end !== '' && end >= start))
+
+  async function save() {
+    setSaving(true)
+    setError(null)
+    try {
+      await api.pauseAutopilot(ap.id, start, noEnd ? null : end)
+      toast.success('Pause enregistrée.', {
+        description: noEnd ? 'Reprenez quand vous voulez depuis le tableau de bord.' : 'Le renouvellement reprendra tout seul.',
+      })
+      onClose()
+      onDone()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className={ui.dialog}>
+        <div className="px-6 pt-7">
+          <DialogTitle className={ui.dialogTitle}>Programmer une pause</DialogTitle>
+          <DialogDescription className="mt-1 text-ink/60">
+            Aucun forfait ne sera payé pendant la pause. Un ticket déjà en cours reste valable jusqu’à sa fin.
+          </DialogDescription>
+        </div>
+        <div className="space-y-5 p-6">
+          <div className="flex items-center gap-3">
+            <Plate plate={ap.plate} size="sm" />
+            <ZonePlate zone={ap.location} />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <span className={ui.label}>Premier jour</span>
+              <DateInput label="Premier jour" min={today} value={start} onChange={setStart} />
+            </div>
+            <div className="space-y-1.5">
+              <span className={ui.label}>Dernier jour</span>
+              <DateInput label="Dernier jour" min={start} value={end} disabled={noEnd} onChange={setEnd} className="data-[disabled=true]:opacity-40" />
+            </div>
+          </div>
+          <label className="flex cursor-pointer items-center gap-3">
+            <input type="checkbox" checked={noEnd} onChange={(e) => setNoEnd(e.target.checked)} className="size-5 accent-[var(--eu)]" />
+            <span>Pas de date de fin pour le moment</span>
+          </label>
+          <p className={ui.note}>
+            {noEnd
+              ? `En pause à partir du ${start ? dayText(new Date(start + 'T12:00').getTime()) : '…'}, jusqu’à ce que vous repreniez.`
+              : end
+                ? `En pause du ${dayText(new Date(start + 'T12:00').getTime())} au ${dayText(new Date(end + 'T12:00').getTime())} inclus. Reprise automatique le lendemain.`
+                : 'Choisissez le dernier jour de pause.'}
+          </p>
+          {error && <Notice>{error}</Notice>}
+          <button onClick={save} disabled={!valid || saving} className={ui.primary}>
+            {saving ? <Loader2 className="size-5 animate-spin" /> : 'Mettre en pause'}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** The options of one renewal, behind a single "Gérer" link to keep the card quiet. */
+function ManageDialog({
+  ap,
+  onClose,
+  onPause,
+  onResume,
+  onEmail,
+  onStop,
+}: {
+  ap: Autopilot
+  onClose: () => void
+  onPause: () => void
+  onResume: () => void
+  onEmail: () => void
+  onStop: () => void
+}) {
+  const now = Date.now()
+  const start = ap.pausedFrom ? new Date(ap.pausedFrom).getTime() : null
+  const end = ap.pausedUntil ? new Date(ap.pausedUntil).getTime() : null
+  const pauseSet = start !== null && (end === null || now < end)
+  const row = 'flex w-full items-center gap-3 rounded-xl px-4 py-3.5 text-left text-[0.95rem] font-normal transition hover:bg-muted'
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="gap-0 rounded-2xl bg-white p-2 sm:max-w-sm">
+        <div className="flex items-center gap-3 px-4 pt-4 pb-3">
+          <Plate plate={ap.plate} size="sm" />
+          <DialogTitle className="text-[0.95rem] font-normal">Renouvellement zone {ap.location}</DialogTitle>
+          <DialogDescription className="sr-only">Options du renouvellement</DialogDescription>
+        </div>
+        {!ap.enabled ? (
+          <button onClick={onResume} className={row}>
+            <Play className="size-5" /> Relancer le renouvellement
+          </button>
+        ) : pauseSet ? (
+          <button onClick={onResume} className={row}>
+            <Play className="size-5" /> {start! <= now ? 'Reprendre maintenant' : 'Annuler la pause prévue'}
+          </button>
+        ) : (
+          <button onClick={onPause} className={row}>
+            <Pause className="size-5" /> Pause vacances
+          </button>
+        )}
+        <button onClick={onEmail} className={row}>
+          <Mail className="size-5" />
+          <span className="min-w-0">
+            Confirmations par e-mail
+            <span className="block truncate text-sm font-normal text-muted-foreground">{ap.email || 'Désactivées'}</span>
+          </span>
+        </button>
+        <button onClick={onStop} className={`${row} font-bold text-destructive hover:bg-destructive/10`}>
+          <Repeat className="size-5" /> Arrêter le renouvellement
+        </button>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+export type ResidentStatus = { zone: string | null; resident: boolean | null }
+
+/** Full screen over the blurred page: PayByBot needs a vehicle with the resident rate; what to do, then the actions. */
+/** Full screen over the blurred page: what PayByBot needs and what to do, then the actions (children). */
+function FullScreenNotice({ title, intro, steps, figures = [], children }: { title: string; intro: ReactNode; steps: string[]; figures?: ReactNode[]; children: ReactNode }) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="full-screen-notice-title"
+      className="fixed inset-0 z-50 grid center-safe overflow-y-auto bg-white/60 p-4 backdrop-blur-md sm:p-6"
+    >
+      <div className="rise w-full max-w-lg rounded-2xl border border-ink/10 bg-white p-7 shadow-[0_40px_80px_-30px_rgb(11_16_36/0.35)] sm:p-9">
+        <LogoMark className="h-9 w-auto" />
+        <h2 id="full-screen-notice-title" className={cn('mt-5', ui.dialogTitle)}>
+          {title}
+        </h2>
+        <p className="mt-2 text-[0.95rem] leading-relaxed text-ink/60">{intro}</p>
+        {steps.length > 0 && (
+        <ol className="mt-5 space-y-2.5 text-[0.95rem] leading-relaxed text-ink/60">
+          {steps.map((step, i) => (
+            <Fragment key={step}>
+              <li className="flex gap-3">
+                <span className="grid size-6 shrink-0 place-items-center rounded-full bg-eu/[0.08] text-sm font-bold text-eu">
+                  {i + 1}
+                </span>
+                <span className="min-w-0">{withPayByPhone(step)}</span>
+              </li>
+              {figures.length > 0 && i === figures.length - 1 && <li className="pl-9"><Shots figures={figures} /></li>}
+            </Fragment>
+          ))}
+        </ol>
+        )}
+        {children}
+      </div>
+    </div>
+  )
+}
+
+/** PayByBot needs a vehicle with the resident rate. */
+export function ResidentRequired({
+  zone = null,
+  vehicles = 2,
+  children,
+}: {
+  zone?: string | null
+  vehicles?: number // one: « votre véhicule », else the plural
+  children: ReactNode
+}) {
+  const where = zone ? arrondissement(zone) ?? `la zone ${zone}` : null
+  return (
+    <FullScreenNotice
+      title="Stationnement résident requis"
+      intro={
+        <>
+          Pour accéder aux services <PayByBot />,{' '}
+          {vehicles === 1 ? 'votre véhicule doit' : 'au moins un de vos véhicules doit'} bénéficier du tarif résident sur
+          votre compte {withPayByPhone('PayByPhone')}
+          {where ? ` (${where})` : ''}.{' '}
+          {vehicles === 1 ? 'Ce n’est pas le cas pour le moment.' : 'Ce n’est le cas d’aucun d’entre eux pour le moment.'}
+        </>
+      }
+      steps={[
+        'Faites votre demande de stationnement résident pour obtenir le forfait résident.',
+        'Vérifiez que le tarif résident apparaît dans votre application PayByPhone.',
+        'Revenez ici : l’accès à PayByBot s’ouvre dès que le tarif résident est actif.',
+      ]}
+    >
+      {children}
+    </FullScreenNotice>
+  )
+}
+
+/** Where to add a card in the PayByPhone app: its path in its own words (no verb), and its screens (the place to touch
+ *  framed in blue) side by side. */
+const shot = (src: string, alt: string, height: number) => (
+  <img src={src} alt={alt} width={600} height={height} loading="lazy" className="w-full rounded-lg" />
+)
+const ADD_CARD_FIGURES = [
+  shot('/how/paybyphone-modes-de-paiement.webp', 'PayByPhone, onglet Compte : Modes de paiement', 394),
+  shot('/how/paybyphone-ajouter-carte.webp', 'PayByPhone, Modes de paiement : le bouton Ajouter une carte', 394),
+]
+
+/** Screens side by side, small and the same size. */
+function Shots({ figures }: { figures: ReactNode[] }) {
+  return (
+    <div className="grid grid-cols-2 items-start gap-3">
+      {figures.map((f, i) => (
+        <figure key={i}>{f}</figure>
+      ))}
+    </div>
+  )
+}
+
+/** The card screen's guide, and the welcome page's when the account has no card yet. */
+export function AddCardGuide() {
+  return (
+    <div className="mt-4 text-[0.95rem] leading-relaxed text-ink/60">
+      <p>
+        Dans {withPayByPhone('PayByPhone')} : <span className="text-ink">Compte</span> ›{' '}
+        <span className="whitespace-nowrap text-ink">Modes de paiement</span> ›{' '}
+        <span className="whitespace-nowrap text-ink">Ajouter une carte</span>
+      </p>
+      <div className="mt-3">
+        <Shots figures={ADD_CARD_FIGURES} />
+      </div>
+    </div>
+  )
+}
+
+/** Sign-up: PayByBot pays with a card saved on PayByPhone. */
+export const CARD_NOTE = 'Une carte bancaire enregistrée dans PayByPhone est nécessaire.'
+
+/** PayByBot pays with a card saved on PayByPhone. */
+export function CardRequired({ children }: { children: ReactNode }) {
+  return (
+    <FullScreenNotice
+      title="Carte bancaire requise"
+      intro={<><PayByBot /> paie avec la carte bancaire de votre compte {withPayByPhone('PayByPhone')}.</>}
+      steps={[]}
+    >
+      <AddCardGuide />
+      {children}
+    </FullScreenNotice>
+  )
+}
+
+/** Signed in without a saved card: PayByBot is not usable until one is added (the page reloads to check). « Mon
+ *  compte » stays within reach (the subscription, deleting the account): this screen covers the whole page. */
+export function CardGate({ account }: { account?: ReactNode }) {
+  async function logout() {
+    await api.logout().catch(() => {})
+    window.location.assign('/')
+  }
+  return (
+    <CardRequired>
+      <button onClick={() => window.location.reload()} className={cn('mt-7', ui.primary)}>
+        J’ai ajouté ma carte
+      </button>
+      <p className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm [&>*]:whitespace-nowrap">
+        <a href={PAYBYPHONE_APP} target="_blank" rel="noreferrer" className={ui.link}>
+          Ouvrir PayByPhone
+        </a>
+        {account}
+        <button onClick={logout} className={ui.link}>
+          Se déconnecter
+        </button>
+      </p>
+    </CardRequired>
+  )
+}

@@ -6,6 +6,43 @@ Originally forked from [paybybot2](https://github.com/louisabraham/paybybot2/), 
 
     pip install paybybot3
 
+## Graphical interface
+
+Not comfortable with the command line? paybybot3 ships a simple web interface (in French) that runs locally:
+
+    paybybot3 web
+
+It opens your browser on `http://127.0.0.1:8765`. You can log in with your PayByPhone account, pay for parking
+through a step-by-step wizard (with the exact price shown before paying), and enable a weekly automatic renewal of the resident rate.
+A demo mode lets you try it without an account. Credentials are kept in memory only, never written to disk.
+
+Non-technical users can download the ZIP and double-click `Lancer paybybot.command` (macOS) or
+`Lancer paybybot.bat` (Windows): see the [French guide](GUIDE.md).
+
+### Hosted version
+
+The same interface can be deployed on Vercel (`main.py`, `requirements.txt`, `vercel.json`). In hosted mode the
+server keeps no state: the PayByPhone access token is stored in an encrypted cookie (set `PAYBYBOT_SECRET`), the
+password is never stored. Weekly renewals are stored in Supabase (`supabase/migrations/`) with an encrypted
+PayByPhone refresh token, and `/api/cron/renew` is called every 5 minutes by `pg_cron`. Server settings:
+`PAYBYBOT_SECRET` (optionally `PAYBYBOT_SECRET_OLD` while rotating it), `PAYBYBOT_SUPABASE_URL`,
+`PAYBYBOT_SUPABASE_KEY` (publishable key), `PAYBYBOT_DB_TOKEN`, `PAYBYBOT_CRON_TOKEN_SHA256`, `CRON_SECRET`, and
+`RESEND_API_KEY` (send-only) for the optional confirmation e-mails. Renewals can be paused for the holidays.
+
+Security measures: strict Content-Security-Policy and no framing, same-origin check on every state-changing
+call, login cookies that expire after 12 hours idle and 24 hours at most, login rate limiting, separate keys per
+purpose, renewal details and refresh tokens encrypted before they reach the database, an authenticated scheduler
+call, pinned dependencies, and a "delete my data" button. Changing `PAYBYBOT_SECRET` invalidates every login and
+every stored renewal at once.
+
+### Developing the interface
+
+The front-end lives in `web/` (Vite, React, Tailwind, shadcn/ui) and is built into `paybybot3/static/`:
+
+    cd web && npm install
+    npm run dev      # hot reload on :5173, API proxied to `paybybot3 web` on :8765
+    npm run build    # writes paybybot3/static/
+
 ## Usage
 
 `CONFIG_NAME` is the name of your configuration, it would be `example_account` in the example configuration below.

@@ -1,0 +1,19 @@
+{
+  "name": "paybybot-video",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts Landing out/paybybot-18s-v2.mp4 && remotion render src/index.ts LandingMobile out/paybybot-18s-v2-mobile.mp4 && remotion still src/index.ts Landing out/paybybot-18s-v2-poster.jpg --frame=510 && remotion still src/index.ts LandingMobile out/paybybot-18s-v2-mobile-poster.jpg --frame=510"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.537",
+    "@remotion/google-fonts": "^4.0.537",
+    "@types/react": "^19.3.0",
+    "lucide-react": "^1.61.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "remotion": "^4.0.537",
+    "typescript": "^7.0.2"
+  }
+}

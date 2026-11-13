@@ -265,5 +265,18 @@ def rate_options(config_name, location, config):
     catch_exceptions(config)(_rate_options)(config, location)
 
 
+@cli.command()
+@click.option("--port", default=8765, type=int, help="Default: 8765")
+@click.option("--no-browser", is_flag=True, help="Do not open the browser automatically")
+def web(port, no_browser):
+    """
+    Open the graphical interface in your browser
+    """
+    from .web import serve
+
+    click.echo(f"paybybot est ouvert sur http://127.0.0.1:{port} (Ctrl+C pour arrêter)")
+    serve(port=port, open_browser=not no_browser)
+
+
 if __name__ == "__main__":
     cli()
