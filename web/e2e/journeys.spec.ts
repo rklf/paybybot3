@@ -357,7 +357,7 @@ test('bienvenue sans carte bancaire valide : croix rouge, on ne passe pas', asyn
   const next = page.getByRole('button', { name: /^Commencer mon essai gratuit/ }) // a resident car: activated from here
   // Only the card step: how to add one, with its screens; no vehicle to choose yet.
   await expect(page.getByText(/Votre carte a expiré/)).toBeVisible()
-  await expect(page.getByText(/ni Apple Pay ni Google Pay/)).toBeVisible()
+  await expect(page.getByText(/Modes de paiement/).first()).toBeVisible()
   await expect(page.getByRole('img', { name: /Ajouter une carte/ })).toBeVisible()
   await expect(next).toHaveCount(0)
   await expect(page.getByRole('radio')).toHaveCount(0)

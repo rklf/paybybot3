@@ -1495,6 +1495,7 @@ function FullScreenNotice({ title, intro, steps, figures = [], children }: { tit
           {title}
         </h2>
         <p className="mt-2 text-[0.95rem] leading-relaxed text-ink/60">{intro}</p>
+        {steps.length > 0 && (
         <ol className="mt-5 space-y-2.5 text-[0.95rem] leading-relaxed text-ink/60">
           {steps.map((step, i) => (
             <Fragment key={step}>
@@ -1504,10 +1505,11 @@ function FullScreenNotice({ title, intro, steps, figures = [], children }: { tit
                 </span>
                 <span className="min-w-0">{withPayByPhone(step)}</span>
               </li>
-              {figures.length > 0 && i === figures.length - 1 && <Shots figures={figures} />}
+              {figures.length > 0 && i === figures.length - 1 && <li className="pl-9"><Shots figures={figures} /></li>}
             </Fragment>
           ))}
         </ol>
+        )}
         {children}
       </div>
     </div>
@@ -1548,45 +1550,40 @@ export function ResidentRequired({
   )
 }
 
-/** How to add a card in the PayByPhone app, with its screens (the place to touch framed in blue). */
-export const ADD_CARD_STEPS = [
-  'Dans PayByPhone, touchez Compte puis Modes de paiement.',
-  'Touchez « Ajouter une carte » : une carte bancaire, ni Apple Pay ni Google Pay.',
-]
+/** Where to add a card in the PayByPhone app: its path in its own words (no verb), and its screens (the place to touch
+ *  framed in blue) side by side. */
 const shot = (src: string, alt: string, height: number) => (
   <img src={src} alt={alt} width={600} height={height} loading="lazy" className="w-full rounded-lg" />
 )
-export const ADD_CARD_FIGURES = [
+const ADD_CARD_FIGURES = [
   shot('/how/paybyphone-modes-de-paiement.webp', 'PayByPhone, onglet Compte : Modes de paiement', 394),
   shot('/how/paybyphone-ajouter-carte.webp', 'PayByPhone, Modes de paiement : le bouton Ajouter une carte', 394),
 ]
 
-/** The screens of the steps side by side, small and the same size, right after the last step they show. */
+/** Screens side by side, small and the same size. */
 function Shots({ figures }: { figures: ReactNode[] }) {
   return (
-    <li className="grid grid-cols-2 items-start gap-3 pl-9">
+    <div className="grid grid-cols-2 items-start gap-3">
       {figures.map((f, i) => (
         <figure key={i}>{f}</figure>
       ))}
-    </li>
+    </div>
   )
 }
 
-/** The same steps, inline (the welcome page when the account has no card yet). */
+/** The card screen's guide, and the welcome page's when the account has no card yet. */
 export function AddCardGuide() {
-  const steps = ADD_CARD_STEPS
   return (
-    <ol className="mt-4 space-y-2.5 text-[0.95rem] leading-relaxed text-ink/60">
-      {steps.map((step, i) => (
-        <Fragment key={step}>
-          <li className="flex gap-3">
-            <span className="grid size-6 shrink-0 place-items-center rounded-full bg-eu/[0.08] text-sm font-bold text-eu">{i + 1}</span>
-            <span className="min-w-0">{withPayByPhone(step)}</span>
-          </li>
-          {i === ADD_CARD_FIGURES.length - 1 && <Shots figures={ADD_CARD_FIGURES} />}
-        </Fragment>
-      ))}
-    </ol>
+    <div className="mt-4 text-[0.95rem] leading-relaxed text-ink/60">
+      <p>
+        Dans {withPayByPhone('PayByPhone')} : <span className="text-ink">Compte</span> ›{' '}
+        <span className="whitespace-nowrap text-ink">Modes de paiement</span> ›{' '}
+        <span className="whitespace-nowrap text-ink">Ajouter une carte</span>
+      </p>
+      <div className="mt-3">
+        <Shots figures={ADD_CARD_FIGURES} />
+      </div>
+    </div>
   )
 }
 
@@ -1599,9 +1596,9 @@ export function CardRequired({ children }: { children: ReactNode }) {
     <FullScreenNotice
       title="Carte bancaire requise"
       intro={<><PayByBot /> paie avec la carte bancaire de votre compte {withPayByPhone('PayByPhone')}.</>}
-      steps={ADD_CARD_STEPS}
-      figures={ADD_CARD_FIGURES}
+      steps={[]}
     >
+      <AddCardGuide />
       {children}
     </FullScreenNotice>
   )

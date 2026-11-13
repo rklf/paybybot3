@@ -238,7 +238,7 @@ export function Welcome({
             {noCard && (
               <div className="mt-6">
                 <h2 className="text-[1.05rem] font-medium text-ink">
-                  {withPayByPhone(cards.length ? 'Votre carte a expiré : ajoutez-en une dans PayByPhone' : 'Ajoutez une carte bancaire dans PayByPhone')}
+                  {cards.length ? 'Votre carte a expiré : ajoutez-en une' : 'Ajoutez une carte bancaire'}
                 </h2>
                 <AddCardGuide />
               </div>
