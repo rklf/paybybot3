@@ -20,6 +20,7 @@ const MONTHLY = 950
 
 const INCLUDED = [
   'Tickets renouvelés automatiquement',
+  'Multi-véhicules, sans supplément',
   'Pause en un clic, reprise automatique',
   'Alertes en cas d’échec',
   'Annulable à tout moment',
