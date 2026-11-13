@@ -138,3 +138,12 @@ export function brandNodes(node: ReactNode): ReactNode {
   }
   return node
 }
+
+/** PayByPhone's mark: its green keypad. */
+export function PayByPhoneMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 30 30" className={className} aria-hidden>
+      {[0, 1, 2].flatMap((r) => [0, 1, 2].map((c) => <rect key={`${r}${c}`} x={c * 10 + 0.5} y={r * 10 + 0.5} width="9" height="9" rx="2.4" fill="#7ab943" />))}
+    </svg>
+  )
+}

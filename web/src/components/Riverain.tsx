@@ -3,7 +3,7 @@ import { Check, Loader2, Mail, Pause, Play, Repeat, RotateCw } from 'lucide-reac
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { NoPayment } from '@/components/NoPayment'
-import { arrondissement, LogoMark, PayByBot, Plate, withPayByPhone, ZonePlate } from '@/components/signs'
+import { arrondissement, LogoMark, PayByBot, PayByPhoneMark, Plate, withPayByPhone, ZonePlate } from '@/components/signs'
 import { loadLast, saveLast } from '@/components/PayWizard'
 import { PlansDialog } from '@/components/Pricing'
 import { ShinyButton } from '@/components/ui/shiny-button'
@@ -627,15 +627,6 @@ export function CoveredLine({ end, soon = false }: { end: number; soon?: boolean
         <PayByPhoneMark className="size-5" />
       </a>
     </div>
-  )
-}
-
-/** PayByPhone's mark: its green keypad. */
-function PayByPhoneMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 30 30" className={className} aria-hidden>
-      {[0, 1, 2].flatMap((r) => [0, 1, 2].map((c) => <rect key={`${r}${c}`} x={c * 10 + 0.5} y={r * 10 + 0.5} width="9" height="9" rx="2.4" fill="#7ab943" />))}
-    </svg>
   )
 }
 

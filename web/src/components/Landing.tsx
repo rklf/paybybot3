@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { ArrowRight, BellRing, Star, CreditCard, Headset, Pause, Link2, Plus, RefreshCw, ShieldCheck, Trash2, type LucideIcon } from 'lucide-react'
+import { ArrowRight, BellRing, Check, Star, CreditCard, Headset, Pause, Plus, RefreshCw, ShieldCheck, Trash2, type LucideIcon } from 'lucide-react'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { HostedFooter } from '@/components/Footer'
 import { PublicTopBar } from '@/components/TopBar'
 import { PlanCards } from '@/components/Pricing'
 import { cn } from '@/lib/utils'
+import { AnimatePresence } from 'motion/react'
+import { AnimatedListItem } from '@/components/ui/animated-list'
 import { ToggleSwitch } from '@/components/ui/toggle-switch'
 import { TRY_LABEL, ui } from '@/lib/styles'
-import { brandNodes, PayByBot, PayByPhone, Plate, withBrands, withPayByPhone } from '@/components/signs'
+import { brandNodes, PayByBot, PayByPhone, PayByPhoneMark, Plate, withBrands, withPayByPhone } from '@/components/signs'
 
 
 
@@ -21,18 +23,9 @@ const FEATURES: Question[] = [
 
 const FEATURE_ICONS = [RefreshCw, Pause, BellRing, Headset]
 
-const STEP_ICONS = [Link2, RefreshCw, ShieldCheck]
-
 /** Each step's screen (demo account, captured at one size: 1040 × 940). */
-const STEP_SHOTS = ['/how/1-connexion.png?v=14', '/how/2-activation.png?v=14', '/how/3-tableau-de-bord.png?v=14']
+const STEP_SHOTS = ['/how/1-connexion.png?v=14', '/how/2-activation.png?v=14', '/how/3-tableau-de-bord.png?v=15']
 const STEP_MS = 3500
-
-// One short line each: read at a glance.
-const STEPS = [
-  ['Connectez PayByPhone', 'Votre compte existant.'],
-  ['Activez le renouvellement', 'Un clic, une seule fois.'],
-  ['Vous êtes tranquilles', 'Renouvelé chaque semaine.'],
-]
 
 /**
  * Real users' feedback only, given with their consent: [first name and last-name initial, e.g. « Charles H. », one sentence].
@@ -55,103 +48,178 @@ const TESTIMONIALS: [string, string, string][] = [
 /** « Comment ça marche » : the three steps on the left, a line filling down the active one, and its screen on the
  *  right. The steps take turns every 3.5 seconds (not with reduced motion); a click shows one at once. `page`: the
  *  « Comment ça marche » page itself (its title a page title, not a window-high section). */
+// One line each, its key words in bold (read at a glance); the notification each step ends with, over its screen.
+const DEMO_STEPS: { text: ReactNode; note: [string, string] }[] = [
+  {
+    text: <>Connectez votre compte <b>PayByPhone</b> existant</>,
+    note: ['PayByPhone connecté', 'Véhicule et résidence retrouvés'],
+  },
+  {
+    text: <><b>Activez le renouvellement</b> en un clic, une seule fois</>,
+    note: ['Renouvellement activé', 'AB-123-CD · résident'],
+  },
+  {
+    text: <>Votre ticket est <b>renouvelé chaque semaine</b>, sans y penser</>,
+    note: ['Ticket renouvelé', 'Une semaine de plus'],
+  },
+]
+
+type Note = { key: string; title: string; line: string; color: string; Icon: LucideIcon; ticket?: boolean }
+// The weeks the demo's tickets cover, one after the other from the screen's next renewal.
+const TICKET_WEEKS = ['Du 17 au 24 novembre', 'Du 24 novembre au 1er décembre', 'Du 1er au 8 décembre', 'Du 8 au 15 décembre']
+const TICKETS_SHOWN = TICKET_WEEKS.length
+const TICKET_MS = 1800 // one ticket after the other, at a pace the eye follows
+
+/** Each notification's colour and mark (as on a phone's lock screen). */
+// Every one says « done »: a green check.
+const NOTE_COLORS = ['#34C759', '#34C759', '#34C759']
+const NOTE_ICONS: LucideIcon[] = [Check, Check, Check]
+
+/** « Comment ça marche »: a demonstration panel. The title, arrows and a dash per step at the top; the step's screen
+ *  with the notification it ends with on the left; the numbered steps on the right, the one shown in blue. */
 export function HowItWorks({ page = false, cta }: { page?: boolean; /** Under the steps, in their column. */ cta?: ReactNode }) {
   const [active, setActive] = useState(0)
-  const [auto, setAuto] = useState(() => !window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+  // Only the arrows move from a step to the next (nothing moves by itself).
+  const auto = false
+  const go = (i: number) => setActive((i + DEMO_STEPS.length) % DEMO_STEPS.length)
+  const Title = page ? 'h1' : 'h2'
+  // Step 3: the tickets come one after the other, week after week (the newest on top), as in the video.
+  const [switched, setSwitched] = useState(false)
+  useEffect(() => setSwitched(false), [active])
+  const [tickets, setTickets] = useState(0)
   useEffect(() => {
-    if (!auto) return
-    const id = setTimeout(() => setActive((i) => (i + 1) % STEPS.length), STEP_MS)
-    return () => clearTimeout(id)
-  }, [active, auto])
+    setTickets(1) // the first one at once, then one every TICKET_MS
+    if (active !== 2) return
+    const id = setInterval(() => setTickets((n) => Math.min(n + 1, TICKETS_SHOWN)), TICKET_MS)
+    return () => clearInterval(id)
+  }, [active])
+  const notes: Note[] = [
+    // Each step shows only its own: step 1, PayByPhone connected; step 2, the renewal, once its switch has turned on;
+    // step 3, only the tickets one after the other.
+    ...(active === 0 || (active === 1 && switched)
+      ? [{ key: `s${active}`, title: DEMO_STEPS[active].note[0], line: DEMO_STEPS[active].note[1], color: NOTE_COLORS[active], Icon: NOTE_ICONS[active] }]
+      : []),
+    ...(active === 2
+      ? Array.from({ length: tickets }, (_, k) => ({
+          key: `t${k}`,
+          // Real weeks, following the screen beside (its next renewal: Monday 16 November).
+          title: DEMO_STEPS[2].note[0],
+          line: TICKET_WEEKS[k],
+          color: NOTE_COLORS[2],
+          Icon: NOTE_ICONS[2],
+          ticket: true,
+        }))
+      : []),
+  ]
 
   return (
-    <section
-      id="comment"
-      className={cn('flex scroll-mt-16 flex-col justify-center', page ? '' : 'pt-24 pb-10 lg:min-h-[calc(100dvh-4rem)] lg:pt-20 lg:pb-12')}
-    >
-      {page ? (
-        <h1 className={ui.title}>Comment ça marche</h1>
-      ) : (
-        <h2 className={cn(ui.title, 'text-center')}>
-          Comment ça marche
-        </h2>
-      )}
-      <div className={cn('grid items-center gap-10 lg:grid-cols-[1fr_1.05fr] lg:gap-16', page ? 'mt-8' : 'mt-12 lg:mt-16')}>
-        <div>
-        <ol className="space-y-2">
-          {STEPS.map(([title, text], i) => {
-            const Icon = STEP_ICONS[i]
-            const on = i === active
-            return (
-              <li key={title}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActive(i)
-                    setAuto(false)
-                  }}
-                  aria-current={on || undefined}
-                  className={cn('group relative flex w-full gap-5 pl-6 text-left', page ? 'py-3.5' : 'py-5')}
-                >
-                  {/* The line: grey, filling down in blue while the step is shown. */}
-                  <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 overflow-hidden rounded-full bg-ink/10">
-                    {on && (
-                      <span
-                        key={auto ? `run-${active}` : 'still'}
-                        className={cn('block h-full w-full origin-top bg-eu', auto && 'animate-[fill-down_3.5s_linear_forwards]')}
-                      />
-                    )}
-                  </span>
-                  <span
-                    className={cn(
-                      'grid size-12 shrink-0 place-items-center rounded-full transition-colors',
-                      on ? 'bg-eu/[0.1] text-eu' : 'bg-ink/[0.04] text-ink/45 group-hover:text-ink/60',
-                    )}
-                  >
-                    <Icon className="size-5" strokeWidth={1.75} />
-                  </span>
-                  <span>
-                    <strong className={cn('block font-heading text-xl font-semibold tracking-[-0.02em] transition-colors lg:text-2xl', on ? 'text-ink' : 'text-ink/45')}>
-                      {i + 1}. {withPayByPhone(title)}
-                    </strong>
-                    <span className={cn('mt-1.5 block text-[1.05rem] leading-relaxed transition-colors', on ? 'text-ink/60' : 'text-ink/45')}>
-                      {withPayByPhone(text)}
-                    </span>
-                  </span>
-                </button>
-              </li>
-            )
-          })}
-        </ol>
-          {cta}
-        </div>
-        {/* The screen: a window frame, raised above the text, its picture changing with the step. */}
-        {/* On the « Comment ça marche » page, a smaller window: the whole page fits in a laptop's screen. */}
-        <div
-          className={cn(
-            'mx-auto w-full overflow-hidden rounded-2xl border border-ink/10 bg-white shadow-[0_40px_80px_-30px_rgb(11_16_36/0.35),0_12px_24px_-12px_rgb(11_16_36/0.12)]',
-            page ? 'max-w-[27rem]' : 'max-w-[34rem]',
-          )}
-        >
-          <div className="flex items-center gap-1.5 border-b border-ink/[0.06] bg-ink/[0.02] px-4 py-3" aria-hidden>
-            <span className="size-2.5 rounded-full bg-ink/15" />
-            <span className="size-2.5 rounded-full bg-ink/15" />
-            <span className="size-2.5 rounded-full bg-ink/15" />
-            <span className="ml-3 truncate text-xs text-ink/40">paybybot.fr</span>
+    <section id="comment" className={cn('scroll-mt-16', page ? '' : 'pt-24 pb-10 lg:pt-20 lg:pb-12')}>
+      <div className="rounded-2xl bg-ink/[0.035] px-5 py-8 sm:px-10 sm:py-10">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
+          <div>
+            <p className="text-sm tracking-[0.18em] text-ink/45 uppercase">Démonstration</p>
+            <Title className={cn(ui.title, 'mt-3')}>
+              Automatisez votre stationnement en <span className="whitespace-nowrap text-eu">3 étapes.</span>
+            </Title>
           </div>
-          <div className="relative aspect-[1040/940]">
+          {/* The arrows (the only way from a step to the next), and a dash per step: the one shown in blue. */}
+          <div className="flex shrink-0 flex-row-reverse items-center justify-end gap-4 sm:flex-col sm:items-end">
+            <div className="flex gap-1">
+              <button type="button" onClick={() => go(active - 1)} aria-label="Étape précédente" className="grid size-10 place-items-center rounded-full text-eu transition hover:bg-eu/[0.08]">
+                <ArrowRight className="size-5 rotate-180" />
+              </button>
+              <button type="button" onClick={() => go(active + 1)} aria-label="Étape suivante" className="grid size-10 place-items-center rounded-full text-eu transition hover:bg-eu/[0.08]">
+                <ArrowRight className="size-5" />
+              </button>
+            </div>
+            <div className="flex gap-1.5" aria-hidden>
+              {DEMO_STEPS.map((_, i) => (
+                <span key={i} className="h-[3px] w-6 overflow-hidden rounded-full bg-eu/20">
+                  {i === active && <span className="block h-full w-full bg-eu" />}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className={cn('mt-8 grid items-start gap-8 lg:grid-cols-[1.1fr_1fr] lg:gap-14 [&>*]:min-w-0', page ? 'lg:mt-10' : 'lg:mt-12')}>
+          {/* The step's screen (its top, where all is), and under it the notifications so far: nothing laid over it. */}
+          <div className="relative mx-auto w-full max-w-[34rem]">
+          <div className="relative aspect-[1040/660] w-full overflow-hidden rounded-2xl border border-ink/10 bg-white">
             {STEP_SHOTS.map((src, i) => (
               <img
                 key={src}
                 src={src}
-                alt={i === active ? STEPS[i][0] : ''}
-                aria-hidden={i !== active}
+                alt=""
+                aria-hidden
                 loading="lazy"
-                className={cn('absolute inset-0 size-full object-cover object-top transition-opacity duration-500', i === active ? 'opacity-100' : 'opacity-0')}
+                className={cn('absolute inset-0 size-full object-cover object-top transition-opacity duration-300', i === active ? 'opacity-100' : 'opacity-0')}
               />
             ))}
             {/* Step 2: the picture's switch turns on before step 3 shows it on. */}
-            <ShotSwitch play={active === 1} auto={auto} />
+            {/* Step 2: the week's price, as the renewal window shows it (Paris resident rate: 9 € a week). */}
+            <ShotLine show={active === 1} className="items-baseline pt-[18px] text-ink">
+              <span className="font-heading text-2xl leading-none tabular-nums">9,00 €</span>
+              <span className="text-[15px] text-ink/60">par semaine</span>
+            </ShotLine>
+            <ShotLine show={active === 2} className="font-medium text-ink">
+              <Check className="size-4 text-[#34C759]" strokeWidth={3} /> Véhicule couvert, sans interruption
+            </ShotLine>
+            <ShotSwitch play={active === 1} auto={auto} onOn={() => setSwitched(true)} />
+          </div>
+            {/* The notifications so far, the newest on top: each step adds its own (Magic UI's animated list). */}
+            <div
+              role="status"
+              className="mt-3 flex h-[9.75rem] flex-col gap-3 overflow-hidden"
+            >
+              <AnimatePresence initial={false} mode="popLayout">
+                {notes.slice(-2).reverse().map((n, rank) => (
+                  <AnimatedListItem key={n.key}>
+                    <figure
+                      className={cn(
+                        'flex items-center gap-3 rounded-2xl bg-white p-3.5 transition-opacity [box-shadow:0_0_0_1px_rgba(0,0,0,.03),0_2px_4px_rgba(0,0,0,.05),0_12px_24px_rgba(0,0,0,.08)]',
+                        rank > 0 && 'opacity-60',
+                      )}
+                    >
+                      {n.ticket ? (
+                        // A ticket taken on PayByPhone: its mark (the green keypad).
+                        <PayByPhoneMark className="size-6 shrink-0" />
+                      ) : (
+                        <span className="grid size-6 shrink-0 place-items-center rounded-full text-white" style={{ background: n.color }}>
+                          <n.Icon className="size-3.5" strokeWidth={3.5} />
+                        </span>
+                      )}
+                      <span className="min-w-0">
+                        <span className="block truncate text-[0.95rem] font-medium text-ink">{n.title}</span>
+                        <span className="block truncate text-sm text-ink/60">{n.line}</span>
+                      </span>
+                    </figure>
+                  </AnimatedListItem>
+                ))}
+              </AnimatePresence>
+            </div>
+          </div>
+
+          {/* The steps: a big number, a line; the one shown in blue and ink, the others quiet. */}
+          <div>
+            <ol className="space-y-1 lg:[&>li:first-child>div]:pt-0">
+              {DEMO_STEPS.map((step, i) => {
+                const on = i === active
+                return (
+                  <li key={i}>
+                    <div aria-current={on || undefined} className="flex w-full items-center gap-4 py-3 sm:gap-6 sm:py-4">
+                      <span className={cn('w-9 shrink-0 font-heading text-[2.6rem] leading-none sm:w-12 sm:text-[3.2rem] font-light tracking-[-0.04em] transition-colors', on ? 'text-eu' : 'text-ink/20')}>
+                        {i + 1}.
+                      </span>
+                      <span className={cn('text-[1.2rem] leading-snug transition-colors lg:text-[1.35rem] [&_b]:font-semibold', on ? 'text-ink' : 'text-ink/45')}>
+                        {brandNodes(step.text)}
+                      </span>
+                    </div>
+                  </li>
+                )
+              })}
+            </ol>
+            {cta}
           </div>
         </div>
       </div>
@@ -161,10 +229,9 @@ export function HowItWorks({ page = false, cta }: { page?: boolean; /** Under th
 
 /** The real switch laid over step 2's picture, at the same place and scale (the picture: a 520 × 470 window, the
  *  switch 48 × 24 at 427, 223), turning on just as step 3 comes. Only a picture: not focusable, not read. */
-function ShotSwitch({ play, auto }: { play: boolean; auto: boolean }) {
-  const ref = useRef<HTMLDivElement>(null)
+/** The scale of a step's picture (drawn 520 wide), for what is laid over it at its own place. */
+function useShotScale(ref: RefObject<HTMLDivElement | null>) {
   const [scale, setScale] = useState(1)
-  const [on, setOn] = useState(false)
   useEffect(() => {
     const box = ref.current?.parentElement
     if (!box) return
@@ -173,7 +240,31 @@ function ShotSwitch({ play, auto }: { play: boolean; auto: boolean }) {
     const watch = new ResizeObserver(fit)
     watch.observe(box)
     return () => watch.disconnect()
-  }, [])
+  }, [ref])
+  return scale
+}
+
+/** Laid over the pictures' « Couvert jusqu'au » line (its row: 26, 138, 468 × 63), what the step says instead:
+ *  step 2, the week's price; step 3, covered with no end date (renewed every week, never « until »). */
+function ShotLine({ show, children, className }: { show: boolean; children: ReactNode; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const scale = useShotScale(ref)
+  return (
+    <div
+      ref={ref}
+      aria-hidden
+      className={cn('pointer-events-none absolute flex origin-top-left items-center gap-2 bg-white pl-[19px] text-[15px]', !show && 'invisible', className)}
+      style={{ top: 138 * scale, left: 26 * scale, width: 468, height: 63, transform: `scale(${scale})` }}
+    >
+      {children}
+    </div>
+  )
+}
+
+function ShotSwitch({ play, auto, onOn }: { play: boolean; auto: boolean; /** Once it is on. */ onOn?: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const scale = useShotScale(ref)
+  const [on, setOn] = useState(false)
   useEffect(() => {
     // Off again once hidden (after step 3 has faded in over it), so the step comes back with it off.
     if (!play) {
@@ -182,7 +273,8 @@ function ShotSwitch({ play, auto }: { play: boolean; auto: boolean }) {
     }
     setOn(false) // back within the 600 ms (a quick click)
     // Taking turns: it turns on as step 3 comes (its slide ending as the picture changes); shown by a click, a moment after.
-    const id = setTimeout(() => setOn(true), auto ? STEP_MS - 250 : 1200)
+    // On at once, as soon as the step's picture is there (its 0.3 s fade).
+    const id = setTimeout(() => (setOn(true), onOn?.()), auto ? STEP_MS - 250 : 300)
     return () => clearTimeout(id)
   }, [play, auto])
   return (
@@ -190,8 +282,9 @@ function ShotSwitch({ play, auto }: { play: boolean; auto: boolean }) {
       ref={ref}
       aria-hidden
       inert
-      className={cn('pointer-events-none absolute top-[47.47%] left-[82.12%] origin-top-left rounded-full bg-white transition-opacity duration-500', play ? 'opacity-100' : 'opacity-0')}
-      style={{ transform: `scale(${scale})` }}
+      // Placed from the picture's width (it is shown from its top, at full width, whatever the frame's height).
+      className={cn('pointer-events-none absolute origin-top-left rounded-full bg-white transition-opacity duration-300', play ? 'opacity-100' : 'opacity-0')}
+      style={{ top: 223 * scale, left: 427 * scale, transform: `scale(${scale})` }}
     >
       <ToggleSwitch checked={on} label="" onPress={() => {}} />
     </div>
